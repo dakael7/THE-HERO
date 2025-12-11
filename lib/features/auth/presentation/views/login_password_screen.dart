@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart' as hero;
 
@@ -87,6 +88,55 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final horizontalPadding = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 24.0,
+      tabletPadding: 32.0,
+      desktopPadding: 40.0,
+    );
+    final titleFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 24,
+      tabletSize: 26,
+      desktopSize: 28,
+    );
+    final emailFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 14,
+      tabletSize: 15,
+      desktopSize: 16,
+    );
+    final inputFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 16,
+      tabletSize: 17,
+      desktopSize: 18,
+    );
+    final buttonFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 16,
+      tabletSize: 17,
+      desktopSize: 18,
+    );
+    final verticalSpacing = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 40.0,
+      tabletPadding: 48.0,
+      desktopPadding: 56.0,
+    );
+    final inputSpacing = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 30.0,
+      tabletPadding: 36.0,
+      desktopPadding: 42.0,
+    );
+    final contentPadding = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 16.0,
+      tabletPadding: 18.0,
+      desktopPadding: 20.0,
+    );
+    
     return Scaffold(
       backgroundColor: backgroundGray50,
       appBar: AppBar(
@@ -99,19 +149,19 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const SizedBox(height: 40),
+                SizedBox(height: verticalSpacing),
 
                 // TÍTULO
-                const Text(
+                Text(
                   'Ingresa tu contraseña',
                   style: TextStyle(
-                    fontSize: 24,
+                    fontSize: titleFontSize,
                     fontWeight: FontWeight.w500,
                     color: textGray900,
                   ),
@@ -120,31 +170,31 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                 Text(
                   widget.email,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
+                  style: TextStyle(
+                    fontSize: emailFontSize,
                     color: textGray600,
                   ),
                 ),
 
-                const SizedBox(height: 40),
+                SizedBox(height: verticalSpacing),
 
                 // INPUT DE CONTRASEÑA
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   enabled: !_isLoading,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: textGray900,
-                    fontSize: 16,
+                    fontSize: inputFontSize,
                   ),
                   decoration: InputDecoration(
                     hintText: 'Contraseña',
                     hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
                     filled: true,
                     fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                      horizontal: 20,
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: contentPadding,
+                      horizontal: contentPadding * 1.25,
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -192,7 +242,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                   },
                 ),
 
-                const SizedBox(height: 30),
+                SizedBox(height: inputSpacing),
 
                 // BOTÓN INGRESAR
                 SizedBox(
@@ -209,7 +259,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                         },
                       ),
                       padding: MaterialStateProperty.all(
-                        const EdgeInsets.symmetric(vertical: 16),
+                        EdgeInsets.symmetric(vertical: contentPadding),
                       ),
                       shape: MaterialStateProperty.all(
                         RoundedRectangleBorder(
@@ -228,10 +278,10 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                               ),
                             ),
                           )
-                        : const Text(
+                        : Text(
                             'Ingresar',
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: buttonFontSize,
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
                             ),

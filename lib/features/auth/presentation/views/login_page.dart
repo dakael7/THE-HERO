@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 import '../widgets/animated_role_button.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
@@ -49,19 +50,39 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         }
       },
     );
+    
+    final padding = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 24.0,
+      tabletPadding: 32.0,
+      desktopPadding: 40.0,
+    );
+    final spacingLarge = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 32.0,
+      tabletPadding: 40.0,
+      desktopPadding: 48.0,
+    );
+    final spacingMedium = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 16.0,
+      tabletPadding: 20.0,
+      desktopPadding: 24.0,
+    );
+    
     return Scaffold(
       backgroundColor: backgroundWhite,
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: EdgeInsets.all(padding),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                _buildLogoSection(),
-                const SizedBox(height: 24),
-                _buildWelcomeSection(),
-                const SizedBox(height: 32),
+                _buildLogoSection(context),
+                SizedBox(height: spacingMedium),
+                _buildWelcomeSection(context),
+                SizedBox(height: spacingLarge),
 
                 // Botón de selección de rol: HERO (Consumidor)
                 AnimatedRoleButton(
@@ -86,7 +107,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     );
                   },
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: spacingMedium),
 
                 // Botón de selección de rol: RIDER (Repartidor)
                 AnimatedRoleButton(
@@ -111,7 +132,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     );
                   },
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: spacingMedium),
               ],
             ),
           ),
@@ -124,39 +145,66 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   // MÉTODOS DE CONSTRUCCIÓN DEL LOGO Y TEXTO
   // ---------------------------------------------------------
 
-  Widget _buildLogoSection() {
+  Widget _buildLogoSection(BuildContext context) {
+    final logoHeight = ResponsiveUtils.isMobile(context) ? 100.0 : 120.0;
+    
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
       child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset('assets/logo_1.png', height: 100, fit: BoxFit.contain),
+            Image.asset('assets/logo_1.png', height: logoHeight, fit: BoxFit.contain),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildWelcomeSection() {
+  Widget _buildWelcomeSection(BuildContext context) {
+    final titleFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 28,
+      tabletSize: 32,
+      desktopSize: 36,
+    );
+    final subtitleFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 16,
+      tabletSize: 17,
+      desktopSize: 18,
+    );
+    final instructionFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 15,
+      tabletSize: 16,
+      desktopSize: 17,
+    );
+    final spacing = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 16.0,
+      tabletPadding: 20.0,
+      desktopPadding: 24.0,
+    );
+    
     return Column(
       children: [
         // Título de bienvenida principal
         Text(
           '¡Bienvenido!',
           style: TextStyle(
-            fontSize: 28,
+            fontSize: titleFontSize,
             fontWeight: FontWeight.w600,
             color: textGray900,
             letterSpacing: -0.5,
           ),
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: spacing),
         // Subtítulo descriptivo
         Text(
           'Tu plataforma de confianza para',
           style: TextStyle(
-            fontSize: 16,
+            fontSize: subtitleFontSize,
             fontWeight: FontWeight.w400,
             color: textGray600,
             height: 1.4,
@@ -167,17 +215,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         Text(
           'encontrar y entregar lo que necesitas',
           style: TextStyle(
-            fontSize: 16,
+            fontSize: subtitleFontSize,
             fontWeight: FontWeight.w400,
             color: textGray600,
             height: 1.4,
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 24),
+        SizedBox(height: spacing * 1.5),
         // Texto de instrucción
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: EdgeInsets.symmetric(horizontal: spacing, vertical: spacing * 0.75),
           decoration: BoxDecoration(
             color: backgroundGray50,
             borderRadius: BorderRadius.circular(12),
@@ -186,7 +234,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           child: Text(
             'Selecciona tu rol para comenzar',
             style: TextStyle(
-              fontSize: 15,
+              fontSize: instructionFontSize,
               fontWeight: FontWeight.w500,
               color: textGray700,
             ),

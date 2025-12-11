@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
 
 /// Widget del navbar inferior con animaciones
@@ -11,9 +12,13 @@ class HeroBottomNav extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(heroHomeViewModelProvider);
     final viewModel = ref.read(heroHomeViewModelProvider.notifier);
+    final isMobile = ResponsiveUtils.isMobile(context);
+    final navHeight = isMobile ? 80.0 : 90.0;
+    final padding = isMobile ? 12.0 : 16.0;
+    final bottomPadding = isMobile ? 20.0 : 24.0;
 
     return Padding(
-      padding: const EdgeInsets.only(left: 12, right: 12, bottom: 20),
+      padding: EdgeInsets.only(left: padding, right: padding, bottom: bottomPadding),
       child: Container(
         decoration: BoxDecoration(
           color: backgroundWhite,
@@ -40,7 +45,7 @@ class HeroBottomNav extends ConsumerWidget {
             elevation: 0,
             color: backgroundWhite,
             child: SizedBox(
-              height: 80,
+              height: navHeight,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: <Widget>[

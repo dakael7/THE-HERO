@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 
 class AnimatedRoleButton extends StatefulWidget {
   final Widget contentWidget;
@@ -45,6 +46,36 @@ class _AnimatedRoleButtonState extends State<AnimatedRoleButton> {
   @override
   Widget build(BuildContext context) {
     final isOrange = widget.color == primaryOrange;
+    final verticalPadding = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 25.0,
+      tabletPadding: 30.0,
+      desktopPadding: 35.0,
+    );
+    final horizontalPadding = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 20.0,
+      tabletPadding: 24.0,
+      desktopPadding: 28.0,
+    );
+    final labelFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 24,
+      tabletSize: 26,
+      desktopSize: 28,
+    );
+    final descriptionFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 16,
+      tabletSize: 17,
+      desktopSize: 18,
+    );
+    final spacing = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: 10.0,
+      tabletPadding: 12.0,
+      desktopPadding: 14.0,
+    );
 
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
@@ -62,7 +93,7 @@ class _AnimatedRoleButtonState extends State<AnimatedRoleButton> {
         curve: Curves.easeOut,
         transform: Matrix4.identity()..scale(_isPressed ? _scaleFactor : 1.0),
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 20),
+        padding: EdgeInsets.symmetric(vertical: verticalPadding, horizontal: horizontalPadding),
         decoration: BoxDecoration(
           color: _getAnimatedColor(isOrange),
           borderRadius: BorderRadius.circular(12),
@@ -81,21 +112,21 @@ class _AnimatedRoleButtonState extends State<AnimatedRoleButton> {
         child: Column(
           children: [
             widget.contentWidget,
-            const SizedBox(height: 10),
+            SizedBox(height: spacing),
             Text(
               widget.label,
               style: TextStyle(
-                fontSize: 24,
+                fontSize: labelFontSize,
                 fontWeight: FontWeight.w500,
                 color: widget.textColor,
               ),
             ),
-            const SizedBox(height: 5),
+            SizedBox(height: spacing * 0.5),
             Text(
               widget.description,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: descriptionFontSize,
                 fontWeight: FontWeight.w400,
                 color: widget.descriptionColor,
               ),

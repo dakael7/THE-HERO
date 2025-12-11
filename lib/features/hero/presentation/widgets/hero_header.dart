@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -95,11 +96,15 @@ class HeroHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = ResponsiveUtils.isMobile(context);
+    final expandedHeight = isMobile ? 220.0 : 240.0;
+    final collapsedHeight = isMobile ? 140.0 : 160.0;
+    
     return SliverPersistentHeader(
       pinned: true,
       delegate: HeroHeaderDelegate(
-        expandedHeight: 220.0,
-        collapsedHeight: 140.0,
+        expandedHeight: expandedHeight,
+        collapsedHeight: collapsedHeight,
         buildLogoSection: _buildLogoSection,
         buildNotificationIcon: _buildNotificationIcon,
         buildSearchBar: _buildSearchBar,

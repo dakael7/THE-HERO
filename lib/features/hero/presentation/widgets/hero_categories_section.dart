@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -45,25 +46,34 @@ class HeroCategoriesSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: paddingLarge),
-        SizedBox(
-          height: 140,
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: paddingLarge),
-            scrollDirection: Axis.horizontal,
-            itemCount: categories.length,
-            itemBuilder: (context, index) {
-              final category = categories[index];
-              return Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: _buildCategoryItem(
-                  label: category['label'],
-                  icon: category['icon'],
-                  iconColor: category['iconColor'],
-                  bgColor: category['bgColor'],
-                ),
-              );
-            },
-          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile = ResponsiveUtils.isMobile(context);
+            final categoryHeight = isMobile ? 140.0 : 160.0;
+            final categoryWidth = isMobile ? 100.0 : 120.0;
+            
+            return SizedBox(
+              height: categoryHeight,
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: paddingLarge),
+                scrollDirection: Axis.horizontal,
+                itemCount: categories.length,
+                itemBuilder: (context, index) {
+                  final category = categories[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 16),
+                    child: _buildCategoryItem(
+                      label: category['label'],
+                      icon: category['icon'],
+                      iconColor: category['iconColor'],
+                      bgColor: category['bgColor'],
+                      width: categoryWidth,
+                    ),
+                  );
+                },
+              ),
+            );
+          },
         ),
       ],
     );
@@ -74,6 +84,7 @@ class HeroCategoriesSection extends StatelessWidget {
     required IconData icon,
     required Color iconColor,
     required Color bgColor,
+    required double width,
   }) {
     return Material(
       color: Colors.transparent,
@@ -82,7 +93,7 @@ class HeroCategoriesSection extends StatelessWidget {
         splashColor: iconColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
         child: SizedBox(
-          width: 100,
+          width: width,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
             child: Column(

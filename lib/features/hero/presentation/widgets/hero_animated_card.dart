@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 
 const double paddingNormal = 16.0;
 
@@ -62,9 +63,29 @@ class _AnimatedHeroCardState extends State<AnimatedHeroCard>
     _controller.reverse();
   }
 
-  Widget _buildCardContent() {
+  Widget _buildCardContent(BuildContext context) {
+    final padding = ResponsiveUtils.responsivePadding(
+      context,
+      mobilePadding: paddingNormal,
+      tabletPadding: 20.0,
+      desktopPadding: 24.0,
+    );
+    final titleFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 17,
+      tabletSize: 18,
+      desktopSize: 19,
+    );
+    final subtitleFontSize = ResponsiveUtils.responsiveFontSize(
+      context,
+      mobileSize: 14,
+      tabletSize: 15,
+      desktopSize: 16,
+    );
+    final iconSize = ResponsiveUtils.isMobile(context) ? 36.0 : 40.0;
+
     return Container(
-      padding: const EdgeInsets.all(paddingNormal),
+      padding: EdgeInsets.all(padding),
       decoration: BoxDecoration(
         color: backgroundWhite,
         borderRadius: BorderRadius.circular(16),
@@ -86,26 +107,26 @@ class _AnimatedHeroCardState extends State<AnimatedHeroCard>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: EdgeInsets.all(padding * 0.6),
             decoration: BoxDecoration(
               color: primaryOrange.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(widget.icon, color: primaryOrange, size: 36),
+            child: Icon(widget.icon, color: primaryOrange, size: iconSize),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: padding * 0.75),
           Text(
             widget.title,
-            style: const TextStyle(
-              fontSize: 17,
+            style: TextStyle(
+              fontSize: titleFontSize,
               fontWeight: FontWeight.w700,
               color: textGray900,
             ),
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: padding * 0.25),
           Text(
             widget.subtitle,
-            style: const TextStyle(fontSize: 14, color: textGray600),
+            style: TextStyle(fontSize: subtitleFontSize, color: textGray600),
           ),
         ],
       ),
@@ -120,7 +141,7 @@ class _AnimatedHeroCardState extends State<AnimatedHeroCard>
       onTapCancel: _onTapCancel,
       child: ScaleTransition(
         scale: _scaleAnimation,
-        child: _buildCardContent(),
+        child: _buildCardContent(context),
       ),
     );
   }

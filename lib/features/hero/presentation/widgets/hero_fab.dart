@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/responsive_utils.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
 
 /// Widget del botón flotante (FAB) con carrito
@@ -10,12 +11,17 @@ class HeroFAB extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final viewModel = ref.read(heroHomeViewModelProvider.notifier);
+    final isMobile = ResponsiveUtils.isMobile(context);
+    final fabSize = isMobile ? 60.0 : 70.0;
+    final fabHeight = isMobile ? 70.0 : 80.0;
+    final yOffset = isMobile ? 35.0 : 40.0;
+    final iconSize = isMobile ? 30.0 : 34.0;
 
     return Transform.translate(
-      offset: const Offset(0, 35.0),
+      offset: Offset(0, yOffset),
       child: Container(
-        width: 60,
-        height: 70,
+        width: fabSize,
+        height: fabHeight,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: primaryOrange.withOpacity(0.2),
@@ -28,10 +34,10 @@ class HeroFAB extends ConsumerWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              const Icon(
+              Icon(
                 Icons.shopping_cart_outlined,
                 color: backgroundWhite,
-                size: 30,
+                size: iconSize,
               ),
               Positioned(
                 right: -6,
