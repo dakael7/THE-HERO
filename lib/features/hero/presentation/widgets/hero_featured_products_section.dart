@@ -18,7 +18,7 @@ class HeroFeaturedProductsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: paddingLarge),
+        const SizedBox(height: 8.0),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: paddingLarge),
           child: Row(

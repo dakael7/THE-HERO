@@ -71,7 +71,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
     
     return Scaffold(
-      backgroundColor: primaryOrangeLight,
+      backgroundColor: primaryYellow,
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(

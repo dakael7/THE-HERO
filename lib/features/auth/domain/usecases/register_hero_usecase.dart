@@ -7,7 +7,6 @@ class RegisterHeroUseCase {
 
   RegisterHeroUseCase(this._authRepository);
 
-  /// Ejecuta el caso de uso de registro Hero
   Future<User> execute({
     required String email,
     required String password,
@@ -16,7 +15,6 @@ class RegisterHeroUseCase {
     required String rut,
     required String phone,
   }) async {
-    // Validaciones de negocio pueden ir aquí
     if (email.isEmpty || password.isEmpty) {
       throw Exception('Email y contraseña son requeridos');
     }

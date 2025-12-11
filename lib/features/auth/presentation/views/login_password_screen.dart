@@ -32,6 +32,107 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
     super.dispose();
   }
 
+  void _showErrorDialog(String errorMessage) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.lock_outline,
+                  color: Colors.red,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Contraseña Incorrecta',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: textGray900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                errorMessage,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: textGray700,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.orange.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: primaryOrange,
+                      size: 18,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Verifica que la contraseña sea correcta',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: primaryOrange,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Intentar de nuevo',
+                style: TextStyle(
+                  color: primaryOrange,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+          actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
+        );
+      },
+    );
+  }
+
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
@@ -48,33 +149,38 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
             );
 
         if (mounted) {
-          // Navegar a la pantalla de inicio según el rol
-          if (widget.userRole == 'hero') {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const hero.HeroHomeScreen(),
-              ),
-            );
+          // Verificar si la autenticación fue exitosa
+          final authState = ref.read(authNotifierProvider);
+          
+          if (authState.isAuthenticated && authState.errorMessage == null) {
+            // Navegar a la pantalla de inicio según el rol
+            if (widget.userRole == 'hero') {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const hero.HeroHomeScreen(),
+                ),
+              );
+            } else {
+              // TODO: Navegar a RiderHomeScreen cuando esté disponible
+              // Por ahora, mostrar un mensaje
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Login exitoso como Rider'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
           } else {
-            // TODO: Navegar a RiderHomeScreen cuando esté disponible
-            // Por ahora, mostrar un mensaje
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Login exitoso como Rider'),
-                duration: Duration(seconds: 2),
-              ),
-            );
+            // Si hay error, mostrar el diálogo mejorado
+            if (authState.errorMessage != null) {
+              _showErrorDialog(authState.errorMessage!);
+            }
           }
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: ${e.toString()}'),
-              duration: const Duration(milliseconds: 2000),
-            ),
-          );
+          _showErrorDialog('Error inesperado: ${e.toString()}');
         }
       } finally {
         if (mounted) {

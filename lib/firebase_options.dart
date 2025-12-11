@@ -41,49 +41,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBfwTg6BVsXQDwHy5epHCgNJ0y7aTtZikA',
-    appId: '1:907528221988:web:43acb0e6ed28ce4377efb1',
-    messagingSenderId: '907528221988',
-    projectId: 'prueba-base-de-datos-8c79f',
-    authDomain: 'prueba-base-de-datos-8c79f.firebaseapp.com',
-    storageBucket: 'prueba-base-de-datos-8c79f.firebasestorage.app',
-    measurementId: 'G-1VPRD7CZYC',
+    apiKey: 'AIzaSyCTZaV9wUqdZmL6Pn6iLsk_mMMvHMk4GE4',
+    appId: '1:9377083728:web:1ceb5d910fc7122815fc55',
+    messagingSenderId: '9377083728',
+    projectId: 'the-hero-67d93',
+    authDomain: 'the-hero-67d93.firebaseapp.com',
+    storageBucket: 'the-hero-67d93.firebasestorage.app',
+    measurementId: 'G-M9WJWKCDMG',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDYaxwfIEdef4hKPFI5eweoNQvKsQ19Hpw',
-    appId: '1:907528221988:android:cee785fc6075354c77efb1',
-    messagingSenderId: '907528221988',
-    projectId: 'prueba-base-de-datos-8c79f',
-    storageBucket: 'prueba-base-de-datos-8c79f.firebasestorage.app',
+    apiKey: 'AIzaSyCwofE_RVjEKc6LxbGFcZtVHEs8u0jJJog',
+    appId: '1:9377083728:android:38d812eb52ef486715fc55',
+    messagingSenderId: '9377083728',
+    projectId: 'the-hero-67d93',
+    storageBucket: 'the-hero-67d93.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCmysgb8_d4X_v8u9-JP3CpNgaEHwRccN4',
-    appId: '1:907528221988:ios:48b93d6ec585c17177efb1',
-    messagingSenderId: '907528221988',
-    projectId: 'prueba-base-de-datos-8c79f',
-    storageBucket: 'prueba-base-de-datos-8c79f.firebasestorage.app',
+    apiKey: 'AIzaSyC4ghHN05o2YOOaKtqDRDhfmUFRwiWLZ-M',
+    appId: '1:9377083728:ios:23bd0652c94bf5e015fc55',
+    messagingSenderId: '9377083728',
+    projectId: 'the-hero-67d93',
+    storageBucket: 'the-hero-67d93.firebasestorage.app',
     iosBundleId: 'com.example.theHero',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyCmysgb8_d4X_v8u9-JP3CpNgaEHwRccN4',
-    appId: '1:907528221988:ios:48b93d6ec585c17177efb1',
-    messagingSenderId: '907528221988',
-    projectId: 'prueba-base-de-datos-8c79f',
-    storageBucket: 'prueba-base-de-datos-8c79f.firebasestorage.app',
+    apiKey: 'AIzaSyC4ghHN05o2YOOaKtqDRDhfmUFRwiWLZ-M',
+    appId: '1:9377083728:ios:23bd0652c94bf5e015fc55',
+    messagingSenderId: '9377083728',
+    projectId: 'the-hero-67d93',
+    storageBucket: 'the-hero-67d93.firebasestorage.app',
     iosBundleId: 'com.example.theHero',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyBfwTg6BVsXQDwHy5epHCgNJ0y7aTtZikA',
-    appId: '1:907528221988:web:4e2867c0fa0ee52277efb1',
-    messagingSenderId: '907528221988',
-    projectId: 'prueba-base-de-datos-8c79f',
-    authDomain: 'prueba-base-de-datos-8c79f.firebaseapp.com',
-    storageBucket: 'prueba-base-de-datos-8c79f.firebasestorage.app',
-    measurementId: 'G-M7J6P8014D',
+    apiKey: 'AIzaSyCTZaV9wUqdZmL6Pn6iLsk_mMMvHMk4GE4',
+    appId: '1:9377083728:web:d5311a65a4bfe67715fc55',
+    messagingSenderId: '9377083728',
+    projectId: 'the-hero-67d93',
+    authDomain: 'the-hero-67d93.firebaseapp.com',
+    storageBucket: 'the-hero-67d93.firebasestorage.app',
+    measurementId: 'G-E0G6G2RN21',
   );
 
 }

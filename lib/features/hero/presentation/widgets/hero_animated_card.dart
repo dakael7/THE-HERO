@@ -9,6 +9,9 @@ class AnimatedHeroCard extends StatefulWidget {
   final String subtitle;
   final IconData icon;
   final VoidCallback onTap;
+  final Color? accentColor;
+  final Color? backgroundColor;
+  final Color? iconBackgroundColor;
 
   const AnimatedHeroCard({
     super.key,
@@ -16,6 +19,9 @@ class AnimatedHeroCard extends StatefulWidget {
     required this.subtitle,
     required this.icon,
     required this.onTap,
+    this.accentColor,
+    this.backgroundColor,
+    this.iconBackgroundColor,
   });
 
   @override
@@ -32,14 +38,17 @@ class _AnimatedHeroCardState extends State<AnimatedHeroCard>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 150),
-      lowerBound: 0.0,
-      upperBound: 0.1,
+      duration: const Duration(milliseconds: 140),
     );
     _scaleAnimation = Tween<double>(
       begin: 1.0,
-      end: 0.95,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
+      end: 0.97,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOut,
+      ),
+    );
   }
 
   @override
@@ -82,23 +91,25 @@ class _AnimatedHeroCardState extends State<AnimatedHeroCard>
       desktopSize: 16,
     );
     final iconSize = ResponsiveUtils.isMobile(context) ? 36.0 : 40.0;
+    final Color accentColor = widget.accentColor ?? primaryOrange;
+    final Color cardBackgroundColor =
+        widget.backgroundColor ?? backgroundWhite;
+    final Color iconBackgroundColor =
+        widget.iconBackgroundColor ?? accentColor.withOpacity(0.12);
 
     return Container(
-      padding: EdgeInsets.all(padding),
+      padding: EdgeInsets.symmetric(
+        horizontal: padding,
+        vertical: padding * 0.7,
+      ),
       decoration: BoxDecoration(
-        color: backgroundWhite,
+        color: cardBackgroundColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: textGray900.withOpacity(0.1),
-            blurRadius: 12,
+            color: textGray900.withOpacity(0.06),
+            blurRadius: 10,
             offset: const Offset(0, 4),
-            spreadRadius: 1,
-          ),
-          BoxShadow(
-            color: primaryOrange.withOpacity(0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -106,19 +117,23 @@ class _AnimatedHeroCardState extends State<AnimatedHeroCard>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: EdgeInsets.all(padding * 0.6),
+            padding: EdgeInsets.all(padding * 0.55),
             decoration: BoxDecoration(
-              color: primaryOrange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
+              color: iconBackgroundColor,
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(widget.icon, color: primaryOrange, size: iconSize),
+            child: Icon(
+              widget.icon,
+              color: accentColor,
+              size: iconSize,
+            ),
           ),
-          SizedBox(height: padding * 0.75),
+          SizedBox(height: padding * 0.6),
           Text(
             widget.title,
             style: TextStyle(
               fontSize: titleFontSize,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
               color: textGray900,
             ),
           ),
@@ -127,6 +142,7 @@ class _AnimatedHeroCardState extends State<AnimatedHeroCard>
             widget.subtitle,
             style: TextStyle(fontSize: subtitleFontSize, color: textGray600),
           ),
+          SizedBox(height: padding * 0.35),
         ],
       ),
     );

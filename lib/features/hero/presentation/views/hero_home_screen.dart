@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../widgets/hero_animated_card.dart';
 import '../widgets/hero_header.dart';
@@ -7,6 +8,8 @@ import '../widgets/hero_categories_section.dart';
 import '../widgets/hero_featured_products_section.dart';
 import '../widgets/hero_bottom_nav.dart';
 import '../widgets/hero_fab.dart';
+import '../viewmodels/hero_home_viewmodel.dart';
+import '../../../shared/profile/presentation/views/profile_screen.dart' as profile;
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -116,72 +119,93 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
       ),
     );
 
-    return Scaffold(
-      backgroundColor: backgroundGray50,
-      body: CustomScrollView(
-        slivers: [
-          // 1. Header colapsable
-          HeroHeader(),
+    return WillPopScope(
+      onWillPop: () async => false,
+      child: Scaffold(
+        backgroundColor: backgroundGray50,
+        resizeToAvoidBottomInset: false,
+        body: Consumer(
+          builder: (context, ref, _) {
+            final state = ref.watch(heroHomeViewModelProvider);
+            final selectedIndex = state.selectedNavIndex;
 
-          // 2. Cuerpo desplazable
-          SliverList(
-            delegate: SliverChildListDelegate([
-              const SizedBox(height: paddingNormal),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: paddingNormal),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    // --- SECCIÓN HÉROE / ENCUENTRA ---
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: AnimatedHeroCard(
-                            title: 'Sé un Héroe',
-                            subtitle: 'Dóna tus productos',
-                            icon: Icons.volunteer_activism_outlined,
-                            onTap: () {
-                              debugPrint(
-                                'Tap en Sé un Héroe: ¡Navegando a donación!',
-                              );
-                            },
-                          ),
+            return selectedIndex == 4
+                ? const profile.ProfileScreen()
+                : CustomScrollView(
+                slivers: [
+                  // 1. Header colapsable
+                  HeroHeader(),
+
+                  // 2. Cuerpo desplazable
+                  SliverList(
+                    delegate: SliverChildListDelegate([
+                      const SizedBox(height: paddingNormal),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: paddingNormal),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            // --- SECCIÓN HÉROE / ENCUENTRA ---
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: AnimatedHeroCard(
+                                    title: 'Sé un Héroe',
+                                    subtitle: 'Dóna tus productos',
+                                    icon: Icons.volunteer_activism_outlined,
+                                    accentColor: primaryOrange,
+                                    backgroundColor: backgroundWhite,
+                                    iconBackgroundColor:
+                                        primaryOrange.withOpacity(0.12),
+                                    onTap: () {
+                                      debugPrint(
+                                        'Tap en Sé un Héroe: ¡Navegando a donación!',
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: paddingNormal),
+                                Expanded(
+                                  child: AnimatedHeroCard(
+                                    title: 'Encuentra',
+                                    subtitle: 'Busca donaciones',
+                                    icon: Icons.search,
+                                    accentColor: categoryTextBlue,
+                                    backgroundColor: categoryBgBlue,
+                                    iconBackgroundColor:
+                                        categoryTextBlue.withOpacity(0.1),
+                                    onTap: () {
+                                      debugPrint(
+                                        'Tap en Encuentra: ¡Navegando a búsqueda!',
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: paddingNormal),
-                        Expanded(
-                          child: AnimatedHeroCard(
-                            title: 'Encuentra',
-                            subtitle: 'Busca donaciones',
-                            icon: Icons.search,
-                            onTap: () {
-                              debugPrint(
-                                'Tap en Encuentra: ¡Navegando a búsqueda!',
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+                      ),
 
-              // --- SECCIÓN CATEGORÍAS ---
-              HeroCategoriesSection(categories: _categories),
+                      // --- SECCIÓN CATEGORÍAS ---
+                      HeroCategoriesSection(categories: _categories),
 
-              // --- SECCIÓN PRODUCTOS DESTACADOS ---
-              HeroFeaturedProductsSection(products: _products),
+                      // --- SECCIÓN PRODUCTOS DESTACADOS ---
+                      HeroFeaturedProductsSection(products: _products),
 
-              const SizedBox(height: 100),
-            ]),
-          ),
-        ],
+                      const SizedBox(height: 100),
+                    ]),
+                  ),
+                ],
+              );
+          },
+        ),
+
+        // 3. Navegación Inferior y FAB
+        bottomNavigationBar: const HeroBottomNav(),
+        floatingActionButton: const HeroFAB(),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       ),
-
-      // 3. Navegación Inferior y FAB
-      bottomNavigationBar: const HeroBottomNav(),
-      floatingActionButton: const HeroFAB(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 }
