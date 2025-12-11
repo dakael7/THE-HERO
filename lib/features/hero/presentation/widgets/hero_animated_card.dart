@@ -4,7 +4,6 @@ import '../../../../core/utils/responsive_utils.dart';
 
 const double paddingNormal = 16.0;
 
-/// Widget de tarjeta animada para "Sé un Héroe" y "Encuentra"
 class AnimatedHeroCard extends StatefulWidget {
   final String title;
   final String subtitle;

@@ -4,7 +4,6 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
 
-/// Widget del navbar inferior con animaciones
 class HeroBottomNav extends ConsumerWidget {
   const HeroBottomNav({super.key});
 

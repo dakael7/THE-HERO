@@ -97,8 +97,8 @@ class HeroHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMobile = ResponsiveUtils.isMobile(context);
-    final expandedHeight = isMobile ? 220.0 : 240.0;
-    final collapsedHeight = isMobile ? 140.0 : 160.0;
+    final expandedHeight = isMobile ? 220.0 : 200.0;
+    final collapsedHeight = isMobile ? 140.0 : 130.0;
     
     return SliverPersistentHeader(
       pinned: true,
