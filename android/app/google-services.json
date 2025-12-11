@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "907528221988",
+    "project_id": "prueba-base-de-datos-8c79f",
+    "storage_bucket": "prueba-base-de-datos-8c79f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:907528221988:android:cee785fc6075354c77efb1",
+        "android_client_info": {
+          "package_name": "com.example.the_hero"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYaxwfIEdef4hKPFI5eweoNQvKsQ19Hpw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

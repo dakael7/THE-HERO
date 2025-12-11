@@ -1,0 +1,104 @@
+import '../../domain/repositories/auth_repository.dart';
+import '../../domain/entities/user.dart';
+import '../mappers/user_mapper.dart';
+import '../datasources/auth_remote_data_source.dart';
+import '../datasources/auth_local_data_source.dart';
+
+class AuthRepositoryImpl implements AuthRepository {
+  final AuthRemoteDataSource _remoteDataSource;
+  final AuthLocalDataSource _localDataSource;
+
+  AuthRepositoryImpl({
+    required AuthRemoteDataSource remoteDataSource,
+    required AuthLocalDataSource localDataSource,
+  }) : _remoteDataSource = remoteDataSource,
+       _localDataSource = localDataSource;
+
+  @override
+  Future<User> signInWithEmail(String email, String password) async {
+    final userModel = await _remoteDataSource.signInWithEmail(email, password);
+
+    await _localDataSource.saveUser(userModel);
+
+    return UserMapper.toEntity(userModel);
+  }
+
+  @override
+  Future<User> registerHero({
+    required String email,
+    required String password,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  }) async {
+    final userModel = await _remoteDataSource.registerHero(
+      email: email,
+      password: password,
+      firstName: firstName,
+      lastName: lastName,
+      rut: rut,
+      phone: phone,
+    );
+
+    await _localDataSource.saveUser(userModel);
+
+    return UserMapper.toEntity(userModel);
+  }
+
+  @override
+  Future<User> registerRider({
+    required String email,
+    required String password,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  }) async {
+    final userModel = await _remoteDataSource.registerRider(
+      email: email,
+      password: password,
+      firstName: firstName,
+      lastName: lastName,
+      rut: rut,
+      phone: phone,
+    );
+
+    await _localDataSource.saveUser(userModel);
+
+    return UserMapper.toEntity(userModel);
+  }
+
+  @override
+  Future<void> signOut() async {
+    await _remoteDataSource.signOut();
+
+    await _localDataSource.clearUser();
+  }
+
+  @override
+  Future<User?> getCurrentUser() async {
+    final remoteUser = await _remoteDataSource.getCurrentUser();
+    if (remoteUser != null) {
+      await _localDataSource.saveUser(remoteUser);
+      return UserMapper.toEntity(remoteUser);
+    }
+
+    final localUser = await _localDataSource.getCurrentUser();
+    if (localUser != null) {
+      return UserMapper.toEntity(localUser);
+    }
+
+    return null;
+  }
+
+  @override
+  Future<bool> isSignedIn() async {
+    return await _remoteDataSource.isSignedIn();
+  }
+
+  @override
+  Future<bool> checkEmailExists(String email) async {
+    return await _remoteDataSource.checkEmailExists(email);
+  }
+}
