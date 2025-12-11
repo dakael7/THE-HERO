@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
+import '../../../shared/notifications/presentation/providers/notifications_provider.dart';
 
 class HeroBottomNav extends ConsumerWidget {
   const HeroBottomNav({super.key});
@@ -11,10 +12,17 @@ class HeroBottomNav extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(heroHomeViewModelProvider);
     final viewModel = ref.read(heroHomeViewModelProvider.notifier);
+    final notificationsAsync = ref.watch(notificationsProvider);
     final isMobile = ResponsiveUtils.isMobile(context);
     final navHeight = isMobile ? 80.0 : 90.0;
     final padding = isMobile ? 12.0 : 16.0;
     final bottomPadding = isMobile ? 20.0 : 24.0;
+
+    // Calcular el contador de notificaciones no leídas
+    int unreadCount = 0;
+    notificationsAsync.whenData((notifications) {
+      unreadCount = notifications.where((n) => !n.read).length;
+    });
 
     return Padding(
       padding: EdgeInsets.only(left: padding, right: padding, bottom: bottomPadding),
@@ -72,7 +80,7 @@ class HeroBottomNav extends ConsumerWidget {
                     3,
                     state.selectedNavIndex,
                     () => viewModel.selectNavItem(3),
-                    badgeCount: 2,
+                    badgeCount: unreadCount > 0 ? unreadCount : null,
                   ),
                   _buildNavItem(
                     context,

@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../core/constants/app_colors.dart';
-import '../../../../../domain/entities/user.dart';
 import '../../../../auth/presentation/providers/auth_provider.dart';
 import '../../../../auth/presentation/views/login_page.dart';
 import '../providers/profile_provider.dart';
+import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
+import '../viewmodels/profile_viewmodel.dart';
+import '../widgets/profile_header.dart';
+import '../widgets/profile_stats_section.dart';
+import '../widgets/profile_menu_tile.dart';
+import '../widgets/personal_info_card.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -19,6 +24,12 @@ class ProfileScreen extends ConsumerWidget {
         backgroundColor: primaryYellow,
         foregroundColor: textGray900,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
+          },
+        ),
         title: const Text(
           'Mi Perfil',
           style: TextStyle(
@@ -51,14 +62,19 @@ class ProfileScreen extends ConsumerWidget {
               ),
             );
           }
+          final profileState = ref.watch(profileViewModelProvider);
           return SingleChildScrollView(
             child: Column(
               children: [
                 const SizedBox(height: 24),
-                _buildProfileHeader(user),
-                const SizedBox(height: 32),
-                _buildProfileSection(context, ref, user),
-                const SizedBox(height: 32),
+                ProfileHeader(user: user),
+                const SizedBox(height: 24),
+                ProfileStatsSection(
+                  publications: profileState.publications,
+                  favorites: profileState.favorites,
+                  purchases: profileState.purchases,
+                ),
+                const SizedBox(height: 24),
                 _buildSettingsSection(context, ref),
                 const SizedBox(height: 32),
                 _buildLogoutButton(context, ref),
@@ -83,7 +99,7 @@ class ProfileScreen extends ConsumerWidget {
                 const SizedBox(height: 32),
                 ElevatedButton(
                   onPressed: () {
-                    ref.read(profileProvider.notifier).loadUserProfile();
+                    ref.invalidate(profileProvider);
                   },
                   child: const Text('Reintentar'),
                 ),
@@ -95,237 +111,66 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildProfileHeader(User user) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: primaryOrange.withOpacity(0.2),
-              border: Border.all(
-                color: primaryOrange,
-                width: 2,
-              ),
-            ),
-            child: const Icon(
-              Icons.person,
-              size: 50,
-              color: primaryOrange,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '${user.firstName} ${user.lastName}',
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: textGray900,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            user.email,
-            style: const TextStyle(
-              fontSize: 14,
-              color: textGray600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: primaryOrange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              'Héroe Verificado',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: primaryOrange,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileSection(BuildContext context, WidgetRef ref, User user) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Información Personal',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: textGray900,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildProfileInfoCard('Nombre', '${user.firstName} ${user.lastName}'),
-          const SizedBox(height: 8),
-          _buildProfileInfoCard('Email', user.email),
-          const SizedBox(height: 8),
-          _buildProfileInfoCard('Teléfono', user.phone ?? 'No disponible'),
-          const SizedBox(height: 8),
-          _buildProfileInfoCard('RUT', user.rut ?? 'No disponible'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileInfoCard(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: backgroundWhite,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: borderGray100,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: textGray600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: textGray900,
-                ),
-              ),
-            ],
-          ),
-          Icon(
-            Icons.edit_outlined,
-            size: 18,
-            color: textGray600,
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildSettingsSection(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Configuración',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: textGray900,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildSettingsTile(
-            'Notificaciones',
-            'Gestiona tus preferencias de notificaciones',
-            Icons.notifications_outlined,
-            () {},
+          ProfileMenuTile(
+            icon: Icons.shopping_bag_outlined,
+            title: 'Mis productos',
+            trailingText: '0',
+            onTap: () {},
           ),
           const SizedBox(height: 8),
-          _buildSettingsTile(
-            'Privacidad y Seguridad',
-            'Controla tu privacidad y seguridad',
-            Icons.lock_outlined,
-            () {},
+          ProfileMenuTile(
+            icon: Icons.favorite_border,
+            title: 'Favoritos',
+            trailingText: '0',
+            onTap: () {},
           ),
           const SizedBox(height: 8),
-          _buildSettingsTile(
-            'Ayuda y Soporte',
-            'Contacta con nuestro equipo de soporte',
-            Icons.help_outline,
-            () {},
+          ProfileMenuTile(
+            icon: Icons.history,
+            title: 'Pedidos anteriores',
+            trailingText: '0',
+            onTap: () {},
+          ),
+          const SizedBox(height: 8),
+          ProfileMenuTile(
+            icon: Icons.credit_card,
+            title: 'Métodos de pago',
+            onTap: () {},
+          ),
+          const SizedBox(height: 8),
+          ProfileMenuTile(
+            icon: Icons.person_outline,
+            title: 'Datos personales',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PersonalDataScreen()),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          ProfileMenuTile(
+            icon: Icons.settings_outlined,
+            title: 'Configuración',
+            onTap: () {},
+          ),
+          const SizedBox(height: 8),
+          ProfileMenuTile(
+            icon: Icons.headset_mic_outlined,
+            title: 'Centro de ayuda',
+            onTap: () {},
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSettingsTile(
-    String title,
-    String subtitle,
-    IconData icon,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: backgroundWhite,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: borderGray100,
-            width: 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 24,
-              color: primaryOrange,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: textGray900,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: textGray600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: textGray600,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildLogoutButton(BuildContext context, WidgetRef ref) {
     return Padding(
@@ -391,6 +236,67 @@ class ProfileScreen extends ConsumerWidget {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+  }
+}
+
+class PersonalDataScreen extends ConsumerWidget {
+  const PersonalDataScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userAsyncValue = ref.watch(profileProvider);
+
+    return Scaffold(
+      backgroundColor: backgroundGray50,
+      appBar: AppBar(
+        backgroundColor: primaryYellow,
+        foregroundColor: textGray900,
+        elevation: 0,
+        title: const Text(
+          'Datos personales',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      body: userAsyncValue.when(
+        data: (user) {
+          if (user == null) {
+            return const Center(
+              child: Text('No hay datos de usuario'),
+            );
+          }
+
+          return SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PersonalInfoCard(label: 'Nombre', value: '${user.firstName} ${user.lastName}'),
+                  const SizedBox(height: 8),
+                  PersonalInfoCard(label: 'Email', value: user.email),
+                  const SizedBox(height: 8),
+                  PersonalInfoCard(label: 'Teléfono', value: user.phone ?? 'No disponible'),
+                  const SizedBox(height: 8),
+                  PersonalInfoCard(label: 'RUT', value: user.rut ?? 'No disponible'),
+                ],
+              ),
+            ),
+          );
+        },
+        loading: () {
+          return const Center(
+            child: CircularProgressIndicator(color: primaryOrange),
+          );
+        },
+        error: (error, stackTrace) {
+          return Center(
+            child: Text('Error: $error'),
+          );
+        },
+      ),
     );
   }
 }

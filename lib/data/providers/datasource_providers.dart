@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../datasources/auth_local_data_source.dart';
 import '../datasources/auth_remote_data_source.dart';
+import '../datasources/notification_remote_data_source.dart';
 import 'network_providers.dart';
 
 final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>((ref) {
@@ -15,4 +16,14 @@ final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>((ref) {
 
 final authLocalDataSourceProvider = Provider<AuthLocalDataSource>((ref) {
   return AuthLocalDataSourceImpl();
+});
+
+final notificationRemoteDataSourceProvider =
+    Provider<NotificationRemoteDataSource>((ref) {
+  final firebaseAuth = ref.read(firebaseAuthProvider);
+  final firestore = ref.read(firebaseFirestoreProvider);
+  return NotificationRemoteDataSourceImpl(
+    firebaseAuth: firebaseAuth,
+    firestore: firestore,
+  );
 });

@@ -10,6 +10,8 @@ import '../widgets/hero_bottom_nav.dart';
 import '../widgets/hero_fab.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
 import '../../../shared/profile/presentation/views/profile_screen.dart' as profile;
+import '../../../shared/notifications/presentation/views/notifications_screen.dart'
+    as notifications;
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -129,9 +131,15 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
             final state = ref.watch(heroHomeViewModelProvider);
             final selectedIndex = state.selectedNavIndex;
 
-            return selectedIndex == 4
-                ? const profile.ProfileScreen()
-                : CustomScrollView(
+            if (selectedIndex == 4) {
+              return const profile.ProfileScreen();
+            }
+
+            if (selectedIndex == 3) {
+              return const notifications.NotificationsScreen();
+            }
+
+            return CustomScrollView(
                 slivers: [
                   // 1. Header colapsable
                   HeroHeader(),
