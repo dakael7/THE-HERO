@@ -4,6 +4,15 @@ import '../models/user_model.dart';
 class UserMapper {
   /// Convierte UserModel (Data) a User (Domain)
   static User toEntity(UserModel model) {
+    DateTime? parsedDate;
+    if (model.createdAt != null && model.createdAt!.isNotEmpty) {
+      try {
+        parsedDate = DateTime.parse(model.createdAt!);
+      } catch (e) {
+        parsedDate = null;
+      }
+    }
+    
     return User(
       id: model.id,
       email: model.email,
@@ -12,9 +21,7 @@ class UserMapper {
       rut: model.rut,
       phone: model.phone,
       role: _stringToUserRole(model.role),
-      createdAt: model.createdAt != null
-          ? DateTime.parse(model.createdAt!)
-          : null,
+      createdAt: parsedDate,
     );
   }
 

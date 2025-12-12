@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import 'login_password_screen.dart';
 import 'registro_hero.dart';
 import 'registro_rider.dart';
+import '../../../hero/presentation/views/hero_home_screen.dart';
 
 class EmailVerificationScreen extends ConsumerStatefulWidget {
   final UserRole userRole;
@@ -307,7 +308,12 @@ class _EmailVerificationScreenState
                             await authNotifier.signInWithGoogleAndCreateUser(widget.userRole);
                             
                             if (mounted) {
-                              Navigator.pushReplacementNamed(context, '/home');
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const HeroHomeScreen(),
+                                ),
+                              );
                             }
                           } catch (e) {
                             if (mounted) {

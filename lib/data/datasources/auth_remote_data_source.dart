@@ -314,17 +314,19 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       if (userDoc.exists) {
         // Usuario ya existe: obtener sus datos actuales
-        final userData = userDoc.data()!;
-        return UserModel.fromJson({
-          'id': user.uid,
-          'email': userData['email'] ?? email,
-          'firstName': userData['firstName'],
-          'lastName': userData['lastName'],
-          'rut': userData['rut'],
-          'phone': userData['phone'],
-          'role': userData['role'] ?? role,
-          'createdAt': userData['createdAt'],
-        });
+        final userData = userDoc.data();
+        if (userData != null) {
+          return UserModel.fromJson({
+            'id': user.uid,
+            'email': userData['email'] ?? email,
+            'firstName': userData['firstName'],
+            'lastName': userData['lastName'],
+            'rut': userData['rut'],
+            'phone': userData['phone'],
+            'role': userData['role'] ?? role,
+            'createdAt': userData['createdAt'],
+          });
+        }
       }
 
       // Usuario nuevo: crear documento con datos mínimos

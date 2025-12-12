@@ -14,9 +14,13 @@ class HeroBottomNav extends ConsumerWidget {
     final viewModel = ref.read(heroHomeViewModelProvider.notifier);
     final notificationsAsync = ref.watch(notificationsProvider);
     final isMobile = ResponsiveUtils.isMobile(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    
     final navHeight = isMobile ? 80.0 : 90.0;
-    final padding = isMobile ? 12.0 : 16.0;
+    final padding = isMobile ? 8.0 : 16.0;
     final bottomPadding = isMobile ? 20.0 : 24.0;
+    final itemPadding = screenWidth < 360 ? 6.0 : 12.0;
+    final fontSize = screenWidth < 360 ? 8.0 : 10.0;
 
     // Calcular el contador de notificaciones no leídas
     int unreadCount = notificationsAsync.when(
@@ -64,6 +68,8 @@ class HeroBottomNav extends ConsumerWidget {
                     0,
                     state.selectedNavIndex,
                     () => viewModel.selectNavItem(0),
+                    itemPadding: itemPadding,
+                    fontSize: fontSize,
                   ),
                   _buildNavItem(
                     context,
@@ -72,6 +78,8 @@ class HeroBottomNav extends ConsumerWidget {
                     1,
                     state.selectedNavIndex,
                     () => viewModel.selectNavItem(1),
+                    itemPadding: itemPadding,
+                    fontSize: fontSize,
                   ),
                   const Spacer(flex: 2),
                   _buildNavItem(
@@ -82,6 +90,8 @@ class HeroBottomNav extends ConsumerWidget {
                     state.selectedNavIndex,
                     () => viewModel.selectNavItem(3),
                     badgeCount: unreadCount > 0 ? unreadCount : null,
+                    itemPadding: itemPadding,
+                    fontSize: fontSize,
                   ),
                   _buildNavItem(
                     context,
@@ -90,6 +100,8 @@ class HeroBottomNav extends ConsumerWidget {
                     4,
                     state.selectedNavIndex,
                     () => viewModel.selectNavItem(4),
+                    itemPadding: itemPadding,
+                    fontSize: fontSize,
                   ),
                 ],
               ),
@@ -108,6 +120,8 @@ class HeroBottomNav extends ConsumerWidget {
     int selectedIndex,
     VoidCallback onTap, {
     int? badgeCount,
+    required double itemPadding,
+    required double fontSize,
   }) {
     final bool isActive = selectedIndex == index;
     Color iconColor = isActive ? primaryOrange : textGray600;
@@ -132,7 +146,7 @@ class HeroBottomNav extends ConsumerWidget {
                     )
                   : null,
             ),
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+            padding: EdgeInsets.symmetric(vertical: 4, horizontal: itemPadding),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -180,7 +194,7 @@ class HeroBottomNav extends ConsumerWidget {
                   label,
                   style: TextStyle(
                     color: textColor,
-                    fontSize: 10,
+                    fontSize: fontSize,
                     fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                     letterSpacing: isActive ? 0.3 : 0,
                   ),

@@ -13,8 +13,13 @@ final profileProvider = FutureProvider<User?>((ref) async {
     return null;
   }
   
-  // Si está autenticado, cargar el perfil
-  final getUserProfileUseCase = ref.read(getUserProfileUseCaseProvider);
-  final user = await getUserProfileUseCase.execute();
-  return user;
+  try {
+    // Si está autenticado, cargar el perfil
+    final getUserProfileUseCase = ref.read(getUserProfileUseCaseProvider);
+    final user = await getUserProfileUseCase.execute();
+    return user;
+  } catch (e) {
+    print('Error al cargar perfil: $e');
+    return null;
+  }
 });
