@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod/riverpod.dart';
 
 class HeroHomeState {
   final int selectedNavIndex;
@@ -16,8 +17,11 @@ class HeroHomeState {
   }
 }
 
-class HeroHomeViewModel extends StateNotifier<HeroHomeState> {
-  HeroHomeViewModel() : super(const HeroHomeState());
+class HeroHomeViewModel extends Notifier<HeroHomeState> {
+  @override
+  HeroHomeState build() {
+    return const HeroHomeState();
+  }
 
   void selectNavItem(int index) {
     state = state.copyWith(selectedNavIndex: index);
@@ -29,6 +33,6 @@ class HeroHomeViewModel extends StateNotifier<HeroHomeState> {
 }
 
 final heroHomeViewModelProvider =
-    StateNotifierProvider<HeroHomeViewModel, HeroHomeState>(
-  (ref) => HeroHomeViewModel(),
+    NotifierProvider<HeroHomeViewModel, HeroHomeState>(
+  () => HeroHomeViewModel(),
 );

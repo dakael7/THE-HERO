@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod/riverpod.dart';
 
 class ProfileState {
   final int publications;
@@ -24,8 +25,11 @@ class ProfileState {
   }
 }
 
-class ProfileViewModel extends StateNotifier<ProfileState> {
-  ProfileViewModel() : super(const ProfileState());
+class ProfileViewModel extends Notifier<ProfileState> {
+  @override
+  ProfileState build() {
+    return const ProfileState();
+  }
 
   void updateStats({
     int? publications,
@@ -41,6 +45,6 @@ class ProfileViewModel extends StateNotifier<ProfileState> {
 }
 
 final profileViewModelProvider =
-    StateNotifierProvider<ProfileViewModel, ProfileState>(
-  (ref) => ProfileViewModel(),
+    NotifierProvider<ProfileViewModel, ProfileState>(
+  () => ProfileViewModel(),
 );

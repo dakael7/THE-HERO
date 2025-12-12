@@ -26,6 +26,10 @@ abstract class AuthRemoteDataSource {
   Future<UserModel?> getCurrentUser();
   Future<bool> isSignedIn();
   Future<bool> checkEmailExists(String email);
+  Future<UserModel> registerGoogleUser({
+    required String email,
+    required String role,
+  });
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
@@ -65,7 +69,11 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Datos del usuario no encontrados en Firestore');
       }
 
-      final userData = userDoc.data()!;
+      final userData = userDoc.data();
+      if (userData == null) {
+        throw Exception('Datos del usuario vacíos en Firestore');
+      }
+
       return UserModel.fromJson({
         'id': user.uid,
         'email': user.email ?? '',
@@ -247,12 +255,13 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       final user = _firebaseAuth.currentUser;
       if (user == null) return null;
 
-      // Obtener datos desde Firestore
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
       if (!userDoc.exists) return null;
 
-      final userData = userDoc.data()!;
+      final userData = userDoc.data();
+      if (userData == null) return null;
+
       return UserModel.fromJson({
         'id': user.uid,
         'email': user.email ?? '',
@@ -276,7 +285,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   @override
   Future<bool> checkEmailExists(String email) async {
     try {
-      // Buscar en Firestore si existe un usuario con este email
       final querySnapshot = await _firestore
           .collection('users')
           .where('email', isEqualTo: email.toLowerCase())
@@ -287,6 +295,64 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     } catch (e) {
       print('Error al verificar email: $e');
       return false;
+    }
+  }
+
+  @override
+  Future<UserModel> registerGoogleUser({
+    required String email,
+    required String role,
+  }) async {
+    try {
+      final user = _firebaseAuth.currentUser;
+      if (user == null) {
+        throw Exception('Usuario no autenticado en Firebase');
+      }
+
+      // Verificar si el usuario ya existe en Firestore
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+
+      if (userDoc.exists) {
+        // Usuario ya existe: obtener sus datos actuales
+        final userData = userDoc.data()!;
+        return UserModel.fromJson({
+          'id': user.uid,
+          'email': userData['email'] ?? email,
+          'firstName': userData['firstName'],
+          'lastName': userData['lastName'],
+          'rut': userData['rut'],
+          'phone': userData['phone'],
+          'role': userData['role'] ?? role,
+          'createdAt': userData['createdAt'],
+        });
+      }
+
+      // Usuario nuevo: crear documento con datos mínimos
+      final newUserData = {
+        'email': email.toLowerCase(),
+        'firstName': null,
+        'lastName': null,
+        'rut': null,
+        'phone': null,
+        'role': role,
+        'createdAt': DateTime.now().toIso8601String(),
+      };
+
+      await _firestore.collection('users').doc(user.uid).set(newUserData);
+
+      // Retornar UserModel
+      return UserModel.fromJson({
+        'id': user.uid,
+        'email': email,
+        'firstName': null,
+        'lastName': null,
+        'rut': null,
+        'phone': null,
+        'role': role,
+        'createdAt': newUserData['createdAt'],
+      });
+    } catch (e) {
+      throw Exception('Error al registrar usuario con Google: $e');
     }
   }
 

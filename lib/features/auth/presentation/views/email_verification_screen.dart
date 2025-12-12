@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/utils/responsive_utils.dart';
+import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
 import 'login_password_screen.dart';
 import 'registro_hero.dart';
 import 'registro_rider.dart';
-
-enum UserRole { hero, rider }
 
 class EmailVerificationScreen extends ConsumerStatefulWidget {
   final UserRole userRole;
@@ -303,8 +301,24 @@ class _EmailVerificationScreenState
                   isApple: false,
                   onTap: _isLoading
                       ? null
-                      : () {
-                          // Lógica futura de Google Sign In
+                      : () async {
+                          try {
+                            final authNotifier = ref.read(authNotifierProvider.notifier);
+                            await authNotifier.signInWithGoogleAndCreateUser(widget.userRole);
+                            
+                            if (mounted) {
+                              Navigator.pushReplacementNamed(context, '/home');
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error: ${e.toString()}'),
+                                  duration: const Duration(milliseconds: 2000),
+                                ),
+                              );
+                            }
+                          }
                         },
                 ),
                 const SizedBox(height: 15),

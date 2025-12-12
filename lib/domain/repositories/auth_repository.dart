@@ -35,4 +35,10 @@ abstract class AuthRepository {
 
   /// Verifica si un email existe en Firebase
   Future<bool> checkEmailExists(String email);
+
+  /// Registra un nuevo usuario con Google (datos mínimos)
+  Future<User> registerGoogleUser({
+    required String email,
+    required UserRole role,
+  });
 }

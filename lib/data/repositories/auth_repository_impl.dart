@@ -101,4 +101,20 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<bool> checkEmailExists(String email) async {
     return await _remoteDataSource.checkEmailExists(email);
   }
+
+  @override
+  Future<User> registerGoogleUser({
+    required String email,
+    required UserRole role,
+  }) async {
+    final roleString = role == UserRole.hero ? 'hero' : 'rider';
+    final userModel = await _remoteDataSource.registerGoogleUser(
+      email: email,
+      role: roleString,
+    );
+
+    await _localDataSource.saveUser(userModel);
+
+    return UserMapper.toEntity(userModel);
+  }
 }

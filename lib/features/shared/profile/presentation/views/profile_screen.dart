@@ -274,7 +274,7 @@ class PersonalDataScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  PersonalInfoCard(label: 'Nombre', value: '${user.firstName} ${user.lastName}'),
+                  PersonalInfoCard(label: 'Nombre', value: user.fullName),
                   const SizedBox(height: 8),
                   PersonalInfoCard(label: 'Email', value: user.email),
                   const SizedBox(height: 8),

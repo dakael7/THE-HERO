@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod/riverpod.dart';
 
+import '../../../../domain/entities/user.dart';
 import '../../domain/usecases/login_usecase.dart';
 import '../../domain/usecases/register_hero_usecase.dart';
 import '../../domain/usecases/register_rider_usecase.dart';
@@ -11,30 +13,54 @@ import '../../domain/providers/register_usecase_provider.dart';
 import '../../domain/providers/check_email_exists_usecase_provider.dart';
 import '../../domain/providers/get_current_user_usecase_provider.dart';
 import '../../domain/providers/sign_out_usecase_provider.dart';
+import '../../domain/providers/google_sign_in_usecase_provider.dart';
+import '../../domain/providers/register_google_user_usecase_provider.dart';
 import 'auth_state.dart';
 
-class AuthNotifier extends StateNotifier<AuthState> {
-  final LoginUseCase _loginUseCase;
-  final RegisterHeroUseCase _registerHeroUseCase;
-  final RegisterRiderUseCase _registerRiderUseCase;
-  final CheckEmailExistsUseCase _checkEmailExistsUseCase;
-  final GetCurrentUserUseCase _getCurrentUserUseCase;
-  final SignOutUseCase _signOutUseCase;
+class AuthNotifier extends Notifier<AuthState> {
+  late final LoginUseCase _loginUseCase;
+  late final RegisterHeroUseCase _registerHeroUseCase;
+  late final RegisterRiderUseCase _registerRiderUseCase;
+  late final CheckEmailExistsUseCase _checkEmailExistsUseCase;
+  late final GetCurrentUserUseCase _getCurrentUserUseCase;
+  late final SignOutUseCase _signOutUseCase;
 
-  AuthNotifier({
-    required LoginUseCase loginUseCase,
-    required RegisterHeroUseCase registerHeroUseCase,
-    required RegisterRiderUseCase registerRiderUseCase,
-    required CheckEmailExistsUseCase checkEmailExistsUseCase,
-    required GetCurrentUserUseCase getCurrentUserUseCase,
-    required SignOutUseCase signOutUseCase,
-  })  : _loginUseCase = loginUseCase,
-        _registerHeroUseCase = registerHeroUseCase,
-        _registerRiderUseCase = registerRiderUseCase,
-        _checkEmailExistsUseCase = checkEmailExistsUseCase,
-        _getCurrentUserUseCase = getCurrentUserUseCase,
-        _signOutUseCase = signOutUseCase,
-        super(AuthState.initial());
+  @override
+  AuthState build() {
+    _loginUseCase = ref.read(loginUseCaseProvider);
+    _registerHeroUseCase = ref.read(registerHeroUseCaseProvider);
+    _registerRiderUseCase = ref.read(registerRiderUseCaseProvider);
+    _checkEmailExistsUseCase = ref.read(checkEmailExistsUseCaseProvider);
+    _getCurrentUserUseCase = ref.read(getCurrentUserUseCaseProvider);
+    _signOutUseCase = ref.read(signOutUseCaseProvider);
+    return AuthState.initial();
+  }
+
+  Future<void> signInWithGoogleAndCreateUser(UserRole role) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final googleSignInUseCase = ref.read(googleSignInUseCaseProvider);
+      final userCredential = await googleSignInUseCase.execute();
+      final email = userCredential.user?.email ?? '';
+
+      final registerGoogleUserUseCase =
+          ref.read(registerGoogleUserUseCaseProvider);
+      await registerGoogleUserUseCase.execute(email: email, role: role);
+
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        errorMessage: null,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: false,
+        errorMessage: e.toString(),
+      );
+      rethrow;
+    }
+  }
 
   Future<void> loadSavedSession() async {
     try {
@@ -160,23 +186,37 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
     }
   }
+
+  Future<bool> signInWithGoogle() async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      // Obtener el usecase directamente desde ref
+      final googleSignInUseCase = ref.read(googleSignInUseCaseProvider);
+      final userCredential = await googleSignInUseCase.execute();
+      final email = userCredential.user?.email ?? '';
+      
+      // Verificar si la cuenta existe
+      final accountExists = await checkEmailExists(email);
+      
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        errorMessage: null,
+      );
+      
+      // Retorna true si es un usuario nuevo (no existe), false si ya existe
+      return !accountExists;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: false,
+        errorMessage: e.toString(),
+      );
+      rethrow;
+    }
+  }
 }
 
-final authNotifierProvider =
-    StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  final loginUseCase = ref.read(loginUseCaseProvider);
-  final registerHeroUseCase = ref.read(registerHeroUseCaseProvider);
-  final registerRiderUseCase = ref.read(registerRiderUseCaseProvider);
-  final checkEmailExistsUseCase = ref.read(checkEmailExistsUseCaseProvider);
-  final getCurrentUserUseCase = ref.read(getCurrentUserUseCaseProvider);
-  final signOutUseCase = ref.read(signOutUseCaseProvider);
-
-  return AuthNotifier(
-    loginUseCase: loginUseCase,
-    registerHeroUseCase: registerHeroUseCase,
-    registerRiderUseCase: registerRiderUseCase,
-    checkEmailExistsUseCase: checkEmailExistsUseCase,
-    getCurrentUserUseCase: getCurrentUserUseCase,
-    signOutUseCase: signOutUseCase,
-  );
+final authNotifierProvider = NotifierProvider<AuthNotifier, AuthState>(() {
+  return AuthNotifier();
 });

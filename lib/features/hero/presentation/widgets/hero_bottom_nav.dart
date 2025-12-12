@@ -19,10 +19,11 @@ class HeroBottomNav extends ConsumerWidget {
     final bottomPadding = isMobile ? 20.0 : 24.0;
 
     // Calcular el contador de notificaciones no leídas
-    int unreadCount = 0;
-    notificationsAsync.whenData((notifications) {
-      unreadCount = notifications.where((n) => !n.read).length;
-    });
+    int unreadCount = notificationsAsync.when(
+      data: (notifications) => notifications.where((n) => !n.read).length,
+      loading: () => 0,
+      error: (_, __) => 0,
+    );
 
     return Padding(
       padding: EdgeInsets.only(left: padding, right: padding, bottom: bottomPadding),

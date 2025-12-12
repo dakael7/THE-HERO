@@ -1,9 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod/riverpod.dart';
 
 import 'cart_item.dart';
 
-class CartNotifier extends StateNotifier<List<CartItem>> {
-  CartNotifier() : super(const []);
+class CartNotifier extends Notifier<List<CartItem>> {
+  @override
+  List<CartItem> build() {
+    return const [];
+  }
 
   void addItem({required String name, required String condition}) {
     final index = state.indexWhere(
@@ -56,6 +60,6 @@ class CartNotifier extends StateNotifier<List<CartItem>> {
 }
 
 final cartProvider =
-    StateNotifierProvider<CartNotifier, List<CartItem>>((ref) {
+    NotifierProvider<CartNotifier, List<CartItem>>(() {
   return CartNotifier();
 });

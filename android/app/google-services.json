@@ -12,7 +12,20 @@
           "package_name": "com.example.the_hero"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "9377083728-21gm8rg717ncn9vbpn6k0jcm2c5n33lg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.the_hero",
+            "certificate_hash": "98fe7f057e471debf1f84e334d6f8083e01f8845"
+          }
+        },
+        {
+          "client_id": "9377083728-s8ce59lfjccedurupmu5c1ui3mef2em0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCwofE_RVjEKc6LxbGFcZtVHEs8u0jJJog"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "9377083728-s8ce59lfjccedurupmu5c1ui3mef2em0.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "9377083728-o132r2nbgjgkjsmpk9mk7dsjjt5uu578.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.theHero"
+              }
+            }
+          ]
         }
       }
     }
