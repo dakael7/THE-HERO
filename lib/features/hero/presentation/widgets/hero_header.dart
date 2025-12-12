@@ -146,7 +146,7 @@ class HeroHeader extends StatelessWidget {
             ],
           ),
           child: const Icon(
-            Icons.notifications_none_outlined,
+            Icons.chat_outlined,
             color: primaryOrange,
             size: 26,
           ),
