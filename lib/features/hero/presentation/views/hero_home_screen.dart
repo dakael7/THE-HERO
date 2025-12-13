@@ -28,7 +28,8 @@ class HeroHomeScreen extends StatefulWidget {
 class _HeroHomeScreenState extends State<HeroHomeScreen> {
   bool _isSearchExpanded = false;
 
-  final List<Map<String, dynamic>> _categories = [
+  // Optimización: Listas estáticas como const para evitar recreación
+  static const List<Map<String, dynamic>> _categories = [
     {
       'label': 'Electrónicos',
       'icon': Icons.phone_android,
@@ -75,30 +76,30 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
       'label': 'Accesorios para Mascotas',
       'icon': Icons.pets,
       'iconColor': categoryTextBlue,
-      'bgColor': categoryBgBlue.withOpacity(0.5),
+      'bgColor': categoryBgBlue,
     },
     {
       'label': 'Muebles Grandes',
       'icon': Icons.weekend,
       'iconColor': categoryTextGreen,
-      'bgColor': categoryBgGreen.withOpacity(0.5),
+      'bgColor': categoryBgGreen,
     },
     {
       'label': 'Instrumentos Musicales',
       'icon': Icons.music_note,
       'iconColor': categoryTextPink,
-      'bgColor': categoryBgPink.withOpacity(0.5),
+      'bgColor': categoryBgPink,
     },
     {
       'label': 'Juguetes',
       'icon': Icons.toys,
       'iconColor': primaryOrange,
-      'bgColor': primaryOrange.withOpacity(0.2),
+      'bgColor': primaryOrange,
     },
   ];
 
-  // Lista de productos destacados
-  final List<Map<String, dynamic>> _products = [
+  // Lista de productos destacados como const
+  static const List<Map<String, dynamic>> _products = [
     {
       'name': 'iPhone 13 Pro',
       'condition': 'Excelente estado',
@@ -162,15 +163,7 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
 
                 // 2. Contenido condicional
                 if (_isSearchExpanded)
-                  SliverFillRemaining(
-                    child: Consumer(
-                      builder: (context, ref, _) {
-                        return HeroSearchContent(
-                          searchController: TextEditingController(),
-                        );
-                      },
-                    ),
-                  )
+                  const SliverFillRemaining(child: HeroSearchContent())
                 else
                   // Cuerpo desplazable normal
                   SliverList(
@@ -184,98 +177,100 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             // --- SECCIÓN PUBLICAR PRODUCTOS ---
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    primaryOrange,
-                                    primaryOrange.withOpacity(0.8),
+                            RepaintBoundary(
+                              child: Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      primaryOrange,
+                                      primaryOrange.withOpacity(0.8),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: primaryOrange.withOpacity(0.3),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
                                   ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
                                 ),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: primaryOrange.withOpacity(0.3),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          '¿Tienes algo para vender?',
-                                          style: TextStyle(
-                                            color: backgroundWhite,
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Publica tus productos y vende fácilmente',
-                                          style: TextStyle(
-                                            color: backgroundWhite.withOpacity(
-                                              0.9,
-                                            ),
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 16),
-                                        ElevatedButton.icon(
-                                          onPressed: () {
-                                            debugPrint(
-                                              'Navegando a publicar producto',
-                                            );
-                                          },
-                                          icon: const Icon(
-                                            Icons.add_circle_outline,
-                                            color: primaryOrange,
-                                          ),
-                                          label: const Text(
-                                            'Publicar ahora',
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            '¿Tienes algo para vender?',
                                             style: TextStyle(
+                                              color: backgroundWhite,
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Publica tus productos y vende fácilmente',
+                                            style: TextStyle(
+                                              color: backgroundWhite
+                                                  .withOpacity(0.9),
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          ElevatedButton.icon(
+                                            onPressed: () {
+                                              debugPrint(
+                                                'Navegando a publicar producto',
+                                              );
+                                            },
+                                            icon: const Icon(
+                                              Icons.add_circle_outline,
                                               color: primaryOrange,
-                                              fontWeight: FontWeight.w600,
+                                            ),
+                                            label: const Text(
+                                              'Publicar ahora',
+                                              style: TextStyle(
+                                                color: primaryOrange,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: backgroundWhite,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 20,
+                                                    vertical: 12,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
                                             ),
                                           ),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: backgroundWhite,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 20,
-                                              vertical: 12,
-                                            ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: backgroundWhite.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(16),
+                                    const SizedBox(width: 16),
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: backgroundWhite.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: const Icon(
+                                        Icons.sell,
+                                        size: 48,
+                                        color: backgroundWhite,
+                                      ),
                                     ),
-                                    child: const Icon(
-                                      Icons.sell,
-                                      size: 48,
-                                      color: backgroundWhite,
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                             const SizedBox(height: paddingNormal),

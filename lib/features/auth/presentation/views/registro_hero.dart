@@ -48,9 +48,10 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
     _emailController = TextEditingController(text: widget.email ?? '');
 
+    // Optimización: Animación instantánea (0ms) para eliminar lag en primera carga
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: Duration.zero, // Animación deshabilitada
     );
 
     _offsetAnimation = Tween<Offset>(
@@ -142,29 +143,24 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     final authState = ref.watch(authNotifierProvider);
 
     // Escuchar cambios en authNotifierProvider dentro del build
-    ref.listen(
-      authNotifierProvider,
-      (previous, next) {
-        if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(next.errorMessage!),
-              duration: const Duration(milliseconds: 2000),
-            ),
-          );
-        }
+    ref.listen(authNotifierProvider, (previous, next) {
+      if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.errorMessage!),
+            duration: const Duration(milliseconds: 2000),
+          ),
+        );
+      }
 
-        final wasAuthenticated = previous?.isAuthenticated ?? false;
-        if (!wasAuthenticated && next.isAuthenticated) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const HeroHomeScreen(),
-            ),
-          );
-        }
-      },
-    );
+      final wasAuthenticated = previous?.isAuthenticated ?? false;
+      if (!wasAuthenticated && next.isAuthenticated) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HeroHomeScreen()),
+        );
+      }
+    });
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -346,9 +342,9 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                 onPressed: authState.isLoading
                                     ? null
                                     : () {
-                                        if (_formKey.currentState!
-                                            .validate()) {
-                                          final email = _emailController.text.trim();
+                                        if (_formKey.currentState!.validate()) {
+                                          final email = _emailController.text
+                                              .trim();
                                           if (email.isEmpty) {
                                             ScaffoldMessenger.of(
                                               buttonContext,
@@ -367,17 +363,16 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                               )
                                               .registerHero(
                                                 email: email,
-                                                password:
-                                                    _passwordController.text
-                                                        .trim(),
-                                                firstName:
-                                                    _firstNameController.text
-                                                        .trim(),
-                                                lastName:
-                                                    _lastNameController.text
-                                                        .trim(),
-                                                rut: _rutController.text
+                                                password: _passwordController
+                                                    .text
                                                     .trim(),
+                                                firstName: _firstNameController
+                                                    .text
+                                                    .trim(),
+                                                lastName: _lastNameController
+                                                    .text
+                                                    .trim(),
+                                                rut: _rutController.text.trim(),
                                                 phone: _phoneController.text
                                                     .trim(),
                                               );

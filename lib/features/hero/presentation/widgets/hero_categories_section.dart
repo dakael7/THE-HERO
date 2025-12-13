@@ -9,10 +9,7 @@ const double paddingLarge = 24.0;
 class HeroCategoriesSection extends StatelessWidget {
   final List<Map<String, dynamic>> categories;
 
-  const HeroCategoriesSection({
-    super.key,
-    required this.categories,
-  });
+  const HeroCategoriesSection({super.key, required this.categories});
 
   @override
   Widget build(BuildContext context) {
@@ -51,23 +48,28 @@ class HeroCategoriesSection extends StatelessWidget {
             final isMobile = ResponsiveUtils.isMobile(context);
             final categoryHeight = isMobile ? 140.0 : 160.0;
             final categoryWidth = isMobile ? 100.0 : 120.0;
-            
+
+            // Optimización: itemExtent mejora el rendimiento del scroll
             return SizedBox(
               height: categoryHeight,
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: paddingLarge),
                 scrollDirection: Axis.horizontal,
                 itemCount: categories.length,
+                itemExtent: categoryWidth + 16, // width + padding
                 itemBuilder: (context, index) {
                   final category = categories[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 16),
-                    child: _buildCategoryItem(
-                      label: category['label'],
-                      icon: category['icon'],
-                      iconColor: category['iconColor'],
-                      bgColor: category['bgColor'],
-                      width: categoryWidth,
+                  // Optimización: RepaintBoundary para cada item
+                  return RepaintBoundary(
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 16),
+                      child: _buildCategoryItem(
+                        label: category['label'],
+                        icon: category['icon'],
+                        iconColor: category['iconColor'],
+                        bgColor: category['bgColor'],
+                        width: categoryWidth,
+                      ),
                     ),
                   );
                 },

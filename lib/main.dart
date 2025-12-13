@@ -9,9 +9,39 @@ void main() async {
 
   await FirebaseConfig.initialize();
 
-  runApp(
-    const AppProviderScope(
-      child: App(),
-    ),
-  );
+  runApp(const AppProviderScope(child: App()));
+}
+
+// Precarga de imágenes para mejor rendimiento
+class _ImagePreloader extends StatefulWidget {
+  final Widget child;
+
+  const _ImagePreloader({required this.child});
+
+  @override
+  State<_ImagePreloader> createState() => _ImagePreloaderState();
+}
+
+class _ImagePreloaderState extends State<_ImagePreloader> {
+  bool _isLoaded = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isLoaded) {
+      _preloadImages();
+    }
+  }
+
+  Future<void> _preloadImages() async {
+    await precacheImage(const AssetImage('assets/logo_1.png'), context);
+    if (mounted) {
+      setState(() => _isLoaded = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
+  }
 }

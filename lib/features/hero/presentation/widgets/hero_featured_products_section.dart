@@ -8,10 +8,7 @@ const double paddingLarge = 24.0;
 class HeroFeaturedProductsSection extends StatelessWidget {
   final List<Map<String, dynamic>> products;
 
-  const HeroFeaturedProductsSection({
-    super.key,
-    required this.products,
-  });
+  const HeroFeaturedProductsSection({super.key, required this.products});
 
   @override
   Widget build(BuildContext context) {
@@ -78,17 +75,26 @@ class HeroFeaturedProductsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: paddingLarge),
-        ...products.map((product) {
+        // Optimización: RepaintBoundary para cada producto
+        ...products.asMap().entries.map((entry) {
+          final index = entry.key;
+          final product = entry.value;
           final price = (product['price'] as double?) ?? 45990.0;
           final weight = (product['weight'] as double?) ?? 0.5;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: paddingLarge, vertical: paddingNormal),
-            child: ProductCard(
-              name: product['name'],
-              condition: product['condition'],
-              colorCondition: product['colorCondition'],
-              price: price,
-              weight: weight,
+          return RepaintBoundary(
+            key: ValueKey('product_$index'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: paddingLarge,
+                vertical: paddingNormal,
+              ),
+              child: ProductCard(
+                name: product['name'],
+                condition: product['condition'],
+                colorCondition: product['colorCondition'],
+                price: price,
+                weight: weight,
+              ),
             ),
           );
         }).toList(),

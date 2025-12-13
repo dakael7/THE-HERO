@@ -72,9 +72,8 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
             top: statusBarHeight + paddingNormal - 8 * t,
             left: paddingLarge,
             right: paddingLarge,
-            child: AnimatedOpacity(
+            child: Opacity(
               opacity: isSearchExpanded ? 0.0 : (1.0 - t),
-              duration: const Duration(milliseconds: 300),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [buildLogoSection(), buildNotificationIcon()],
@@ -406,9 +405,9 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
 }
 
 class HeroSearchContent extends ConsumerWidget {
-  final TextEditingController searchController;
+  final TextEditingController? searchController;
 
-  const HeroSearchContent({super.key, required this.searchController});
+  const HeroSearchContent({super.key, this.searchController});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

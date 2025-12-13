@@ -11,10 +11,7 @@ import '../../../hero/presentation/views/hero_home_screen.dart';
 class EmailVerificationScreen extends ConsumerStatefulWidget {
   final UserRole userRole;
 
-  const EmailVerificationScreen({
-    super.key,
-    required this.userRole,
-  });
+  const EmailVerificationScreen({super.key, required this.userRole});
 
   @override
   ConsumerState<EmailVerificationScreen> createState() =>
@@ -43,8 +40,9 @@ class _EmailVerificationScreenState
         final email = _emailController.text.trim();
 
         // Verificar si la cuenta existe usando el AuthNotifier de Riverpod
-        final accountExists =
-            await ref.read(authNotifierProvider.notifier).checkEmailExists(email);
+        final accountExists = await ref
+            .read(authNotifierProvider.notifier)
+            .checkEmailExists(email);
 
         if (mounted) {
           if (accountExists) {
@@ -64,18 +62,14 @@ class _EmailVerificationScreenState
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => RegisterHeroScreen(
-                    email: email,
-                  ),
+                  builder: (context) => RegisterHeroScreen(email: email),
                 ),
               );
             } else {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => RegisterRiderScreen(
-                    email: email,
-                  ),
+                  builder: (context) => RegisterRiderScreen(email: email),
                 ),
               );
             }
@@ -105,11 +99,30 @@ class _EmailVerificationScreenState
   }
 
   String _getRoleDescription() {
-    if (widget.userRole == UserRole.hero) {
-      return 'Introduce tu correo electrónico para continuar';
-    } else {
-      return 'Introduce tu correo electrónico para continuar';
-    }
+    return 'Introduce tu correo electrónico para continuar';
+  }
+
+  // Optimización: InputDecoration cacheada
+  InputDecoration _getEmailInputDecoration() {
+    return InputDecoration(
+      hintText: 'email@domain.com',
+      hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.grey, width: 1.0),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade300, width: 1.0),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: primaryOrange, width: 2),
+      ),
+    );
   }
 
   @override
@@ -183,37 +196,7 @@ class _EmailVerificationScreenState
                     fontSize: 16,
                     fontWeight: FontWeight.normal,
                   ),
-                  decoration: InputDecoration(
-                    hintText: 'email@domain.com',
-                    hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                      horizontal: 20,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.grey,
-                        width: 1.0,
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade300,
-                        width: 1.0,
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: primaryOrange,
-                        width: 2,
-                      ),
-                    ),
-                  ),
+                  decoration: _getEmailInputDecoration(),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Por favor ingresa un correo';
@@ -233,24 +216,13 @@ class _EmailVerificationScreenState
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _submitForm,
-                    style: ButtonStyle(
-                      backgroundColor: MaterialStateProperty.resolveWith<Color>(
-                        (Set<MaterialState> states) {
-                          if (states.contains(MaterialState.pressed)) {
-                            return const Color(0xFFE67300);
-                          }
-                          return primaryOrange;
-                        },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryOrange,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      padding: MaterialStateProperty.all(
-                        const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      shape: MaterialStateProperty.all(
-                        RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      elevation: MaterialStateProperty.all(2.0),
+                      elevation: 2.0,
                     ),
                     child: _isLoading
                         ? const SizedBox(
@@ -279,15 +251,10 @@ class _EmailVerificationScreenState
                 // 5. SEPARADOR "O"
                 Row(
                   children: [
-                    Expanded(
-                      child: Divider(color: Colors.grey.shade300),
-                    ),
+                    Expanded(child: Divider(color: Colors.grey.shade300)),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        'o',
-                        style: TextStyle(color: textGray600),
-                      ),
+                      child: Text('o', style: TextStyle(color: textGray600)),
                     ),
                     Expanded(child: Divider(color: Colors.grey.shade300)),
                   ],
@@ -304,9 +271,13 @@ class _EmailVerificationScreenState
                       ? null
                       : () async {
                           try {
-                            final authNotifier = ref.read(authNotifierProvider.notifier);
-                            await authNotifier.signInWithGoogleAndCreateUser(widget.userRole);
-                            
+                            final authNotifier = ref.read(
+                              authNotifierProvider.notifier,
+                            );
+                            await authNotifier.signInWithGoogleAndCreateUser(
+                              widget.userRole,
+                            );
+
                             if (mounted) {
                               Navigator.pushReplacement(
                                 context,
@@ -362,12 +333,15 @@ class _EmailVerificationScreenState
   }
 
   Widget _buildLogoSection() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Image.asset('assets/logo_1.png', height: 80, fit: BoxFit.contain),
-      ],
+    // Optimización: RepaintBoundary para logo
+    return RepaintBoundary(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Image.asset('assets/logo_1.png', height: 80, fit: BoxFit.contain),
+        ],
+      ),
     );
   }
 
@@ -377,29 +351,32 @@ class _EmailVerificationScreenState
     required VoidCallback? onTap,
     required bool isApple,
   }) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        icon: Icon(
-          icon,
-          color: isApple ? Colors.black : Colors.blue.shade700,
-          size: 28,
-        ),
-        label: Text(
-          label,
-          style: const TextStyle(
-            color: textGray900,
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
+    // Optimización: RepaintBoundary para botones sociales
+    return RepaintBoundary(
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: onTap,
+          icon: Icon(
+            icon,
+            color: isApple ? Colors.black : Colors.blue.shade700,
+            size: 28,
           ),
-        ),
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Colors.blue.shade50.withOpacity(0.5),
-          side: BorderSide.none,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+          label: Text(
+            label,
+            style: const TextStyle(
+              color: textGray900,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          style: OutlinedButton.styleFrom(
+            backgroundColor: Colors.blue.shade50.withOpacity(0.5),
+            side: BorderSide.none,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         ),
       ),
