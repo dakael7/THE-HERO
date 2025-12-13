@@ -64,100 +64,29 @@ class HeroFAB extends ConsumerWidget {
                   Positioned(
                     right: -6,
                     top: -6,
-                    child: _AnimatedBadge(itemCount: itemCount),
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: backgroundWhite,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        '$itemCount',
+                        style: const TextStyle(
+                          color: primaryOrange,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AnimatedBadge extends StatefulWidget {
-  final int itemCount;
-
-  const _AnimatedBadge({required this.itemCount});
-
-  @override
-  State<_AnimatedBadge> createState() => _AnimatedBadgeState();
-}
-
-class _AnimatedBadgeState extends State<_AnimatedBadge>
-    with TickerProviderStateMixin {
-  late AnimationController _scaleController;
-  late AnimationController _pulseController;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _pulseAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _scaleController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-    _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
-
-    _scaleAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
-      CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
-    );
-
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-
-    _playAnimation();
-  }
-
-  void _playAnimation() {
-    _scaleController.forward(from: 0.0);
-    _pulseController.forward(from: 0.0);
-  }
-
-  @override
-  void didUpdateWidget(_AnimatedBadge oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.itemCount != oldWidget.itemCount) {
-      _playAnimation();
-    }
-  }
-
-  @override
-  void dispose() {
-    _scaleController.dispose();
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: ScaleTransition(
-        scale: _pulseAnimation,
-        child: Container(
-          padding: const EdgeInsets.all(3),
-          decoration: const BoxDecoration(
-            color: backgroundWhite,
-            shape: BoxShape.circle,
-          ),
-          constraints: const BoxConstraints(
-            minWidth: 16,
-            minHeight: 16,
-          ),
-          child: Text(
-            '${widget.itemCount}',
-            style: const TextStyle(
-              color: primaryOrange,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-            ),
-            textAlign: TextAlign.center,
           ),
         ),
       ),

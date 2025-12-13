@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import 'cart_provider.dart';
 import 'cart_item.dart';
+import 'cart_summary_provider.dart';
 
 class HeroCartScreen extends ConsumerWidget {
   const HeroCartScreen({super.key});
@@ -11,6 +12,7 @@ class HeroCartScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cartItems = ref.watch(cartProvider);
+    final summary = ref.watch(cartSummaryProvider);
     final totalItems = cartItems.fold<int>(
       0,
       (sum, item) => sum + item.quantity,
@@ -85,13 +87,13 @@ class HeroCartScreen extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      _buildSummaryRow('Subtotal (Donación):', '\$0', fontSize: 13),
+                      _buildSummaryRow('Subtotal (Donación):', '\$${summary.subtotal.toStringAsFixed(0)}', fontSize: 13),
                       const SizedBox(height: 10),
-                      _buildSummaryRow('Envío (Bicicleta):', '\$1.500', fontSize: 13),
+                      _buildSummaryRow('Envío (Bicicleta):', '\$${summary.shippingCost.toStringAsFixed(0)}', fontSize: 13),
                       const SizedBox(height: 10),
-                      _buildSummaryRow('Comisión de servicio:', '\$2.000', fontSize: 13),
+                      _buildSummaryRow('Comisión de servicio:', '\$${summary.serviceFee.toStringAsFixed(0)}', fontSize: 13),
                       const SizedBox(height: 10),
-                      _buildSummaryRow('Impuestos (IVA 19%):', '\$665', fontSize: 13),
+                      _buildSummaryRow('Impuestos (IVA 19%):', '\$${summary.tax.toStringAsFixed(0)}', fontSize: 13),
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Container(
@@ -101,13 +103,13 @@ class HeroCartScreen extends ConsumerWidget {
                       ),
                       _buildSummaryRow(
                         'Total:',
-                        '\$4.165',
+                        '\$${summary.total.toStringAsFixed(0)}',
                         isBold: true,
                         fontSize: 17,
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        '* Peso total: 0.20 kg',
+                        '* Peso total: ${summary.totalWeight.toStringAsFixed(2)} kg',
                         style: TextStyle(
                           fontSize: 11,
                           color: textGray600,
@@ -290,9 +292,12 @@ class _CartItemTile extends ConsumerWidget {
               icon: const Icon(Icons.add_circle_outline, size: 24),
               color: primaryOrange,
               onPressed: () {
-                ref
-                    .read(cartProvider.notifier)
-                    .addItem(name: item.name, condition: item.condition);
+                ref.read(cartProvider.notifier).addItem(
+                  name: item.name,
+                  condition: item.condition,
+                  price: item.price,
+                  weight: item.weight,
+                );
               },
             ),
             IconButton(

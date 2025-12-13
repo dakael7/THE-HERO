@@ -90,47 +90,34 @@ class HeroCategoriesSection extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () {},
-        splashColor: iconColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
+        splashColor: primaryOrange.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(100),
         child: SizedBox(
           width: width,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  height: 64,
-                  width: 64,
+                  height: 80,
+                  width: 80,
                   decoration: BoxDecoration(
-                    color: bgColor,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: iconColor.withOpacity(0.2),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                        spreadRadius: 2,
-                      ),
-                      BoxShadow(
-                        color: iconColor.withOpacity(0.08),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                    color: primaryOrange.withOpacity(0.12),
+                    shape: BoxShape.circle,
                   ),
-                  child: Icon(icon, color: iconColor, size: 30),
+                  child: Icon(icon, color: primaryOrange, size: 36),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 10),
                 Expanded(
                   child: Text(
                     label,
                     style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                       color: textGray900,
-                      height: 1.2,
+                      height: 1.3,
                     ),
                     textAlign: TextAlign.center,
                     maxLines: 2,

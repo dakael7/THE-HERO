@@ -79,12 +79,16 @@ class HeroFeaturedProductsSection extends StatelessWidget {
         ),
         const SizedBox(height: paddingLarge),
         ...products.map((product) {
+          final price = (product['price'] as double?) ?? 45990.0;
+          final weight = (product['weight'] as double?) ?? 0.5;
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: paddingLarge, vertical: paddingNormal),
             child: ProductCard(
               name: product['name'],
               condition: product['condition'],
               colorCondition: product['colorCondition'],
+              price: price,
+              weight: weight,
             ),
           );
         }).toList(),

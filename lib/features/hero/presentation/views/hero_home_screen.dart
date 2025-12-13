@@ -9,9 +9,11 @@ import '../widgets/hero_featured_products_section.dart';
 import '../widgets/hero_bottom_nav.dart';
 import '../widgets/hero_fab.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
-import '../../../shared/profile/presentation/views/profile_screen.dart' as profile;
+import '../../../shared/profile/presentation/views/profile_screen.dart'
+    as profile;
 import '../../../shared/notifications/presentation/views/notifications_screen.dart'
     as notifications;
+import 'hero_search_screen.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -24,6 +26,8 @@ class HeroHomeScreen extends StatefulWidget {
 }
 
 class _HeroHomeScreenState extends State<HeroHomeScreen> {
+  bool _isSearchExpanded = false;
+
   final List<Map<String, dynamic>> _categories = [
     {
       'label': 'Electrónicos',
@@ -99,16 +103,22 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
       'name': 'iPhone 13 Pro',
       'condition': 'Excelente estado',
       'colorCondition': categoryTextGreen,
+      'price': 45990.0,
+      'weight': 0.2,
     },
     {
       'name': 'MacBook Air M1',
       'condition': 'Como nuevo',
       'colorCondition': categoryTextGreen,
+      'price': 89990.0,
+      'weight': 1.5,
     },
     {
       'name': 'Samsung Galaxy S22',
       'condition': 'Buen estado',
       'colorCondition': categoryTextYellow,
+      'price': 35990.0,
+      'weight': 0.18,
     },
   ];
 
@@ -140,57 +150,135 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
             }
 
             return CustomScrollView(
-                slivers: [
-                  // 1. Header colapsable
-                  HeroHeader(),
+              slivers: [
+                // 1. Header colapsable
+                HeroHeader(
+                  onSearchExpandedChanged: (expanded) {
+                    setState(() {
+                      _isSearchExpanded = expanded;
+                    });
+                  },
+                ),
 
-                  // 2. Cuerpo desplazable
+                // 2. Contenido condicional
+                if (_isSearchExpanded)
+                  SliverFillRemaining(
+                    child: Consumer(
+                      builder: (context, ref, _) {
+                        return HeroSearchContent(
+                          searchController: TextEditingController(),
+                        );
+                      },
+                    ),
+                  )
+                else
+                  // Cuerpo desplazable normal
                   SliverList(
                     delegate: SliverChildListDelegate([
                       const SizedBox(height: paddingNormal),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: paddingNormal),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: paddingNormal,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            // --- SECCIÓN HÉROE / ENCUENTRA ---
-                            Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: AnimatedHeroCard(
-                                    title: 'Sé un Héroe',
-                                    subtitle: 'Dóna tus productos',
-                                    icon: Icons.volunteer_activism_outlined,
-                                    accentColor: primaryOrange,
-                                    backgroundColor: backgroundWhite,
-                                    iconBackgroundColor:
-                                        primaryOrange.withOpacity(0.12),
-                                    onTap: () {
-                                      debugPrint(
-                                        'Tap en Sé un Héroe: ¡Navegando a donación!',
-                                      );
-                                    },
-                                  ),
+                            // --- SECCIÓN PUBLICAR PRODUCTOS ---
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    primaryOrange,
+                                    primaryOrange.withOpacity(0.8),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
                                 ),
-                                const SizedBox(width: paddingNormal),
-                                Expanded(
-                                  child: AnimatedHeroCard(
-                                    title: 'Encuentra',
-                                    subtitle: 'Busca donaciones',
-                                    icon: Icons.search,
-                                    accentColor: categoryTextBlue,
-                                    backgroundColor: categoryBgBlue,
-                                    iconBackgroundColor:
-                                        categoryTextBlue.withOpacity(0.1),
-                                    onTap: () {
-                                      debugPrint(
-                                        'Tap en Encuentra: ¡Navegando a búsqueda!',
-                                      );
-                                    },
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: primaryOrange.withOpacity(0.3),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          '¿Tienes algo para vender?',
+                                          style: TextStyle(
+                                            color: backgroundWhite,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Publica tus productos y vende fácilmente',
+                                          style: TextStyle(
+                                            color: backgroundWhite.withOpacity(
+                                              0.9,
+                                            ),
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        ElevatedButton.icon(
+                                          onPressed: () {
+                                            debugPrint(
+                                              'Navegando a publicar producto',
+                                            );
+                                          },
+                                          icon: const Icon(
+                                            Icons.add_circle_outline,
+                                            color: primaryOrange,
+                                          ),
+                                          label: const Text(
+                                            'Publicar ahora',
+                                            style: TextStyle(
+                                              color: primaryOrange,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: backgroundWhite,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 20,
+                                              vertical: 12,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: backgroundWhite.withOpacity(0.2),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Icon(
+                                      Icons.sell,
+                                      size: 48,
+                                      color: backgroundWhite,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+                            const SizedBox(height: paddingNormal),
                           ],
                         ),
                       ),
@@ -204,14 +292,14 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                       const SizedBox(height: 100),
                     ]),
                   ),
-                ],
-              );
+              ],
+            );
           },
         ),
 
-        // 3. Navegación Inferior y FAB
-        bottomNavigationBar: const HeroBottomNav(),
-        floatingActionButton: const HeroFAB(),
+        // 3. Navegación Inferior y FAB - solo visible cuando no hay búsqueda activa
+        bottomNavigationBar: _isSearchExpanded ? null : const HeroBottomNav(),
+        floatingActionButton: _isSearchExpanded ? null : const HeroFAB(),
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       ),
     );

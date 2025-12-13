@@ -9,7 +9,12 @@ class CartNotifier extends Notifier<List<CartItem>> {
     return const [];
   }
 
-  void addItem({required String name, required String condition}) {
+  void addItem({
+    required String name,
+    required String condition,
+    required double price,
+    double weight = 0.5,
+  }) {
     final index = state.indexWhere(
       (item) => item.name == name && item.condition == condition,
     );
@@ -17,7 +22,13 @@ class CartNotifier extends Notifier<List<CartItem>> {
     if (index == -1) {
       state = [
         ...state,
-        CartItem(name: name, condition: condition, quantity: 1),
+        CartItem(
+          name: name,
+          condition: condition,
+          quantity: 1,
+          price: price,
+          weight: weight,
+        ),
       ];
     } else {
       final current = state[index];
