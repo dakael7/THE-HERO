@@ -2,7 +2,7 @@ name: the_hero
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -38,11 +38,16 @@ dependencies:
   # Estado global con Riverpod
   flutter_riverpod: ^3.0.3
 
+  # Map and Location
+  google_maps_flutter: ^2.5.0
+  geolocator: ^10.1.0
+  google_maps_cluster_manager: ^3.0.0
+
   # Firebase
-  firebase_core: ^4.2.1
+  firebase_core: ^4.2.1.1
   firebase_auth: ^6.1.2
   cloud_firestore: ^6.1.0
-  google_sign_in: ^7.2.0 
+  google_sign_in: ^7.2.0
 
   flutter_svg: ^2.0.10+1
   form_field_validator: ^1.1.0
@@ -51,7 +56,7 @@ dependencies:
   flutter_widget_from_html_core: ^0.15.1
   animations: ^2.0.11
   url_launcher: ^6.3.0
-  
+
   # Almacenamiento local
   shared_preferences: ^2.3.2
 
@@ -72,7 +77,6 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
