@@ -13,6 +13,7 @@ import '../../../shared/profile/presentation/views/profile_screen.dart'
     as profile;
 import '../../../shared/notifications/presentation/views/notifications_screen.dart'
     as notifications;
+import '../../../map/presentation/views/map_location_screen.dart';
 import 'hero_search_screen.dart';
 
 const double paddingNormal = 16.0;
@@ -148,6 +149,10 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
 
             if (selectedIndex == 3) {
               return const notifications.NotificationsScreen();
+            }
+
+            if (selectedIndex == 1) {
+              return const MapLocationScreen();
             }
 
             return CustomScrollView(

@@ -38,13 +38,14 @@ dependencies:
   # Estado global con Riverpod
   flutter_riverpod: ^3.0.3
 
-  # Map and Location
-  google_maps_flutter: ^2.5.0
+  # Map and Location (OpenStreetMap - Free, no API key needed)
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.0
   geolocator: ^10.1.0
-  google_maps_cluster_manager: ^3.0.0
+  flutter_map_marker_cluster: ^1.3.0
 
   # Firebase
-  firebase_core: ^4.2.1.1
+  firebase_core: ^4.2.1
   firebase_auth: ^6.1.2
   cloud_firestore: ^6.1.0
   google_sign_in: ^7.2.0
