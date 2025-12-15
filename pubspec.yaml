@@ -118,7 +118,7 @@ flutter:
   # see https://flutter.dev/to/font-from-package
 
 flutter_launcher_icons:
-  android: "launcher_icon"
+  android: "ic_launcher"
   ios: true
-  image_path: "assets/PAQUETE CAJA THE HERO.png"
+  image_path: "assets/wheel.png"
   min_sdk_android: 21
