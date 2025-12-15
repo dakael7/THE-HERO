@@ -8,6 +8,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.add("-Xlint:-options")
+}
+
 android {
     namespace = "com.example.the_hero"
     compileSdk = flutter.compileSdkVersion
