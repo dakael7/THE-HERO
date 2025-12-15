@@ -1,5 +1,7 @@
 platform :ios, '15.0'
 
+$FirebaseSDKVersion = '10.25.0'
+
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
 project 'Runner', {
