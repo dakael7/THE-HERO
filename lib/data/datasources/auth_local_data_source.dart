@@ -2,8 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/user_model.dart';
 
-/// DataSource local para almacenamiento persistente
-/// Guarda el usuario actual y token en SharedPreferences
+
 abstract class AuthLocalDataSource {
   Future<void> saveUser(UserModel user);
   Future<UserModel?> getCurrentUser();
