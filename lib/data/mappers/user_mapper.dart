@@ -1,53 +1,38 @@
 import '../../domain/entities/user.dart';
 import '../models/user_model.dart';
+import '../models/identity_model.dart';
+import '../models/contact_model.dart';
+import '../models/address_model.dart';
+import '../models/hero_profile_model.dart';
+import '../models/rider_profile_model.dart';
+import '../models/user_status_model.dart';
 
 class UserMapper {
   /// Convierte UserModel (Data) a User (Domain)
   static User toEntity(UserModel model) {
-    DateTime? parsedDate;
-    if (model.createdAt != null && model.createdAt!.isNotEmpty) {
-      try {
-        parsedDate = DateTime.parse(model.createdAt!);
-      } catch (e) {
-        parsedDate = null;
-      }
-    }
-    
     return User(
       id: model.id,
-      email: model.email,
-      firstName: model.firstName,
-      lastName: model.lastName,
-      rut: model.rut,
-      phone: model.phone,
-      role: _stringToUserRole(model.role),
-      createdAt: parsedDate,
+      identity: model.identity.toEntity(),
+      contact: model.contact.toEntity(),
+      address: model.address?.toEntity(),
+      roles: model.roles.map((r) => UserRole.fromString(r)).toList(),
+      status: model.status.toEntity(),
+      heroProfile: model.heroProfile?.toEntity(),
+      riderProfile: model.riderProfile?.toEntity(),
     );
   }
 
   /// Convierte User (Domain) a UserModel (Data)
-
   static UserModel toModel(User entity) {
     return UserModel(
       id: entity.id,
-      email: entity.email,
-      firstName: entity.firstName,
-      lastName: entity.lastName,
-      rut: entity.rut,
-      phone: entity.phone,
-      role: entity.role.name, // Convertir enum a string
-      createdAt: entity.createdAt?.toIso8601String(),
+      identity: IdentityModel.fromEntity(entity.identity),
+      contact: ContactModel.fromEntity(entity.contact),
+      address: entity.address != null ? AddressModel.fromEntity(entity.address!) : null,
+      roles: entity.roles.map((r) => r.name).toList(),
+      status: UserStatusModel.fromEntity(entity.status),
+      heroProfile: entity.heroProfile != null ? HeroProfileModel.fromEntity(entity.heroProfile!) : null,
+      riderProfile: entity.riderProfile != null ? RiderProfileModel.fromEntity(entity.riderProfile!) : null,
     );
-  }
-
-  static UserRole _stringToUserRole(String role) {
-    switch (role.toLowerCase()) {
-      case 'hero':
-        return UserRole.hero;
-      case 'rider':
-        return UserRole.rider;
-      default:
-        return UserRole.hero;
-    }
   }
 }

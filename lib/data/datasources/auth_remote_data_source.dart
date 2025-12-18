@@ -76,13 +76,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       return UserModel.fromJson({
         'id': user.uid,
-        'email': user.email ?? '',
-        'firstName': userData['firstName'],
-        'lastName': userData['lastName'],
-        'rut': userData['rut'],
-        'phone': userData['phone'],
-        'role': userData['role'] ?? 'hero',
-        'createdAt': userData['createdAt'],
+        ...userData,
       });
     } on FirebaseAuthException catch (e) {
       final errorMessage = _getFirebaseErrorMessage(e);
@@ -134,15 +128,31 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Error al crear usuario');
       }
 
-      // 2. Guardar datos adicionales en Firestore
+      // 2. Guardar datos adicionales en Firestore con nueva estructura
+      final now = DateTime.now().toIso8601String();
       final userData = {
-        'email': email.toLowerCase(),
-        'firstName': firstName,
-        'lastName': lastName,
-        'rut': rut,
-        'phone': phone,
-        'role': 'hero',
-        'createdAt': DateTime.now().toIso8601String(),
+        'identity': {
+          'firstName': firstName,
+          'lastName': lastName,
+          'documentId': rut,
+        },
+        'contact': {
+          'email': email.toLowerCase(),
+          'phoneNumber': phone,
+          'emailVerified': false,
+        },
+        'roles': ['hero'],
+        'status': {
+          'termsAccepted': true,
+          'createdAt': now,
+          'lastUpdated': now,
+        },
+        'heroProfile': {
+          'isActive': true,
+          'completedOrders': 0,
+          'rating': 0.0,
+          'totalSpent': 0.0,
+        },
       };
 
       await _firestore.collection('users').doc(user.uid).set(userData);
@@ -150,13 +160,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       // 3. Retornar UserModel
       return UserModel.fromJson({
         'id': user.uid,
-        'email': email,
-        'firstName': firstName,
-        'lastName': lastName,
-        'rut': rut,
-        'phone': phone,
-        'role': 'hero',
-        'createdAt': userData['createdAt'],
+        ...userData,
       });
     } on FirebaseAuthException catch (e) {
       final errorMessage = _getFirebaseErrorMessage(e);
@@ -208,15 +212,47 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Error al crear usuario');
       }
 
-      // 2. Guardar datos adicionales en Firestore
+      // 2. Guardar datos adicionales en Firestore con nueva estructura
+      final now = DateTime.now().toIso8601String();
       final userData = {
-        'email': email.toLowerCase(),
-        'firstName': firstName,
-        'lastName': lastName,
-        'rut': rut,
-        'phone': phone,
-        'role': 'rider',
-        'createdAt': DateTime.now().toIso8601String(),
+        'identity': {
+          'firstName': firstName,
+          'lastName': lastName,
+          'documentId': rut,
+        },
+        'contact': {
+          'email': email.toLowerCase(),
+          'phoneNumber': phone,
+          'emailVerified': false,
+        },
+        'roles': ['rider'],
+        'status': {
+          'termsAccepted': true,
+          'createdAt': now,
+          'lastUpdated': now,
+        },
+        'riderProfile': {
+          'isActive': false,
+          'isVerified': false,
+          'vehicle': {
+            'type': 'bicycle',
+            'plateNumber': null,
+            'model': null,
+            'year': null,
+          },
+          'documents': {
+            'idCardUrl': '',
+            'licenseUrl': null,
+            'padronUrl': null,
+          },
+          'limits': {
+            'maxDistanceKm': 3.0,
+            'maxWeightKg': 7.0,
+          },
+          'verification': null,
+          'deliveredOrders': 0,
+          'rating': 0.0,
+        },
       };
 
       await _firestore.collection('users').doc(user.uid).set(userData);
@@ -224,13 +260,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       // 3. Retornar UserModel
       return UserModel.fromJson({
         'id': user.uid,
-        'email': email,
-        'firstName': firstName,
-        'lastName': lastName,
-        'rut': rut,
-        'phone': phone,
-        'role': 'rider',
-        'createdAt': userData['createdAt'],
+        ...userData,
       });
     } on FirebaseAuthException catch (e) {
       final errorMessage = _getFirebaseErrorMessage(e);
@@ -264,13 +294,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       return UserModel.fromJson({
         'id': user.uid,
-        'email': user.email ?? '',
-        'firstName': userData['firstName'],
-        'lastName': userData['lastName'],
-        'rut': userData['rut'],
-        'phone': userData['phone'],
-        'role': userData['role'] ?? 'hero',
-        'createdAt': userData['createdAt'],
+        ...userData,
       });
     } catch (e) {
       throw Exception('Error al obtener usuario actual: $e');
@@ -318,40 +342,71 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         if (userData != null) {
           return UserModel.fromJson({
             'id': user.uid,
-            'email': userData['email'] ?? email,
-            'firstName': userData['firstName'],
-            'lastName': userData['lastName'],
-            'rut': userData['rut'],
-            'phone': userData['phone'],
-            'role': userData['role'] ?? role,
-            'createdAt': userData['createdAt'],
+            ...userData,
           });
         }
       }
 
-      // Usuario nuevo: crear documento con datos mínimos
+      // Usuario nuevo: crear documento con datos mínimos y nueva estructura
+      final now = DateTime.now().toIso8601String();
       final newUserData = {
-        'email': email.toLowerCase(),
-        'firstName': null,
-        'lastName': null,
-        'rut': null,
-        'phone': null,
-        'role': role,
-        'createdAt': DateTime.now().toIso8601String(),
+        'identity': {
+          'firstName': '',
+          'lastName': '',
+          'documentId': '',
+        },
+        'contact': {
+          'email': email.toLowerCase(),
+          'phoneNumber': '',
+          'emailVerified': true,
+        },
+        'roles': [role],
+        'status': {
+          'termsAccepted': true,
+          'createdAt': now,
+          'lastUpdated': now,
+        },
       };
+
+      // Agregar perfil según el rol
+      if (role == 'hero') {
+        newUserData['heroProfile'] = {
+          'isActive': true,
+          'completedOrders': 0,
+          'rating': 0.0,
+          'totalSpent': 0.0,
+        };
+      } else if (role == 'rider') {
+        newUserData['riderProfile'] = {
+          'isActive': false,
+          'isVerified': false,
+          'vehicle': {
+            'type': 'bicycle',
+            'plateNumber': null,
+            'model': null,
+            'year': null,
+          },
+          'documents': {
+            'idCardUrl': '',
+            'licenseUrl': null,
+            'padronUrl': null,
+          },
+          'limits': {
+            'maxDistanceKm': 3.0,
+            'maxWeightKg': 7.0,
+          },
+          'verification': null,
+          'deliveredOrders': 0,
+          'rating': 0.0,
+        };
+      }
 
       await _firestore.collection('users').doc(user.uid).set(newUserData);
 
       // Retornar UserModel
       return UserModel.fromJson({
         'id': user.uid,
-        'email': email,
-        'firstName': null,
-        'lastName': null,
-        'rut': null,
-        'phone': null,
-        'role': role,
-        'createdAt': newUserData['createdAt'],
+        ...newUserData,
       });
     } catch (e) {
       throw Exception('Error al registrar usuario con Google: $e');
