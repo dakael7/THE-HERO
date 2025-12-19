@@ -31,7 +31,6 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
 
-  // --- VARIABLES DE ANIMACIÓN ---
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
   late Animation<double> _opacityAnimation;
@@ -43,10 +42,9 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
 
     _emailController = TextEditingController(text: widget.email ?? '');
 
-    // Optimización: Animación instantánea (0ms) para eliminar lag en primera carga
     _controller = AnimationController(
       vsync: this,
-      duration: Duration.zero, // Animación deshabilitada
+      duration: Duration.zero, 
     );
 
     _offsetAnimation = Tween<Offset>(
@@ -75,7 +73,6 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   }
 
   Widget _buildLogoSection() {
-    // Optimización: RepaintBoundary para evitar repintados
     return RepaintBoundary(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -87,7 +84,6 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     );
   }
 
-  // Optimización: InputDecoration cacheada para mejor rendimiento
   InputDecoration _getInputDecoration({
     required String labelText,
     required String hintText,
@@ -118,7 +114,6 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     );
   }
 
-  // Método de construcción de campos optimizado
   Widget _buildTextField({
     required String labelText,
     required String hintText,

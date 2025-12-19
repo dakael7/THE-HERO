@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-// Asegúrate de que las rutas a estos archivos sean correctas
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
 
-// 1. CONVERTIMOS A StatefulWidget para gestionar la animación
 class RegisterHeroScreen extends ConsumerStatefulWidget {
-  // Cambio de nombre de la clase
   final String? email;
 
   const RegisterHeroScreen({Key? key, this.email}) : super(key: key);
@@ -18,13 +15,10 @@ class RegisterHeroScreen extends ConsumerStatefulWidget {
   ConsumerState<RegisterHeroScreen> createState() => _RegisterHeroScreenState();
 }
 
-// Añadimos SingleTickerProviderStateMixin para el controlador de animación
 class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     with SingleTickerProviderStateMixin {
-  // Clave para identificar el formulario
   final _formKey = GlobalKey<FormState>();
 
-  // Expresión regular para validar la fortaleza de la contraseña
   final RegExp passwordRegex = RegExp(
     r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,}$',
   );
@@ -36,7 +30,6 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
 
-  // --- VARIABLES DE ANIMACIÓN ---
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
   late Animation<double> _opacityAnimation;
@@ -48,10 +41,9 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
     _emailController = TextEditingController(text: widget.email ?? '');
 
-    // Optimización: Animación instantánea (0ms) para eliminar lag en primera carga
     _controller = AnimationController(
       vsync: this,
-      duration: Duration.zero, // Animación deshabilitada
+      duration: Duration.zero,
     );
 
     _offsetAnimation = Tween<Offset>(
@@ -89,7 +81,6 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     );
   }
 
-  // Método de construcción de campos (sin cambios)
   Widget _buildTextField({
     required String labelText,
     required String hintText,
