@@ -180,7 +180,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String phone,
   }) async {
     try {
-      // DEBUG: Mostrar valores recibidos
       print('=== DEBUG registerRider ===');
       print('Email: "$email"');
       print('Password: "$password"');
@@ -190,7 +189,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       print('Phone: "$phone"');
       print('========================');
 
-      // Validar datos antes de enviar
       if (email.isEmpty || !email.contains('@')) {
         throw Exception('Email inválido: $email');
       }

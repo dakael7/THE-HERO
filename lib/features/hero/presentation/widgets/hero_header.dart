@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../viewmodels/search_viewmodel.dart';
+import '../../../shared/chat/presentation/providers/chat_providers.dart';
+import '../../../shared/chat/presentation/views/chat_list_screen.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -45,11 +47,12 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
         : 0.0;
 
     final double statusBarHeight = MediaQuery.of(context).padding.top;
+    final double decorOpacity = isSearchExpanded ? 0.0 : (1.0 - (t * 0.85));
 
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [primaryYellow, primaryYellow.withOpacity(0.95)],
+          colors: [primaryOrange, primaryYellow.withOpacity(0.95)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -59,7 +62,7 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
         ),
         boxShadow: [
           BoxShadow(
-            color: primaryYellow.withOpacity(0.3),
+            color: primaryOrange.withOpacity(0.22),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -67,6 +70,53 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
       ),
       child: Stack(
         children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: decorOpacity,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: -40,
+                      left: -30,
+                      child: Container(
+                        width: 140,
+                        height: 140,
+                        decoration: BoxDecoration(
+                          color: backgroundWhite.withOpacity(0.16),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 20,
+                      right: -50,
+                      child: Container(
+                        width: 180,
+                        height: 180,
+                        decoration: BoxDecoration(
+                          color: backgroundWhite.withOpacity(0.12),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 46,
+                      left: 40,
+                      child: Container(
+                        width: 110,
+                        height: 110,
+                        decoration: BoxDecoration(
+                          color: primaryOrange.withOpacity(0.10),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
           // Fila superior (logo + notificaciones) que se oculta al hacer scroll o expandir búsqueda
           Positioned(
             top: statusBarHeight + paddingNormal - 8 * t,
@@ -217,58 +267,73 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   }
 
   Widget _buildNotificationIcon() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: backgroundWhite,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: textGray900.withOpacity(0.08),
-                blurRadius: 12,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: const Icon(Icons.chat_bubble, color: primaryOrange, size: 24),
-        ),
-        Positioned(
-          right: -2,
-          top: -2,
-          child: Container(
-            padding: const EdgeInsets.all(4),
+    final badgeCount = ref.watch(userChatsProvider).maybeWhen(
+          data: (chats) => chats.length,
+          orElse: () => 0,
+        );
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ChatListScreen()),
+        );
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [primaryOrange, Color(0xFFFF6B35)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-              border: Border.all(color: primaryYellow, width: 2),
+              color: backgroundWhite,
+              borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: primaryOrange.withOpacity(0.4),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
+                  color: textGray900.withOpacity(0.08),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
-            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-            child: const Text(
-              '3',
-              style: TextStyle(
-                color: backgroundWhite,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            child:
+                const Icon(Icons.chat_bubble, color: primaryOrange, size: 24),
           ),
-        ),
-      ],
+          if (badgeCount > 0)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [primaryOrange, Color(0xFFFF6B35)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: primaryYellow, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: primaryOrange.withOpacity(0.4),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                constraints:
+                    const BoxConstraints(minWidth: 18, minHeight: 18),
+                child: Text(
+                  badgeCount.toString(),
+                  style: const TextStyle(
+                    color: backgroundWhite,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

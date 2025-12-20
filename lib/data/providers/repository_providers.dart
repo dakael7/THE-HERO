@@ -1,10 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/repositories/auth_repository.dart';
+import '../../domain/repositories/chat_repository.dart';
 import '../../domain/repositories/notification_repository.dart';
 import '../../domain/repositories/offers_repository.dart';
 import '../../domain/repositories/orders_repository.dart';
 import '../repositories/auth_repository_impl.dart';
+import '../repositories/chat_repository_impl.dart';
 import '../repositories/notification_repository_impl.dart';
 import '../repositories/offers_repository_impl.dart';
 import '../repositories/orders_repository_impl.dart';
@@ -33,4 +35,9 @@ final offersRepositoryProvider = Provider<OffersRepository>((ref) {
 final ordersRepositoryProvider = Provider<OrdersRepository>((ref) {
   final remote = ref.read(ordersRemoteDataSourceProvider);
   return OrdersRepositoryImpl(remoteDataSource: remote);
+});
+
+final chatRepositoryProvider = Provider<ChatRepository>((ref) {
+  final remote = ref.read(chatRemoteDataSourceProvider);
+  return ChatRepositoryImpl(remoteDataSource: remote);
 });

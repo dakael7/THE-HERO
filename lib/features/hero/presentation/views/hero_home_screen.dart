@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../widgets/hero_animated_card.dart';
 import '../widgets/hero_header.dart';
 import '../widgets/hero_categories_section.dart';
 import '../widgets/hero_featured_products_section.dart';
@@ -14,7 +13,6 @@ import '../../../shared/profile/presentation/views/profile_screen.dart'
 import '../../../shared/notifications/presentation/views/notifications_screen.dart'
     as notifications;
 import '../../../map/presentation/views/map_location_screen.dart';
-import 'hero_search_screen.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -183,99 +181,135 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                           children: <Widget>[
                             // --- SECCIÓN PUBLICAR PRODUCTOS ---
                             RepaintBoundary(
-                              child: Container(
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      primaryOrange,
-                                      primaryOrange.withOpacity(0.8),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: primaryOrange.withOpacity(0.3),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final wheelSize =
+                                      constraints.maxWidth < 380 ? 150.0 : 320.0;
+                                  final contentRightPadding =
+                                      (wheelSize * 0.65).clamp(120.0, 180.0).toDouble();
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          primaryOrange,
+                                          primaryYellow.withOpacity(0.95),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(22),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: primaryOrange.withOpacity(0.22),
+                                          blurRadius: 18,
+                                          offset: const Offset(0, 10),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(22),
+                                      child: Stack(
+                                        clipBehavior: Clip.hardEdge,
                                         children: [
-                                          const Text(
-                                            '¿Tienes algo para vender?',
-                                            style: TextStyle(
-                                              color: backgroundWhite,
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Publica tus productos y vende fácilmente',
-                                            style: TextStyle(
-                                              color: backgroundWhite
-                                                  .withOpacity(0.9),
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          ElevatedButton.icon(
-                                            onPressed: () {
-                                              debugPrint(
-                                                'Navegando a publicar producto',
-                                              );
-                                            },
-                                            icon: const Icon(
-                                              Icons.add_circle_outline,
-                                              color: primaryOrange,
-                                            ),
-                                            label: const Text(
-                                              'Publicar ahora',
-                                              style: TextStyle(
-                                                color: primaryOrange,
-                                                fontWeight: FontWeight.w600,
+                                          Positioned(
+                                            right: -wheelSize * 0.2,
+                                            bottom: -wheelSize * 0.2,
+                                            child: IgnorePointer(
+                                              child: Opacity(
+                                                opacity: 0.95,
+                                                child: Transform.rotate(
+                                                  angle: -0.22,
+                                                  child: Image.asset(
+                                                    'assets/wheel.png',
+                                                    width: wheelSize,
+                                                    height: wheelSize,
+                                                    fit: BoxFit.contain,
+                                                  ),
+                                                ),
                                               ),
                                             ),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: backgroundWhite,
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 20,
-                                                    vertical: 12,
+                                          ),
+                                          ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              minHeight: wheelSize * 0.60,
+                                            ),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(20),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Padding(
+                                                      padding: EdgeInsets.only(
+                                                        right: contentRightPadding,
+                                                      ),
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment.start,
+                                                        children: [
+                                                          const Text(
+                                                            '¿Tienes algo para vender?',
+                                                            style: TextStyle(
+                                                              color: backgroundWhite,
+                                                              fontSize: 18,
+                                                              fontWeight: FontWeight.bold,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(height: 8),
+                                                          Text(
+                                                            'Publica tus productos y vende fácilmente',
+                                                            style: TextStyle(
+                                                              color: backgroundWhite
+                                                                  .withOpacity(0.92),
+                                                              fontSize: 14,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(height: 16),
+                                                          ElevatedButton.icon(
+                                                            onPressed: () {
+                                                              debugPrint(
+                                                                'Navegando a publicar producto',
+                                                              );
+                                                            },
+                                                            icon: const Icon(
+                                                              Icons.add_circle_outline,
+                                                              color: primaryOrange,
+                                                            ),
+                                                            label: const Text(
+                                                              'Publicar ahora',
+                                                              style: TextStyle(
+                                                                color: primaryOrange,
+                                                                fontWeight:
+                                                                    FontWeight.w600,
+                                                              ),
+                                                            ),
+                                                            style: ElevatedButton.styleFrom(
+                                                              backgroundColor:
+                                                                  backgroundWhite,
+                                                              padding:
+                                                                  const EdgeInsets.symmetric(
+                                                                horizontal: 20,
+                                                                vertical: 12,
+                                                              ),
+                                                              shape:
+                                                                  RoundedRectangleBorder(
+                                                                borderRadius:
+                                                                    BorderRadius.circular(12),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
                                                   ),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
+                                                ],
                                               ),
                                             ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                    const SizedBox(width: 16),
-                                    Container(
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: backgroundWhite.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                      child: const Icon(
-                                        Icons.sell,
-                                        size: 48,
-                                        color: backgroundWhite,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                  );
+                                },
                               ),
                             ),
                             const SizedBox(height: paddingNormal),

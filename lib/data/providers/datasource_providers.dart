@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../datasources/auth_local_data_source.dart';
 import '../datasources/auth_remote_data_source.dart';
+import '../datasources/chat_remote_data_source.dart';
 import '../datasources/notification_remote_data_source.dart';
 import '../datasources/offers_remote_data_source.dart';
 import '../datasources/orders_remote_data_source.dart';
@@ -38,4 +39,9 @@ final offersRemoteDataSourceProvider = Provider<OffersRemoteDataSource>((ref) {
 final ordersRemoteDataSourceProvider = Provider<OrdersRemoteDataSource>((ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
   return OrdersRemoteDataSourceImpl(firestore: firestore);
+});
+
+final chatRemoteDataSourceProvider = Provider<ChatRemoteDataSource>((ref) {
+  final firestore = ref.read(firebaseFirestoreProvider);
+  return ChatRemoteDataSourceImpl(firestore: firestore);
 });
