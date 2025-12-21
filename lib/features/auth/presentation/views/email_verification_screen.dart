@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
@@ -264,7 +265,19 @@ class _EmailVerificationScreenState
 
                 // 6. BOTONES SOCIALES
                 _buildSocialButton(
-                  icon: Icons.g_mobiledata,
+                  iconWidget: SvgPicture.asset(
+                    'assets/icono-google.svg',
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.contain,
+                    placeholderBuilder: (context) {
+                      return Icon(
+                        Icons.g_mobiledata,
+                        color: Colors.blue.shade700,
+                        size: 28,
+                      );
+                    },
+                  ),
                   label: 'Continuar con Google',
                   isApple: false,
                   onTap: _isLoading
@@ -346,7 +359,8 @@ class _EmailVerificationScreenState
   }
 
   Widget _buildSocialButton({
-    required IconData icon,
+    IconData? icon,
+    Widget? iconWidget,
     required String label,
     required VoidCallback? onTap,
     required bool isApple,
@@ -357,11 +371,12 @@ class _EmailVerificationScreenState
         width: double.infinity,
         child: OutlinedButton.icon(
           onPressed: onTap,
-          icon: Icon(
-            icon,
-            color: isApple ? Colors.black : Colors.blue.shade700,
-            size: 28,
-          ),
+          icon: iconWidget ??
+              Icon(
+                icon,
+                color: isApple ? Colors.black : Colors.blue.shade700,
+                size: 28,
+              ),
           label: Text(
             label,
             style: const TextStyle(
