@@ -26,6 +26,13 @@ class ProfileStatsSection extends StatelessWidget {
             color: borderGray100,
             width: 1,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: textGray900.withOpacity(0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,

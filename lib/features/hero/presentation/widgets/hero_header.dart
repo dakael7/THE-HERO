@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../viewmodels/search_viewmodel.dart';
-import '../../../shared/chat/presentation/providers/chat_providers.dart';
-import '../../../shared/chat/presentation/views/chat_list_screen.dart';
+import '../../../shared/notifications/presentation/providers/notifications_provider.dart';
+import '../../../shared/notifications/presentation/views/notifications_screen.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -267,15 +267,17 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   }
 
   Widget _buildNotificationIcon() {
-    final badgeCount = ref.watch(userChatsProvider).maybeWhen(
-          data: (chats) => chats.length,
-          orElse: () => 0,
-        );
+    final asyncNotifications = ref.watch(notificationsProvider);
+    final badgeCount = asyncNotifications.when(
+      data: (notifications) => notifications.where((n) => !n.read).length,
+      loading: () => 0,
+      error: (_, __) => 0,
+    );
 
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ChatListScreen()),
+          MaterialPageRoute(builder: (_) => const NotificationsScreen()),
         );
       },
       child: Stack(
@@ -294,8 +296,11 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
                 ),
               ],
             ),
-            child:
-                const Icon(Icons.chat_bubble, color: primaryOrange, size: 24),
+            child: const Icon(
+              Icons.notifications_none_outlined,
+              color: primaryOrange,
+              size: 24,
+            ),
           ),
           if (badgeCount > 0)
             Positioned(

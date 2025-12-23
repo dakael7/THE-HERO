@@ -17,52 +17,78 @@ class ProfileMenuTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-        decoration: BoxDecoration(
-          color: backgroundWhite,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: borderGray100,
-            width: 1,
+    final enabled = onTap != null;
+
+    return Material(
+      color: backgroundWhite,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: borderGray100,
+              width: 1,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 22,
-              color: primaryOrange,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: textGray900,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: primaryOrange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 20,
+                    color: enabled ? primaryOrange : textGray600,
+                  ),
                 ),
-              ),
-            ),
-            if (trailingText != null) ...[
-              Text(
-                trailingText!,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: textGray600,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: enabled ? textGray900 : textGray600,
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-            ],
-            const Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: textGray600,
+                if (trailingText != null) ...[
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: backgroundGray50,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: borderGray100, width: 1),
+                    ),
+                    child: Text(
+                      trailingText!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: textGray600,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Icon(
+                  Icons.chevron_right,
+                  size: 20,
+                  color: enabled ? textGray600 : textGray600.withOpacity(0.6),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -18,6 +18,10 @@ class App extends ConsumerWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: primaryOrange),
         useMaterial3: true,
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
       ),
       home: sessionCheck.when(
         data: (isAuthenticated) {

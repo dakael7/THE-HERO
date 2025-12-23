@@ -10,6 +10,12 @@ import '../widgets/profile_header.dart';
 import '../widgets/profile_stats_section.dart';
 import '../widgets/profile_menu_tile.dart';
 import '../widgets/personal_info_card.dart';
+import 'favorites_screen.dart';
+import 'help_center_screen.dart';
+import 'my_products_screen.dart';
+import 'payment_methods_screen.dart';
+import 'previous_orders_screen.dart';
+import 'settings_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -20,23 +26,6 @@ class ProfileScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
-          },
-        ),
-        title: const Text(
-          'Mi Perfil',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
       body: userAsyncValue.when(
         data: (user) {
           if (user == null) {
@@ -63,23 +52,192 @@ class ProfileScreen extends ConsumerWidget {
             );
           }
           final profileState = ref.watch(profileViewModelProvider);
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                const SizedBox(height: 24),
-                ProfileHeader(user: user),
-                const SizedBox(height: 24),
-                ProfileStatsSection(
-                  publications: profileState.publications,
-                  favorites: profileState.favorites,
-                  purchases: profileState.purchases,
-                ),
-                const SizedBox(height: 24),
-                _buildSettingsSection(context, ref),
-                const SizedBox(height: 32),
-                _buildLogoutButton(context, ref),
-                const SizedBox(height: 32),
-              ],
+          final double contentTopPadding =
+              MediaQuery.of(context).padding.top + kToolbarHeight + 12;
+          return RefreshIndicator(
+            color: primaryOrange,
+            onRefresh: () async {
+              ref.invalidate(profileProvider);
+            },
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Stack(
+                children: [
+                  Container(
+                    height: 220,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [primaryOrange, primaryYellow.withOpacity(0.95)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(32),
+                        bottomRight: Radius.circular(32),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: primaryOrange.withOpacity(0.18),
+                          blurRadius: 18,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 4,
+                    left: 4,
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back, color: textGray900),
+                      onPressed: () {
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                          return;
+                        }
+                        ref
+                            .read(heroHomeViewModelProvider.notifier)
+                            .selectNavItem(0);
+                      },
+                    ),
+                  ),
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 14,
+                    left: 16,
+                    right: 16,
+                    child: Center(
+                      child: Text(
+                        'Mi Perfil',
+                        style: TextStyle(
+                          color: textGray900,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                          shadows: [
+                            Shadow(
+                              color: backgroundWhite.withOpacity(0.45),
+                              blurRadius: 8,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.only(top: contentTopPadding),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ProfileHeader(user: user),
+                        const SizedBox(height: 12),
+                        ProfileStatsSection(
+                          publications: profileState.publications,
+                          favorites: profileState.favorites,
+                          purchases: profileState.purchases,
+                        ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: backgroundWhite,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: borderGray100, width: 1),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: textGray900.withOpacity(0.06),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _QuickActionButton(
+                                    icon: Icons.person_outline,
+                                    title: 'Datos',
+                                    subtitle: 'Personales',
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const PersonalDataScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _QuickActionButton(
+                                    icon: Icons.shopping_bag_outlined,
+                                    title: 'Productos',
+                                    subtitle: 'Publicados',
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const MyProductsScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _QuickActionButton(
+                                    icon: Icons.favorite_border,
+                                    title: 'Favoritos',
+                                    subtitle: 'Guardados',
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const FavoritesScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'Accesos',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: textGray900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildSettingsSection(context, ref),
+                        const SizedBox(height: 18),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'Cuenta',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: textGray900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildLogoutButton(context, ref),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -121,27 +279,43 @@ class ProfileScreen extends ConsumerWidget {
             icon: Icons.shopping_bag_outlined,
             title: 'Mis productos',
             trailingText: '0',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MyProductsScreen()),
+              );
+            },
           ),
           const SizedBox(height: 8),
           ProfileMenuTile(
             icon: Icons.favorite_border,
             title: 'Favoritos',
             trailingText: '0',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+              );
+            },
           ),
           const SizedBox(height: 8),
           ProfileMenuTile(
             icon: Icons.history,
             title: 'Pedidos anteriores',
             trailingText: '0',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PreviousOrdersScreen()),
+              );
+            },
           ),
           const SizedBox(height: 8),
           ProfileMenuTile(
             icon: Icons.credit_card,
             title: 'Métodos de pago',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PaymentMethodsScreen()),
+              );
+            },
           ),
           const SizedBox(height: 8),
           ProfileMenuTile(
@@ -158,13 +332,21 @@ class ProfileScreen extends ConsumerWidget {
           ProfileMenuTile(
             icon: Icons.settings_outlined,
             title: 'Configuración',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
           ),
           const SizedBox(height: 8),
           ProfileMenuTile(
             icon: Icons.headset_mic_outlined,
             title: 'Centro de ayuda',
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const HelpCenterScreen()),
+              );
+            },
           ),
         ],
       ),
@@ -236,6 +418,69 @@ class ProfileScreen extends ConsumerWidget {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+  }
+}
+
+class _QuickActionButton extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _QuickActionButton({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: backgroundGray50,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: primaryOrange.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: primaryOrange),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: textGray900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: textGray600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -12,7 +12,6 @@ void main() async {
   runApp(const AppProviderScope(child: App()));
 }
 
-// Precarga de imágenes para mejor rendimiento
 class _ImagePreloader extends StatefulWidget {
   final Widget child;
 

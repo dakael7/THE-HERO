@@ -10,12 +10,16 @@ import '../widgets/hero_fab.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
 import '../../../shared/profile/presentation/views/profile_screen.dart'
     as profile;
-import '../../../shared/notifications/presentation/views/notifications_screen.dart'
-    as notifications;
+import '../../../shared/chat/presentation/views/chat_list_screen.dart' as chat;
 import '../../../map/presentation/views/map_location_screen.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
+const double spacingSmall = paddingNormal / 2;
+const double spacingSection = paddingNormal / 4;
+const double spacingButtonV = paddingNormal * 0.75;
+const double spacingButtonH = paddingNormal * 1.25;
+const double spacingScreenBottom = paddingLarge * 4;
 
 class HeroHomeScreen extends StatefulWidget {
   const HeroHomeScreen({super.key});
@@ -146,7 +150,7 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
             }
 
             if (selectedIndex == 3) {
-              return const notifications.NotificationsScreen();
+              return const chat.ChatListScreen();
             }
 
             if (selectedIndex == 1) {
@@ -183,10 +187,39 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                             RepaintBoundary(
                               child: LayoutBuilder(
                                 builder: (context, constraints) {
+                                  final maxWidth = constraints.maxWidth;
+                                  final scale =
+                                      (maxWidth / 390.0).clamp(0.78, 1.20).toDouble();
+                                  final cardHeight =
+                                      (maxWidth * 0.52).clamp(170.0, 210.0).toDouble();
                                   final wheelSize =
-                                      constraints.maxWidth < 380 ? 150.0 : 320.0;
+                                      (maxWidth * 0.88).clamp(210.0, 320.0).toDouble();
                                   final contentRightPadding =
-                                      (wheelSize * 0.65).clamp(120.0, 180.0).toDouble();
+                                      (maxWidth * 0.42).clamp(92.0, 165.0).toDouble();
+
+                                  final cardPadding =
+                                      (paddingLarge * scale).clamp(14.0, 24.0).toDouble();
+                                  final titleSize = (18.0 * scale).clamp(16.0, 22.0).toDouble();
+                                  final subtitleSize =
+                                      (14.0 * scale).clamp(12.0, 18.0).toDouble();
+                                  final buttonFontSize =
+                                      (14.0 * scale).clamp(12.0, 16.0).toDouble();
+                                  final buttonIconSize =
+                                      (20.0 * scale).clamp(18.0, 22.0).toDouble();
+                                  final gapSmall =
+                                      (spacingSmall * scale).clamp(6.0, 10.0).toDouble();
+                                  final gapNormal =
+                                      (paddingNormal * scale).clamp(10.0, 16.0).toDouble();
+                                  final buttonHPadding =
+                                      (spacingButtonH * scale).clamp(14.0, 20.0).toDouble();
+                                  final buttonVPadding =
+                                      (spacingButtonV * scale).clamp(10.0, 14.0).toDouble();
+
+                                  final contentAvailableWidth = (maxWidth -
+                                          (cardPadding * 2) -
+                                          contentRightPadding)
+                                      .clamp(120.0, 520.0)
+                                      .toDouble();
                                   return Container(
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
@@ -208,33 +241,31 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(22),
-                                      child: Stack(
-                                        clipBehavior: Clip.hardEdge,
-                                        children: [
-                                          Positioned(
-                                            right: -wheelSize * 0.2,
-                                            bottom: -wheelSize * 0.2,
-                                            child: IgnorePointer(
-                                              child: Opacity(
-                                                opacity: 0.95,
-                                                child: Transform.rotate(
-                                                  angle: -0.22,
-                                                  child: Image.asset(
-                                                    'assets/wheel.png',
-                                                    width: wheelSize,
-                                                    height: wheelSize,
-                                                    fit: BoxFit.contain,
+                                      child: SizedBox(
+                                        height: cardHeight,
+                                        child: Stack(
+                                          clipBehavior: Clip.hardEdge,
+                                          children: [
+                                            Positioned(
+                                              right: -wheelSize * 0.22,
+                                              bottom: -wheelSize * 0.26,
+                                              child: IgnorePointer(
+                                                child: Opacity(
+                                                  opacity: 0.95,
+                                                  child: Transform.rotate(
+                                                    angle: -0.22,
+                                                    child: Image.asset(
+                                                      'assets/wheel.png',
+                                                      width: wheelSize,
+                                                      height: wheelSize,
+                                                      fit: BoxFit.contain,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                          ConstrainedBox(
-                                            constraints: BoxConstraints(
-                                              minHeight: wheelSize * 0.60,
-                                            ),
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(20),
+                                            Padding(
+                                              padding: EdgeInsets.all(cardPadding),
                                               child: Row(
                                                 children: [
                                                   Expanded(
@@ -242,70 +273,91 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                                                       padding: EdgeInsets.only(
                                                         right: contentRightPadding,
                                                       ),
-                                                      child: Column(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment.start,
-                                                        children: [
-                                                          const Text(
-                                                            '¿Tienes algo para vender?',
-                                                            style: TextStyle(
-                                                              color: backgroundWhite,
-                                                              fontSize: 18,
-                                                              fontWeight: FontWeight.bold,
-                                                            ),
-                                                          ),
-                                                          const SizedBox(height: 8),
-                                                          Text(
-                                                            'Publica tus productos y vende fácilmente',
-                                                            style: TextStyle(
-                                                              color: backgroundWhite
-                                                                  .withOpacity(0.92),
-                                                              fontSize: 14,
-                                                            ),
-                                                          ),
-                                                          const SizedBox(height: 16),
-                                                          ElevatedButton.icon(
-                                                            onPressed: () {
-                                                              debugPrint(
-                                                                'Navegando a publicar producto',
-                                                              );
-                                                            },
-                                                            icon: const Icon(
-                                                              Icons.add_circle_outline,
-                                                              color: primaryOrange,
-                                                            ),
-                                                            label: const Text(
-                                                              'Publicar ahora',
-                                                              style: TextStyle(
-                                                                color: primaryOrange,
-                                                                fontWeight:
-                                                                    FontWeight.w600,
+                                                      child: FittedBox(
+                                                        fit: BoxFit.scaleDown,
+                                                        alignment: Alignment.centerLeft,
+                                                        child: SizedBox(
+                                                          width: contentAvailableWidth,
+                                                          child: Column(
+                                                            mainAxisSize: MainAxisSize.min,
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment.start,
+                                                            children: [
+                                                              Text(
+                                                                '¿Tienes algo para vender?',
+                                                                maxLines: 2,
+                                                                overflow: TextOverflow.ellipsis,
+                                                                style: TextStyle(
+                                                                  color: backgroundWhite,
+                                                                  fontSize: titleSize,
+                                                                  fontWeight:
+                                                                      FontWeight.bold,
+                                                                ),
                                                               ),
-                                                            ),
-                                                            style: ElevatedButton.styleFrom(
-                                                              backgroundColor:
-                                                                  backgroundWhite,
-                                                              padding:
-                                                                  const EdgeInsets.symmetric(
-                                                                horizontal: 20,
-                                                                vertical: 12,
+                                                              SizedBox(height: gapSmall),
+                                                              Text(
+                                                                'Publica tus productos y vende fácilmente',
+                                                                maxLines: 2,
+                                                                overflow: TextOverflow.ellipsis,
+                                                                style: TextStyle(
+                                                                  color: backgroundWhite
+                                                                      .withOpacity(0.92),
+                                                                  fontSize: subtitleSize,
+                                                                ),
                                                               ),
-                                                              shape:
-                                                                  RoundedRectangleBorder(
-                                                                borderRadius:
-                                                                    BorderRadius.circular(12),
+                                                              SizedBox(height: gapNormal),
+                                                              ElevatedButton.icon(
+                                                                onPressed: () {
+                                                                  debugPrint(
+                                                                    'Navegando a publicar producto',
+                                                                  );
+                                                                },
+                                                                icon: Icon(
+                                                                  Icons.add_circle_outline,
+                                                                  color: primaryOrange,
+                                                                  size: buttonIconSize,
+                                                                ),
+                                                                label: Text(
+                                                                  'Publicar ahora',
+                                                                  style: TextStyle(
+                                                                    color: primaryOrange,
+                                                                    fontSize:
+                                                                        buttonFontSize,
+                                                                    fontWeight:
+                                                                        FontWeight.w600,
+                                                                  ),
+                                                                ),
+                                                                style: ElevatedButton
+                                                                    .styleFrom(
+                                                                  backgroundColor:
+                                                                      backgroundWhite,
+                                                                  padding:
+                                                                      EdgeInsets.symmetric(
+                                                                    horizontal:
+                                                                        buttonHPadding,
+                                                                    vertical:
+                                                                        buttonVPadding,
+                                                                  ),
+                                                                  shape:
+                                                                      RoundedRectangleBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                      12,
+                                                                    ),
+                                                                  ),
+                                                                ),
                                                               ),
-                                                            ),
+                                                            ],
                                                           ),
-                                                        ],
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
                                                 ],
                                               ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   );
@@ -317,13 +369,17 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                         ),
                       ),
 
+                      const SizedBox(height: spacingSection),
+
                       // --- SECCIÓN CATEGORÍAS ---
                       HeroCategoriesSection(categories: _categories),
+
+                      const SizedBox(height: spacingSection),
 
                       // --- SECCIÓN PRODUCTOS DESTACADOS ---
                       HeroFeaturedProductsSection(products: _products),
 
-                      const SizedBox(height: 100),
+                      const SizedBox(height: spacingScreenBottom),
                     ]),
                   ),
               ],

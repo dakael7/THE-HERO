@@ -20,6 +20,10 @@ class NotificationsScreen extends ConsumerWidget {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+              return;
+            }
             ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
           },
         ),
