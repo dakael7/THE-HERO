@@ -13,8 +13,3 @@ final currentUserProvider = FutureProvider<User?>((ref) async {
   final getCurrentUserUseCase = ref.read(getCurrentUserUseCaseProvider);
   return await getCurrentUserUseCase.execute();
 });
-
-final lastRoleProvider = FutureProvider<String?>((ref) async {
-  final authNotifier = ref.read(authNotifierProvider.notifier);
-  return await authNotifier.getLastRole();
-});

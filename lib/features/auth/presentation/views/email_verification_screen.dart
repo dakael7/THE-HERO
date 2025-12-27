@@ -189,8 +189,34 @@ class _EmailVerificationScreenState
             final authState = ref.read(authNotifierProvider);
 
             if (authState.isAuthenticated && authState.errorMessage == null) {
-              // Navegar según el rol
+              // Obtener el usuario actual para verificar su perfil
+              final currentUser = await ref
+                  .read(getCurrentUserUseCaseProvider)
+                  .execute();
+
+              if (currentUser == null) {
+                _showErrorDialog('Error al obtener datos del usuario');
+                return;
+              }
+
+              // Verificar que el usuario tenga el perfil del rol seleccionado
               if (widget.userRole == UserRole.hero) {
+                if (!currentUser.isHero) {
+                  // Tiene cuenta pero NO es Hero, redirigir a registro Hero
+                  if (context.mounted) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RegisterHeroScreen(
+                          email: currentUser.email,
+                          existingUser: currentUser,
+                        ),
+                      ),
+                    );
+                  }
+                  return;
+                }
+                // Tiene perfil Hero, navegar a Hero Home
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
@@ -198,12 +224,9 @@ class _EmailVerificationScreenState
                   ),
                 );
               } else {
-                // Lógica para Rider
-                final currentUser = await ref
-                    .read(getCurrentUserUseCaseProvider)
-                    .execute();
-
-                if (currentUser != null && !currentUser.isRider) {
+                // UserRole.rider
+                if (!currentUser.isRider) {
+                  // Tiene cuenta pero NO es Rider, redirigir a registro Rider
                   if (context.mounted) {
                     Navigator.pushReplacement(
                       context,
@@ -217,9 +240,7 @@ class _EmailVerificationScreenState
                   }
                   return;
                 }
-
-                ref.read(authNotifierProvider.notifier).saveLastRole('rider');
-
+                // Tiene perfil Rider, navegar a Rider Home
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(

@@ -37,6 +37,13 @@ abstract class AuthRemoteDataSource {
     required String rut,
     required String phone,
   });
+  Future<UserModel> upgradeToHero({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  });
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
@@ -448,6 +455,48 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       return UserModel.fromJson({'id': uid, ...updatedDoc.data()!});
     } catch (e) {
       throw Exception('Error al actualizar perfil a Rider: $e');
+    }
+  }
+
+  @override
+  Future<UserModel> upgradeToHero({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  }) async {
+    try {
+      final now = DateTime.now().toIso8601String();
+
+      // Datos para crear el perfil de hero por defecto
+      final heroProfileData = {
+        'isActive': true,
+        'completedOrders': 0,
+        'rating': 0.0,
+        'totalSpent': 0.0,
+      };
+
+      // Actualizar documento existente
+      await _firestore.collection('users').doc(uid).update({
+        'identity.firstName': firstName,
+        'identity.lastName': lastName,
+        'identity.documentId': rut,
+        'contact.phoneNumber': phone,
+        'status.lastUpdated': now,
+        'roles': FieldValue.arrayUnion(['hero']),
+        'heroProfile': heroProfileData,
+      });
+
+      // Obtener usuario actualizado para retornarlo
+      final updatedDoc = await _firestore.collection('users').doc(uid).get();
+      if (!updatedDoc.exists || updatedDoc.data() == null) {
+        throw Exception('Error al recuperar usuario actualizado');
+      }
+
+      return UserModel.fromJson({'id': uid, ...updatedDoc.data()!});
+    } catch (e) {
+      throw Exception('Error al actualizar perfil a Hero: $e');
     }
   }
 }

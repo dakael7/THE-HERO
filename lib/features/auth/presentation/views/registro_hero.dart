@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
 
 class RegisterHeroScreen extends ConsumerStatefulWidget {
   final String? email;
+  final User? existingUser;
 
-  const RegisterHeroScreen({super.key, this.email});
+  const RegisterHeroScreen({super.key, this.email, this.existingUser});
 
   @override
   ConsumerState<RegisterHeroScreen> createState() => _RegisterHeroScreenState();
@@ -38,7 +40,14 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
   void initState() {
     super.initState();
 
-    _emailController = TextEditingController(text: widget.email ?? '');
+    final user = widget.existingUser;
+    _emailController = TextEditingController(
+      text: user?.email ?? widget.email ?? '',
+    );
+    _firstNameController.text = user?.identity.firstName ?? '';
+    _lastNameController.text = user?.identity.lastName ?? '';
+    _rutController.text = user?.identity.documentId ?? '';
+    _phoneController.text = user?.contact.phoneNumber ?? '';
 
     _controller = AnimationController(vsync: this, duration: Duration.zero);
 
@@ -209,7 +218,9 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                           controller: _emailController,
                           labelText: 'Correo Electrónico',
                           hintText: 'email@domain.com',
-                          enabled: widget.email == null,
+                          enabled:
+                              widget.email == null &&
+                              widget.existingUser == null,
                           keyboardType: TextInputType.emailAddress,
                           validator: (value) {
                             if (value == null || value.isEmpty) {
@@ -277,23 +288,26 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
                         const SizedBox(height: 24),
 
-                        _buildTextField(
-                          controller: _passwordController,
-                          labelText: 'Contraseña',
-                          hintText:
-                              'Mín. 8 caracteres, 1 mayús, 1 minús, 1 número.',
-                          obscureText: true,
-                          keyboardType: TextInputType.visiblePassword,
-                          validator: (value) {
-                            if (value == null ||
-                                !passwordRegex.hasMatch(value)) {
-                              return 'Contraseña débil. Debe cumplir con el formato.';
-                            }
-                            return null;
-                          },
-                        ),
-
-                        const SizedBox(height: 24),
+                        if (widget.existingUser == null) ...[
+                          _buildTextField(
+                            controller: _passwordController,
+                            labelText: 'Contraseña',
+                            hintText:
+                                'Mín. 8 caracteres, 1 mayús, 1 minús, 1 número.',
+                            obscureText: true,
+                            keyboardType: TextInputType.visiblePassword,
+                            validator: (value) {
+                              if (widget.existingUser == null) {
+                                if (value == null ||
+                                    !passwordRegex.hasMatch(value)) {
+                                  return 'Contraseña débil. Debe cumplir con el formato.';
+                                }
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                        ],
 
                         _buildTextField(
                           controller: _phoneController,
@@ -328,8 +342,60 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                               return ElevatedButton(
                                 onPressed: authState.isLoading
                                     ? null
-                                    : () {
+                                    : () async {
                                         if (_formKey.currentState!.validate()) {
+                                          // 1. MANEJO DE UPGRADE DE CUENTA (RIDER -> HERO)
+                                          if (widget.existingUser != null) {
+                                            final user = widget.existingUser!;
+
+                                            await ref
+                                                .read(
+                                                  authNotifierProvider.notifier,
+                                                )
+                                                .upgradeToHero(
+                                                  uid: user.id,
+                                                  firstName:
+                                                      _firstNameController.text
+                                                          .trim(),
+                                                  lastName: _lastNameController
+                                                      .text
+                                                      .trim(),
+                                                  rut: _rutController.text
+                                                      .trim(),
+                                                  phone: _phoneController.text
+                                                      .trim(),
+                                                );
+
+                                            final currentState = ref.read(
+                                              authNotifierProvider,
+                                            );
+                                            if (currentState.errorMessage ==
+                                                null) {
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      '¡Perfil Hero Activado!',
+                                                    ),
+                                                  ),
+                                                );
+                                                Navigator.of(
+                                                  context,
+                                                ).pushAndRemoveUntil(
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        const HeroHomeScreen(),
+                                                  ),
+                                                  (route) => false,
+                                                );
+                                              }
+                                            }
+                                            return;
+                                          }
+
+                                          // 2. REGISTRO NUEVO
                                           final email = _emailController.text
                                               .trim();
                                           if (email.isEmpty) {
@@ -409,9 +475,11 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                           color: Colors.white,
                                         ),
                                       )
-                                    : const Text(
-                                        'Finalizar Registro Hero',
-                                        style: TextStyle(
+                                    : Text(
+                                        widget.existingUser != null
+                                            ? 'Completar Perfil Hero'
+                                            : 'Finalizar Registro Hero',
+                                        style: const TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.w600,
                                           color: Colors.white,

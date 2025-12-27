@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants/app_colors.dart';
 import '../features/auth/presentation/views/login_page.dart';
-import '../features/auth/presentation/views/role_selection_screen.dart';
 import '../features/auth/presentation/providers/session_provider.dart';
 import '../features/hero/presentation/views/hero_home_screen.dart';
 import '../features/rider/presentation/views/rider_home_screen.dart';
@@ -76,32 +75,15 @@ class App extends ConsumerWidget {
           return const LoginPage();
         }
 
-        if (user.hasMultipleRoles) {
-          final lastRoleAsync = ref.watch(lastRoleProvider);
-          return lastRoleAsync.when(
-            data: (lastRole) {
-              if (lastRole == 'rider' && user.isRider) {
-                return const RiderHomeScreen();
-              }
-              if (lastRole == 'hero' && user.isHero) {
-                return const HeroHomeScreen();
-              }
-              return RoleSelectionScreen(user: user);
-            },
-            loading: () => const Scaffold(
-              backgroundColor: primaryYellow,
-              body: Center(
-                child: CircularProgressIndicator(color: primaryOrange),
-              ),
-            ),
-            error: (_, __) => RoleSelectionScreen(user: user),
-          );
-        }
-
+        // Navegar directamente según el perfil que tenga el usuario
+        // La selección de rol se hace en login_page.dart ANTES de autenticarse
         if (user.isRider) {
           return const RiderHomeScreen();
-        } else {
+        } else if (user.isHero) {
           return const HeroHomeScreen();
+        } else {
+          // Si no tiene ningún perfil, volver a login
+          return const LoginPage();
         }
       },
       loading: () {

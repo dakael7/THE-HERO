@@ -50,6 +50,14 @@ abstract class AuthRepository {
     required String phone,
   });
 
+  Future<User> upgradeToHero({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  });
+
   Future<void> saveLastRole(String role);
   Future<String?> getLastRole();
 }

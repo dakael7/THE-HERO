@@ -15,8 +15,6 @@ import 'my_products_screen.dart';
 import 'payment_methods_screen.dart';
 import 'previous_orders_screen.dart';
 import 'settings_screen.dart';
-import '../../../../rider/presentation/views/rider_home_screen.dart';
-import '../../../../hero/presentation/views/hero_home_screen.dart';
 import '../../../../rider/presentation/views/rider_earnings_screen.dart';
 import '../../../../rider/presentation/views/rider_vehicle_info_screen.dart';
 import '../../../../rider/presentation/views/rider_delivery_history_screen.dart';
@@ -342,87 +340,6 @@ class ProfileScreen extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
-          // Role Switching Section
-          if (isRiderProfile)
-            ProfileMenuTile(
-              icon: Icons.volunteer_activism,
-              title: 'Cambiar a modo Héroe',
-              onTap: () async {
-                await ref
-                    .read(authNotifierProvider.notifier)
-                    .saveLastRole('hero');
-                if (context.mounted) {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
-                    (route) => false,
-                  );
-                }
-              },
-            )
-          else if (user.isRider)
-            ProfileMenuTile(
-              icon: Icons.delivery_dining,
-              title: 'Cambiar a modo Rider',
-              onTap: () async {
-                await ref
-                    .read(authNotifierProvider.notifier)
-                    .saveLastRole('rider');
-                if (context.mounted) {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
-                    (route) => false,
-                  );
-                }
-              },
-            )
-          else
-            ProfileMenuTile(
-              icon: Icons.two_wheeler,
-              title: 'Quiero ser Rider',
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('¡Conviértete en Rider!'),
-                    content: const Text(
-                      'Próximamente podrás completar tu registro como Rider directamente desde aquí.\n\nPor ahora, para probar el modo Rider, por favor regístrate con una nueva cuenta seleccionando "Soy Rider".',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Entendido'),
-                      ),
-                      // Temporary option for testing
-                      TextButton(
-                        onPressed: () async {
-                          Navigator.pop(context);
-                          await ref
-                              .read(authNotifierProvider.notifier)
-                              .saveLastRole('rider');
-                          if (context.mounted) {
-                            Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(
-                                builder: (_) => const RiderHomeScreen(),
-                              ),
-                              (route) => false,
-                            );
-                          }
-                        },
-                        child: const Text(
-                          'Ver Demo Rider (Forzar)',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-
-          const SizedBox(height: 8),
-          const Divider(height: 24),
-          const SizedBox(height: 8),
-
           // Rider-specific options
           if (isRiderProfile) ...[
             ProfileMenuTile(

@@ -140,6 +140,27 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<User> upgradeToHero({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  }) async {
+    final userModel = await _remoteDataSource.upgradeToHero(
+      uid: uid,
+      firstName: firstName,
+      lastName: lastName,
+      rut: rut,
+      phone: phone,
+    );
+
+    await _localDataSource.saveUser(userModel);
+
+    return UserMapper.toEntity(userModel);
+  }
+
+  @override
   Future<void> saveLastRole(String role) async {
     await _localDataSource.saveLastRole(role);
   }

@@ -177,9 +177,6 @@ class AuthNotifier extends Notifier<AuthState> {
         phone: phone,
       );
 
-      // Update local last role
-      await saveLastRole('rider');
-
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
@@ -190,6 +187,37 @@ class AuthNotifier extends Notifier<AuthState> {
         isLoading: false,
         isAuthenticated:
             true, // Still authenticated even if upgrade fails? No, show error.
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  Future<void> upgradeToHero({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  }) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      await _authRepository.upgradeToHero(
+        uid: uid,
+        firstName: firstName,
+        lastName: lastName,
+        rut: rut,
+        phone: phone,
+      );
+
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        errorMessage: null,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
         errorMessage: e.toString(),
       );
     }
