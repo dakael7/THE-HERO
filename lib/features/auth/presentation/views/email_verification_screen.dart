@@ -4,10 +4,11 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
-import 'login_password_screen.dart';
 import 'registro_hero.dart';
 import 'registro_rider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
+import '../../../rider/presentation/views/rider_home_screen.dart';
+import '../../domain/providers/get_current_user_usecase_provider.dart';
 
 class EmailVerificationScreen extends ConsumerStatefulWidget {
   final UserRole userRole;
@@ -22,13 +23,149 @@ class EmailVerificationScreen extends ConsumerStatefulWidget {
 class _EmailVerificationScreenState
     extends ConsumerState<EmailVerificationScreen> {
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
+  bool _accountExists = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
     _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
+  }
+
+  void _showErrorDialog(String errorMessage) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.lock_outline,
+                  color: Colors.red,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Error de Autenticación',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: textGray900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                errorMessage,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: textGray700,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.orange.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: primaryOrange, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Verifica tus credenciales',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: primaryOrange,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'Intentar de nuevo',
+                style: TextStyle(
+                  color: primaryOrange,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+          actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
+        );
+      },
+    );
+  }
+
+  Future<void> _checkEmail() async {
+    if (_emailController.text.trim().isEmpty) {
+      return;
+    }
+
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    if (!emailRegex.hasMatch(_emailController.text.trim())) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final email = _emailController.text.trim();
+      final accountExists = await ref
+          .read(authNotifierProvider.notifier)
+          .checkEmailExists(email);
+
+      if (mounted) {
+        setState(() {
+          _accountExists = accountExists;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _submitForm() async {
@@ -40,50 +177,83 @@ class _EmailVerificationScreenState
       try {
         final email = _emailController.text.trim();
 
-        // Verificar si la cuenta existe usando el AuthNotifier de Riverpod
-        final accountExists = await ref
-            .read(authNotifierProvider.notifier)
-            .checkEmailExists(email);
+        if (_accountExists) {
+          // Login con email y contraseña
+          final password = _passwordController.text;
 
-        if (mounted) {
-          if (accountExists) {
-            // La cuenta existe: navegar a pantalla de login (solo contraseña)
+          await ref
+              .read(authNotifierProvider.notifier)
+              .signInWithEmail(email, password);
+
+          if (mounted) {
+            final authState = ref.read(authNotifierProvider);
+
+            if (authState.isAuthenticated && authState.errorMessage == null) {
+              // Navegar según el rol
+              if (widget.userRole == UserRole.hero) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const HeroHomeScreen(),
+                  ),
+                );
+              } else {
+                // Lógica para Rider
+                final currentUser = await ref
+                    .read(getCurrentUserUseCaseProvider)
+                    .execute();
+
+                if (currentUser != null && !currentUser.isRider) {
+                  if (context.mounted) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RegisterRiderScreen(
+                          email: currentUser.email,
+                          existingUser: currentUser,
+                        ),
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                ref.read(authNotifierProvider.notifier).saveLastRole('rider');
+
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const RiderHomeScreen(),
+                  ),
+                );
+              }
+            } else {
+              if (authState.errorMessage != null) {
+                _showErrorDialog(authState.errorMessage!);
+              }
+            }
+          }
+        } else {
+          // La cuenta no existe: navegar a registro
+          if (widget.userRole == UserRole.hero) {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => LoginPasswordScreen(
-                  email: email,
-                  userRole: widget.userRole == UserRole.hero ? 'hero' : 'rider',
-                ),
+                builder: (context) => RegisterHeroScreen(email: email),
               ),
             );
           } else {
-            // La cuenta no existe: navegar a pantalla de registro
-            if (widget.userRole == UserRole.hero) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => RegisterHeroScreen(email: email),
-                ),
-              );
-            } else {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => RegisterRiderScreen(email: email),
-                ),
-              );
-            }
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => RegisterRiderScreen(email: email),
+              ),
+            );
           }
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: ${e.toString()}'),
-              duration: const Duration(milliseconds: 2000),
-            ),
-          );
+          _showErrorDialog('Error inesperado: ${e.toString()}');
         }
       } finally {
         if (mounted) {
@@ -192,6 +362,15 @@ class _EmailVerificationScreenState
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   enabled: !_isLoading,
+                  onChanged: (value) {
+                    // Reset account exists when email changes
+                    if (_accountExists) {
+                      setState(() {
+                        _accountExists = false;
+                        _passwordController.clear();
+                      });
+                    }
+                  },
                   style: const TextStyle(
                     color: textGray900,
                     fontSize: 16,
@@ -212,11 +391,91 @@ class _EmailVerificationScreenState
 
                 const SizedBox(height: 20),
 
+                // 3.5 INPUT DE CONTRASEÑA (solo si la cuenta existe)
+                if (_accountExists) ...[
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    enabled: !_isLoading,
+                    style: const TextStyle(color: textGray900, fontSize: 16),
+                    decoration: InputDecoration(
+                      hintText: 'Contraseña',
+                      hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 20,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: Colors.grey,
+                          width: 1.0,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Colors.grey.shade300,
+                          width: 1.0,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: primaryOrange,
+                          width: 2,
+                        ),
+                      ),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: textGray600,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
+                    ),
+                    validator: (value) {
+                      if (_accountExists) {
+                        if (value == null || value.isEmpty) {
+                          return 'Por favor ingresa tu contraseña';
+                        }
+                        if (value.length < 6) {
+                          return 'La contraseña debe tener al menos 6 caracteres';
+                        }
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                ],
+
                 // 4. BOTÓN CONTINUAR
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _submitForm,
+                    onPressed: _isLoading
+                        ? null
+                        : () async {
+                            // Primero verificar el email si no se ha hecho
+                            if (!_accountExists &&
+                                _emailController.text.trim().isNotEmpty) {
+                              await _checkEmail();
+                              // Si la cuenta existe, no continuar aún
+                              if (_accountExists) {
+                                return;
+                              }
+                            }
+                            // Si la cuenta existe o no, proceder con el submit
+                            _submitForm();
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryOrange,
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -236,14 +495,61 @@ class _EmailVerificationScreenState
                               ),
                             ),
                           )
-                        : const Text(
-                            'Continuar',
-                            style: TextStyle(
+                        : Text(
+                            _accountExists ? 'Ingresar' : 'Continuar',
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
                             ),
                           ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // 4.5 LINK DE REGISTRO
+                Center(
+                  child: TextButton(
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                            final email = _emailController.text.trim();
+                            if (widget.userRole == UserRole.hero) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => RegisterHeroScreen(
+                                    email: email.isNotEmpty ? email : null,
+                                  ),
+                                ),
+                              );
+                            } else {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => RegisterRiderScreen(
+                                    email: email.isNotEmpty ? email : null,
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                    child: RichText(
+                      text: const TextSpan(
+                        text: '¿No tienes cuenta? ',
+                        style: TextStyle(color: textGray600, fontSize: 14),
+                        children: [
+                          TextSpan(
+                            text: 'Regístrate',
+                            style: TextStyle(
+                              color: primaryOrange,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
 
@@ -311,17 +617,6 @@ class _EmailVerificationScreenState
                           }
                         },
                 ),
-                const SizedBox(height: 15),
-                _buildSocialButton(
-                  icon: Icons.apple,
-                  label: 'Continuar con Apple',
-                  isApple: true,
-                  onTap: _isLoading
-                      ? null
-                      : () {
-                          // Lógica futura de Apple Sign In
-                        },
-                ),
 
                 const SizedBox(height: 40),
 
@@ -371,7 +666,8 @@ class _EmailVerificationScreenState
         width: double.infinity,
         child: OutlinedButton.icon(
           onPressed: onTap,
-          icon: iconWidget ??
+          icon:
+              iconWidget ??
               Icon(
                 icon,
                 color: isApple ? Colors.black : Colors.blue.shade700,
