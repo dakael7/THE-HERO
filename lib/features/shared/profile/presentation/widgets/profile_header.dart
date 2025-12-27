@@ -4,10 +4,12 @@ import '../../../../../domain/entities/user.dart';
 
 class ProfileHeader extends StatelessWidget {
   final User user;
+  final bool isRiderProfile;
 
   const ProfileHeader({
     super.key,
     required this.user,
+    this.isRiderProfile = false,
   });
 
   @override
@@ -49,11 +51,7 @@ class ProfileHeader extends StatelessWidget {
                   width: 2,
                 ),
               ),
-              child: const Icon(
-                Icons.person,
-                size: 30,
-                color: primaryOrange,
-              ),
+              child: const Icon(Icons.person, size: 30, color: primaryOrange),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -83,17 +81,20 @@ class ProfileHeader extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: primaryOrange.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(999),
-                      border:
-                          Border.all(color: primaryOrange.withOpacity(0.20)),
+                      border: Border.all(
+                        color: primaryOrange.withOpacity(0.20),
+                      ),
                     ),
-                    child: const Text(
-                      'Héroe Verificado',
-                      style: TextStyle(
+                    child: Text(
+                      isRiderProfile ? 'Rider Verificado' : 'Héroe Verificado',
+                      style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: primaryOrange,

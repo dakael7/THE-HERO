@@ -15,6 +15,8 @@ import '../../domain/providers/get_current_user_usecase_provider.dart';
 import '../../domain/providers/sign_out_usecase_provider.dart';
 import '../../domain/providers/google_sign_in_usecase_provider.dart';
 import '../../domain/providers/register_google_user_usecase_provider.dart';
+import '../../../../data/providers/repository_providers.dart';
+import '../../../../domain/repositories/auth_repository.dart';
 import 'auth_state.dart';
 
 class AuthNotifier extends Notifier<AuthState> {
@@ -24,6 +26,7 @@ class AuthNotifier extends Notifier<AuthState> {
   late final CheckEmailExistsUseCase _checkEmailExistsUseCase;
   late final GetCurrentUserUseCase _getCurrentUserUseCase;
   late final SignOutUseCase _signOutUseCase;
+  late final AuthRepository _authRepository;
 
   @override
   AuthState build() {
@@ -33,6 +36,7 @@ class AuthNotifier extends Notifier<AuthState> {
     _checkEmailExistsUseCase = ref.read(checkEmailExistsUseCaseProvider);
     _getCurrentUserUseCase = ref.read(getCurrentUserUseCaseProvider);
     _signOutUseCase = ref.read(signOutUseCaseProvider);
+    _authRepository = ref.read(authRepositoryProvider);
     return AuthState.initial();
   }
 
@@ -43,8 +47,9 @@ class AuthNotifier extends Notifier<AuthState> {
       final userCredential = await googleSignInUseCase.execute();
       final email = userCredential.user?.email ?? '';
 
-      final registerGoogleUserUseCase =
-          ref.read(registerGoogleUserUseCaseProvider);
+      final registerGoogleUserUseCase = ref.read(
+        registerGoogleUserUseCaseProvider,
+      );
       await registerGoogleUserUseCase.execute(email: email, role: role);
 
       state = state.copyWith(
@@ -155,6 +160,49 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
+  Future<void> upgradeToRider({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  }) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      await _authRepository.upgradeToRider(
+        uid: uid,
+        firstName: firstName,
+        lastName: lastName,
+        rut: rut,
+        phone: phone,
+      );
+
+      // Update local last role
+      await saveLastRole('rider');
+
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        errorMessage: null,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated:
+            true, // Still authenticated even if upgrade fails? No, show error.
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  Future<void> saveLastRole(String role) async {
+    await _authRepository.saveLastRole(role);
+  }
+
+  Future<String?> getLastRole() async {
+    return await _authRepository.getLastRole();
+  }
+
   void clearError() {
     state = state.copyWith(errorMessage: null);
   }
@@ -171,7 +219,6 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> signOut() async {
     state = state.copyWith(isLoading: true);
     try {
- 
       await _signOutUseCase.execute();
 
       state = state.copyWith(
@@ -180,10 +227,7 @@ class AuthNotifier extends Notifier<AuthState> {
         errorMessage: null,
       );
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        errorMessage: e.toString(),
-      );
+      state = state.copyWith(isLoading: false, errorMessage: e.toString());
     }
   }
 
@@ -194,16 +238,16 @@ class AuthNotifier extends Notifier<AuthState> {
       final googleSignInUseCase = ref.read(googleSignInUseCaseProvider);
       final userCredential = await googleSignInUseCase.execute();
       final email = userCredential.user?.email ?? '';
-      
+
       // Verificar si la cuenta existe
       final accountExists = await checkEmailExists(email);
-      
+
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
         errorMessage: null,
       );
-      
+
       // Retorna true si es un usuario nuevo (no existe), false si ya existe
       return !accountExists;
     } catch (e) {

@@ -12,7 +12,7 @@ class AnimatedRoleButton extends StatefulWidget {
   final VoidCallback onTap;
 
   const AnimatedRoleButton({
-    Key? key,
+    super.key,
     required this.contentWidget,
     required this.label,
     required this.description,
@@ -20,7 +20,7 @@ class AnimatedRoleButton extends StatefulWidget {
     required this.textColor,
     required this.descriptionColor,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   State<AnimatedRoleButton> createState() => _AnimatedRoleButtonState();
@@ -93,7 +93,10 @@ class _AnimatedRoleButtonState extends State<AnimatedRoleButton> {
         curve: Curves.easeOut,
         transform: Matrix4.identity()..scale(_isPressed ? _scaleFactor : 1.0),
         width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: verticalPadding, horizontal: horizontalPadding),
+        padding: EdgeInsets.symmetric(
+          vertical: verticalPadding,
+          horizontal: horizontalPadding,
+        ),
         decoration: BoxDecoration(
           color: _getAnimatedColor(isOrange),
           borderRadius: BorderRadius.circular(12),

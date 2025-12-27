@@ -3,13 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
+import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
+import '../../../rider/presentation/views/rider_home_screen.dart';
 
 class RegisterRiderScreen extends ConsumerStatefulWidget {
   final String? email;
+  final User? existingUser;
 
-  const RegisterRiderScreen({Key? key, this.email}) : super(key: key);
+  const RegisterRiderScreen({Key? key, this.email, this.existingUser})
+    : super(key: key);
 
   @override
   ConsumerState<RegisterRiderScreen> createState() =>
@@ -25,11 +29,11 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   );
 
   late final TextEditingController _emailController;
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
-  final TextEditingController _rutController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
+  late final TextEditingController _firstNameController;
+  late final TextEditingController _lastNameController;
+  late final TextEditingController _rutController;
+  late final TextEditingController _passwordController;
+  late final TextEditingController _phoneController;
 
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
@@ -40,12 +44,25 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   void initState() {
     super.initState();
 
-    _emailController = TextEditingController(text: widget.email ?? '');
-
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration.zero, 
+    final user = widget.existingUser;
+    _emailController = TextEditingController(
+      text: user?.email ?? widget.email ?? '',
     );
+    _firstNameController = TextEditingController(
+      text: user?.identity.firstName ?? '',
+    );
+    _lastNameController = TextEditingController(
+      text: user?.identity.lastName ?? '',
+    );
+    _rutController = TextEditingController(
+      text: user?.identity.documentId ?? '',
+    );
+    _phoneController = TextEditingController(
+      text: user?.contact.phoneNumber ?? '',
+    );
+    _passwordController = TextEditingController();
+
+    _controller = AnimationController(vsync: this, duration: Duration.zero);
 
     _offsetAnimation = Tween<Offset>(
       begin: const Offset(0.0, 0.2),
@@ -155,7 +172,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
       if (!wasAuthenticated && next.isAuthenticated) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HeroHomeScreen()),
+          MaterialPageRoute(builder: (context) => const RiderHomeScreen()),
         );
       }
     });
@@ -290,23 +307,24 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                             },
                           ),
 
-                          const SizedBox(height: 24),
-
-                          _buildTextField(
-                            controller: _passwordController,
-                            labelText: 'Contraseña',
-                            hintText:
-                                'Mín. 8 caracteres, 1 mayús, 1 minús, 1 número.',
-                            obscureText: true,
-                            keyboardType: TextInputType.visiblePassword,
-                            validator: (value) {
-                              if (value == null ||
-                                  !passwordRegex.hasMatch(value)) {
-                                return 'Contraseña débil. Debe cumplir con el formato.';
-                              }
-                              return null;
-                            },
-                          ),
+                          if (widget.existingUser == null) ...[
+                            const SizedBox(height: 24),
+                            _buildTextField(
+                              controller: _passwordController,
+                              labelText: 'Contraseña',
+                              hintText:
+                                  'Mín. 8 caracteres, 1 mayús, 1 minús, 1 número.',
+                              obscureText: true,
+                              keyboardType: TextInputType.visiblePassword,
+                              validator: (value) {
+                                if (value == null ||
+                                    !passwordRegex.hasMatch(value)) {
+                                  return 'Contraseña débil. Debe cumplir con el formato.';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
 
                           const SizedBox(height: 24),
 
@@ -343,9 +361,63 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                 return ElevatedButton(
                                   onPressed: authState.isLoading
                                       ? null
-                                      : () {
+                                      : () async {
                                           if (_formKey.currentState!
                                               .validate()) {
+                                            // 1. MANEJO DE UPGRADE DE CUENTA (HERO -> RIDER)
+                                            if (widget.existingUser != null) {
+                                              final user = widget.existingUser!;
+
+                                              await ref
+                                                  .read(
+                                                    authNotifierProvider
+                                                        .notifier,
+                                                  )
+                                                  .upgradeToRider(
+                                                    uid: user.id,
+                                                    firstName:
+                                                        _firstNameController
+                                                            .text
+                                                            .trim(),
+                                                    lastName:
+                                                        _lastNameController.text
+                                                            .trim(),
+                                                    rut: _rutController.text
+                                                        .trim(),
+                                                    phone: _phoneController.text
+                                                        .trim(),
+                                                  );
+
+                                              final currentState = ref.read(
+                                                authNotifierProvider,
+                                              );
+                                              if (currentState.errorMessage ==
+                                                  null) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        '¡Perfil Rider Activado!',
+                                                      ),
+                                                    ),
+                                                  );
+                                                  Navigator.of(
+                                                    context,
+                                                  ).pushAndRemoveUntil(
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          const RiderHomeScreen(),
+                                                    ),
+                                                    (route) => false,
+                                                  );
+                                                }
+                                              }
+                                              return;
+                                            }
+
+                                            // 2. REGISTRO NUEVO
                                             final email = _emailController.text
                                                 .trim();
                                             if (email.isEmpty) {
@@ -360,6 +432,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                               );
                                               return;
                                             }
+
                                             ref
                                                 .read(
                                                   authNotifierProvider.notifier,
@@ -380,6 +453,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                                   phone: _phoneController.text
                                                       .trim(),
                                                 );
+
                                             ScaffoldMessenger.of(
                                               buttonContext,
                                             ).showSnackBar(
@@ -426,9 +500,11 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                             color: Colors.white,
                                           ),
                                         )
-                                      : const Text(
-                                          'Finalizar Registro Rider',
-                                          style: TextStyle(
+                                      : Text(
+                                          widget.existingUser != null
+                                              ? 'Completar Perfil Rider'
+                                              : 'Finalizar Registro Rider',
+                                          style: const TextStyle(
                                             fontSize: 18,
                                             fontWeight: FontWeight.w600,
                                             color: Colors.white,

@@ -4,6 +4,9 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart' as hero;
+import '../../../rider/presentation/views/rider_home_screen.dart';
+import '../../domain/providers/get_current_user_usecase_provider.dart';
+import 'registro_rider.dart';
 
 class LoginPasswordScreen extends ConsumerStatefulWidget {
   final String email;
@@ -93,11 +96,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                 ),
                 child: const Row(
                   children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: primaryOrange,
-                      size: 18,
-                    ),
+                    Icon(Icons.info_outline, color: primaryOrange, size: 18),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -143,15 +142,14 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
         final password = _passwordController.text;
 
         // Realizar login con email y contraseña
-        await ref.read(authNotifierProvider.notifier).signInWithEmail(
-              widget.email,
-              password,
-            );
+        await ref
+            .read(authNotifierProvider.notifier)
+            .signInWithEmail(widget.email, password);
 
         if (mounted) {
           // Verificar si la autenticación fue exitosa
           final authState = ref.read(authNotifierProvider);
-          
+
           if (authState.isAuthenticated && authState.errorMessage == null) {
             // Navegar a la pantalla de inicio según el rol
             if (widget.userRole == 'hero') {
@@ -162,12 +160,37 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                 ),
               );
             } else {
-              // TODO: Navegar a RiderHomeScreen cuando esté disponible
-              // Por ahora, mostrar un mensaje
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Login exitoso como Rider'),
-                  duration: Duration(seconds: 2),
+              // LÓGICA SMART RIDER REDIRECT
+              // Si el usuario entra como Rider, verificamos si realmente TIENE el rol.
+              // Si no lo tiene, lo mandamos a completar su perfil.
+              final currentUser = await ref
+                  .read(getCurrentUserUseCaseProvider)
+                  .execute();
+
+              if (currentUser != null && !currentUser.isRider) {
+                if (context.mounted) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => RegisterRiderScreen(
+                        email: currentUser.email,
+                        existingUser: currentUser,
+                      ),
+                    ),
+                  );
+                }
+                return;
+              }
+
+              // Si ya es rider o no pudimos verificar, procedemos normal
+              // Guardar preferencia de rol
+              ref.read(authNotifierProvider.notifier).saveLastRole('rider');
+
+              // Navegar a RiderHomeScreen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RiderHomeScreen(),
                 ),
               );
             }
@@ -242,7 +265,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
       tabletPadding: 18.0,
       desktopPadding: 20.0,
     );
-    
+
     return Scaffold(
       backgroundColor: backgroundGray50,
       appBar: AppBar(
@@ -276,10 +299,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                 Text(
                   widget.email,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: emailFontSize,
-                    color: textGray600,
-                  ),
+                  style: TextStyle(fontSize: emailFontSize, color: textGray600),
                 ),
 
                 SizedBox(height: verticalSpacing),
@@ -289,10 +309,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   enabled: !_isLoading,
-                  style: TextStyle(
-                    color: textGray900,
-                    fontSize: inputFontSize,
-                  ),
+                  style: TextStyle(color: textGray900, fontSize: inputFontSize),
                   decoration: InputDecoration(
                     hintText: 'Contraseña',
                     hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),

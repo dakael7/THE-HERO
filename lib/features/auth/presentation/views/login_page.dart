@@ -27,31 +27,25 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(
-      authNotifierProvider,
-      (previous, next) {
-        if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(next.errorMessage!),
-              duration: const Duration(milliseconds: 2000),
-            ),
-          );
-        }
+    ref.listen(authNotifierProvider, (previous, next) {
+      if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.errorMessage!),
+            duration: const Duration(milliseconds: 2000),
+          ),
+        );
+      }
 
-        final wasAuthenticated = previous?.isAuthenticated ?? false;
-        if (!wasAuthenticated && next.isAuthenticated) {
-          
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const HeroHomeScreen(),
-            ),
-          );
-        }
-      },
-    );
-    
+      final wasAuthenticated = previous?.isAuthenticated ?? false;
+      if (!wasAuthenticated && next.isAuthenticated) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HeroHomeScreen()),
+        );
+      }
+    });
+
     final padding = ResponsiveUtils.responsivePadding(
       context,
       mobilePadding: 24.0,
@@ -70,7 +64,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       tabletPadding: 20.0,
       desktopPadding: 24.0,
     );
-    
+
     return Scaffold(
       backgroundColor: primaryYellow,
       body: SafeArea(
@@ -148,14 +142,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   Widget _buildLogoSection(BuildContext context) {
     final logoHeight = ResponsiveUtils.isMobile(context) ? 100.0 : 120.0;
-    
+
     return Padding(
       padding: const EdgeInsets.only(top: 8.0),
       child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset('assets/logo_1.png', height: logoHeight, fit: BoxFit.contain),
+            Image.asset(
+              'assets/logo_1.png',
+              height: logoHeight,
+              fit: BoxFit.contain,
+            ),
           ],
         ),
       ),
@@ -187,7 +185,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       tabletPadding: 20.0,
       desktopPadding: 24.0,
     );
-    
+
     return Column(
       children: [
         // Título de bienvenida principal
@@ -226,7 +224,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         SizedBox(height: spacing * 1.5),
         // Texto de instrucción
         Container(
-          padding: EdgeInsets.symmetric(horizontal: spacing, vertical: spacing * 0.75),
+          padding: EdgeInsets.symmetric(
+            horizontal: spacing,
+            vertical: spacing * 0.75,
+          ),
           decoration: BoxDecoration(
             color: backgroundGray50,
             borderRadius: BorderRadius.circular(12),
@@ -245,5 +246,4 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ],
     );
   }
-
 }

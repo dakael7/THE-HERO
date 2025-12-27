@@ -276,9 +276,9 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
 
     return GestureDetector(
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-        );
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
       },
       child: Stack(
         clipBehavior: Clip.none,
@@ -324,8 +324,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
                     ),
                   ],
                 ),
-                constraints:
-                    const BoxConstraints(minWidth: 18, minHeight: 18),
+                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                 child: Text(
                   badgeCount.toString(),
                   style: const TextStyle(

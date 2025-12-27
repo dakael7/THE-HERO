@@ -4,7 +4,6 @@ import '../../../../../core/constants/app_colors.dart';
 import '../../../../auth/presentation/providers/auth_provider.dart';
 import '../../../../auth/presentation/views/login_page.dart';
 import '../providers/profile_provider.dart';
-import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 import '../viewmodels/profile_viewmodel.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/profile_stats_section.dart';
@@ -16,9 +15,22 @@ import 'my_products_screen.dart';
 import 'payment_methods_screen.dart';
 import 'previous_orders_screen.dart';
 import 'settings_screen.dart';
+import '../../../../rider/presentation/views/rider_home_screen.dart';
+import '../../../../hero/presentation/views/hero_home_screen.dart';
+import '../../../../rider/presentation/views/rider_earnings_screen.dart';
+import '../../../../rider/presentation/views/rider_vehicle_info_screen.dart';
+import '../../../../rider/presentation/views/rider_delivery_history_screen.dart';
+import '../../../../../domain/entities/user.dart';
 
 class ProfileScreen extends ConsumerWidget {
-  const ProfileScreen({super.key});
+  final VoidCallback? onBackPressed;
+  final bool isRiderProfile;
+
+  const ProfileScreen({
+    super.key,
+    this.onBackPressed,
+    this.isRiderProfile = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -67,7 +79,10 @@ class ProfileScreen extends ConsumerWidget {
                     height: 220,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [primaryOrange, primaryYellow.withOpacity(0.95)],
+                        colors: [
+                          primaryOrange,
+                          primaryYellow.withOpacity(0.95),
+                        ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -90,13 +105,11 @@ class ProfileScreen extends ConsumerWidget {
                     child: IconButton(
                       icon: const Icon(Icons.arrow_back, color: textGray900),
                       onPressed: () {
-                        if (Navigator.of(context).canPop()) {
+                        if (onBackPressed != null) {
+                          onBackPressed!();
+                        } else {
                           Navigator.of(context).pop();
-                          return;
                         }
-                        ref
-                            .read(heroHomeViewModelProvider.notifier)
-                            .selectNavItem(0);
                       },
                     ),
                   ),
@@ -127,7 +140,10 @@ class ProfileScreen extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ProfileHeader(user: user),
+                        ProfileHeader(
+                          user: user,
+                          isRiderProfile: isRiderProfile,
+                        ),
                         const SizedBox(height: 12),
                         ProfileStatsSection(
                           publications: profileState.publications,
@@ -142,7 +158,10 @@ class ProfileScreen extends ConsumerWidget {
                             decoration: BoxDecoration(
                               color: backgroundWhite,
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: borderGray100, width: 1),
+                              border: Border.all(
+                                color: borderGray100,
+                                width: 1,
+                              ),
                               boxShadow: [
                                 BoxShadow(
                                   color: textGray900.withOpacity(0.06),
@@ -162,44 +181,83 @@ class ProfileScreen extends ConsumerWidget {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => const PersonalDataScreen(),
+                                          builder: (_) =>
+                                              const PersonalDataScreen(),
                                         ),
                                       );
                                     },
                                   ),
                                 ),
                                 const SizedBox(width: 10),
-                                Expanded(
-                                  child: _QuickActionButton(
-                                    icon: Icons.shopping_bag_outlined,
-                                    title: 'Productos',
-                                    subtitle: 'Publicados',
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => const MyProductsScreen(),
-                                        ),
-                                      );
-                                    },
+                                if (isRiderProfile) ...[
+                                  Expanded(
+                                    child: _QuickActionButton(
+                                      icon: Icons.attach_money,
+                                      title: 'Ganancias',
+                                      subtitle: 'Totales',
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const RiderEarningsScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _QuickActionButton(
-                                    icon: Icons.favorite_border,
-                                    title: 'Favoritos',
-                                    subtitle: 'Guardados',
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => const FavoritesScreen(),
-                                        ),
-                                      );
-                                    },
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _QuickActionButton(
+                                      icon: Icons.directions_bike,
+                                      title: 'Vehículo',
+                                      subtitle: 'Información',
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const RiderVehicleInfoScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   ),
-                                ),
+                                ] else ...[
+                                  Expanded(
+                                    child: _QuickActionButton(
+                                      icon: Icons.shopping_bag_outlined,
+                                      title: 'Productos',
+                                      subtitle: 'Publicados',
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const MyProductsScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _QuickActionButton(
+                                      icon: Icons.favorite_border,
+                                      title: 'Favoritos',
+                                      subtitle: 'Guardados',
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const FavoritesScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -217,7 +275,12 @@ class ProfileScreen extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        _buildSettingsSection(context, ref),
+                        _buildSettingsSection(
+                          context,
+                          ref,
+                          user,
+                          isRiderProfile,
+                        ),
                         const SizedBox(height: 18),
                         const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 16),
@@ -269,45 +332,177 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-
-  Widget _buildSettingsSection(BuildContext context, WidgetRef ref) {
+  Widget _buildSettingsSection(
+    BuildContext context,
+    WidgetRef ref,
+    User user,
+    bool isRiderProfile,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
-          ProfileMenuTile(
-            icon: Icons.shopping_bag_outlined,
-            title: 'Mis productos',
-            trailingText: '0',
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const MyProductsScreen()),
-              );
-            },
-          ),
+          // Role Switching Section
+          if (isRiderProfile)
+            ProfileMenuTile(
+              icon: Icons.volunteer_activism,
+              title: 'Cambiar a modo Héroe',
+              onTap: () async {
+                await ref
+                    .read(authNotifierProvider.notifier)
+                    .saveLastRole('hero');
+                if (context.mounted) {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
+                    (route) => false,
+                  );
+                }
+              },
+            )
+          else if (user.isRider)
+            ProfileMenuTile(
+              icon: Icons.delivery_dining,
+              title: 'Cambiar a modo Rider',
+              onTap: () async {
+                await ref
+                    .read(authNotifierProvider.notifier)
+                    .saveLastRole('rider');
+                if (context.mounted) {
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+                    (route) => false,
+                  );
+                }
+              },
+            )
+          else
+            ProfileMenuTile(
+              icon: Icons.two_wheeler,
+              title: 'Quiero ser Rider',
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('¡Conviértete en Rider!'),
+                    content: const Text(
+                      'Próximamente podrás completar tu registro como Rider directamente desde aquí.\n\nPor ahora, para probar el modo Rider, por favor regístrate con una nueva cuenta seleccionando "Soy Rider".',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Entendido'),
+                      ),
+                      // Temporary option for testing
+                      TextButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await ref
+                              .read(authNotifierProvider.notifier)
+                              .saveLastRole('rider');
+                          if (context.mounted) {
+                            Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(
+                                builder: (_) => const RiderHomeScreen(),
+                              ),
+                              (route) => false,
+                            );
+                          }
+                        },
+                        child: const Text(
+                          'Ver Demo Rider (Forzar)',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
           const SizedBox(height: 8),
-          ProfileMenuTile(
-            icon: Icons.favorite_border,
-            title: 'Favoritos',
-            trailingText: '0',
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const FavoritesScreen()),
-              );
-            },
-          ),
+          const Divider(height: 24),
           const SizedBox(height: 8),
-          ProfileMenuTile(
-            icon: Icons.history,
-            title: 'Pedidos anteriores',
-            trailingText: '0',
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PreviousOrdersScreen()),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
+
+          // Rider-specific options
+          if (isRiderProfile) ...[
+            ProfileMenuTile(
+              icon: Icons.attach_money,
+              title: 'Mis ganancias',
+              trailingText: '\$0',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const RiderEarningsScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            ProfileMenuTile(
+              icon: Icons.history,
+              title: 'Historial de entregas',
+              trailingText: '0',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const RiderDeliveryHistoryScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            ProfileMenuTile(
+              icon: Icons.directions_bike,
+              title: 'Información del vehículo',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const RiderVehicleInfoScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+          // Hero-specific options
+          if (!isRiderProfile) ...[
+            ProfileMenuTile(
+              icon: Icons.shopping_bag_outlined,
+              title: 'Mis productos',
+              trailingText: '0',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MyProductsScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            ProfileMenuTile(
+              icon: Icons.favorite_border,
+              title: 'Favoritos',
+              trailingText: '0',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            ProfileMenuTile(
+              icon: Icons.history,
+              title: 'Pedidos anteriores',
+              trailingText: '0',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const PreviousOrdersScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+          // Common options for both roles
           ProfileMenuTile(
             icon: Icons.credit_card,
             title: 'Métodos de pago',
@@ -333,9 +528,9 @@ class ProfileScreen extends ConsumerWidget {
             icon: Icons.settings_outlined,
             title: 'Configuración',
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
             },
           ),
           const SizedBox(height: 8),
@@ -353,7 +548,6 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-
   Widget _buildLogoutButton(BuildContext context, WidgetRef ref) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -366,10 +560,7 @@ class ProfileScreen extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                color: Colors.red.shade200,
-                width: 1,
-              ),
+              side: BorderSide(color: Colors.red.shade200, width: 1),
             ),
           ),
           onPressed: () {
@@ -377,10 +568,7 @@ class ProfileScreen extends ConsumerWidget {
           },
           child: const Text(
             'Cerrar Sesión',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
-            ),
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
           ),
         ),
       ),
@@ -500,17 +688,13 @@ class PersonalDataScreen extends ConsumerWidget {
         elevation: 0,
         title: const Text(
           'Datos personales',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
       body: userAsyncValue.when(
         data: (user) {
           if (user == null) {
-            return const Center(
-              child: Text('No hay datos de usuario'),
-            );
+            return const Center(child: Text('No hay datos de usuario'));
           }
 
           return SingleChildScrollView(
@@ -523,9 +707,19 @@ class PersonalDataScreen extends ConsumerWidget {
                   const SizedBox(height: 8),
                   PersonalInfoCard(label: 'Email', value: user.email),
                   const SizedBox(height: 8),
-                  PersonalInfoCard(label: 'Teléfono', value: user.phoneNumber.isNotEmpty ? user.phoneNumber : 'No disponible'),
+                  PersonalInfoCard(
+                    label: 'Teléfono',
+                    value: user.phoneNumber.isNotEmpty
+                        ? user.phoneNumber
+                        : 'No disponible',
+                  ),
                   const SizedBox(height: 8),
-                  PersonalInfoCard(label: 'RUT', value: user.documentId.isNotEmpty ? user.documentId : 'No disponible'),
+                  PersonalInfoCard(
+                    label: 'RUT',
+                    value: user.documentId.isNotEmpty
+                        ? user.documentId
+                        : 'No disponible',
+                  ),
                 ],
               ),
             ),
@@ -537,9 +731,7 @@ class PersonalDataScreen extends ConsumerWidget {
           );
         },
         error: (error, stackTrace) {
-          return Center(
-            child: Text('Error: $error'),
-          );
+          return Center(child: Text('Error: $error'));
         },
       ),
     );

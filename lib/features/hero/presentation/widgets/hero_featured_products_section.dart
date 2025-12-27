@@ -97,7 +97,7 @@ class HeroFeaturedProductsSection extends StatelessWidget {
               ),
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }

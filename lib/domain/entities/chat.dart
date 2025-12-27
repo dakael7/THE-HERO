@@ -90,13 +90,13 @@ class Chat {
     final contextId = (orderId != null && orderId.isNotEmpty)
         ? orderId
         : (offerId != null && offerId.isNotEmpty)
-            ? offerId
-            : null;
+        ? offerId
+        : null;
 
     if (contextId == null || contextId.isEmpty) {
       throw ArgumentError('orderId u offerId es requerido');
     }
 
-    return '${type.jsonValue}_${buyerId}_${otherId}_${contextId}';
+    return '${type.jsonValue}_${buyerId}_${otherId}_$contextId';
   }
 }

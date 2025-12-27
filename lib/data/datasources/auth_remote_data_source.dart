@@ -30,6 +30,13 @@ abstract class AuthRemoteDataSource {
     required String email,
     required String role,
   });
+  Future<UserModel> upgradeToRider({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  });
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
@@ -74,10 +81,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Datos del usuario vacíos en Firestore');
       }
 
-      return UserModel.fromJson({
-        'id': user.uid,
-        ...userData,
-      });
+      return UserModel.fromJson({'id': user.uid, ...userData});
     } on FirebaseAuthException catch (e) {
       final errorMessage = _getFirebaseErrorMessage(e);
       throw Exception(errorMessage);
@@ -142,11 +146,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           'emailVerified': false,
         },
         'roles': ['hero'],
-        'status': {
-          'termsAccepted': true,
-          'createdAt': now,
-          'lastUpdated': now,
-        },
+        'status': {'termsAccepted': true, 'createdAt': now, 'lastUpdated': now},
         'heroProfile': {
           'isActive': true,
           'completedOrders': 0,
@@ -158,10 +158,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       await _firestore.collection('users').doc(user.uid).set(userData);
 
       // 3. Retornar UserModel
-      return UserModel.fromJson({
-        'id': user.uid,
-        ...userData,
-      });
+      return UserModel.fromJson({'id': user.uid, ...userData});
     } on FirebaseAuthException catch (e) {
       final errorMessage = _getFirebaseErrorMessage(e);
       throw Exception(errorMessage);
@@ -224,11 +221,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           'emailVerified': false,
         },
         'roles': ['rider'],
-        'status': {
-          'termsAccepted': true,
-          'createdAt': now,
-          'lastUpdated': now,
-        },
+        'status': {'termsAccepted': true, 'createdAt': now, 'lastUpdated': now},
         'riderProfile': {
           'isActive': false,
           'isVerified': false,
@@ -238,15 +231,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
             'model': null,
             'year': null,
           },
-          'documents': {
-            'idCardUrl': '',
-            'licenseUrl': null,
-            'padronUrl': null,
-          },
-          'limits': {
-            'maxDistanceKm': 3.0,
-            'maxWeightKg': 7.0,
-          },
+          'documents': {'idCardUrl': '', 'licenseUrl': null, 'padronUrl': null},
+          'limits': {'maxDistanceKm': 3.0, 'maxWeightKg': 7.0},
           'verification': null,
           'deliveredOrders': 0,
           'rating': 0.0,
@@ -256,10 +242,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       await _firestore.collection('users').doc(user.uid).set(userData);
 
       // 3. Retornar UserModel
-      return UserModel.fromJson({
-        'id': user.uid,
-        ...userData,
-      });
+      return UserModel.fromJson({'id': user.uid, ...userData});
     } on FirebaseAuthException catch (e) {
       final errorMessage = _getFirebaseErrorMessage(e);
       throw Exception(errorMessage);
@@ -290,10 +273,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       final userData = userDoc.data();
       if (userData == null) return null;
 
-      return UserModel.fromJson({
-        'id': user.uid,
-        ...userData,
-      });
+      return UserModel.fromJson({'id': user.uid, ...userData});
     } catch (e) {
       throw Exception('Error al obtener usuario actual: $e');
     }
@@ -307,12 +287,13 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   @override
   Future<bool> checkEmailExists(String email) async {
     try {
+      // Query using the correct nested field path
       final querySnapshot = await _firestore
           .collection('users')
-          .where('email', isEqualTo: email.toLowerCase())
+          .where('contact.email', isEqualTo: email.toLowerCase())
           .limit(1)
           .get();
-      
+
       return querySnapshot.docs.isNotEmpty;
     } catch (e) {
       print('Error al verificar email: $e');
@@ -338,32 +319,21 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         // Usuario ya existe: obtener sus datos actuales
         final userData = userDoc.data();
         if (userData != null) {
-          return UserModel.fromJson({
-            'id': user.uid,
-            ...userData,
-          });
+          return UserModel.fromJson({'id': user.uid, ...userData});
         }
       }
 
       // Usuario nuevo: crear documento con datos mínimos y nueva estructura
       final now = DateTime.now().toIso8601String();
       final newUserData = {
-        'identity': {
-          'firstName': '',
-          'lastName': '',
-          'documentId': '',
-        },
+        'identity': {'firstName': '', 'lastName': '', 'documentId': ''},
         'contact': {
           'email': email.toLowerCase(),
           'phoneNumber': '',
           'emailVerified': true,
         },
         'roles': [role],
-        'status': {
-          'termsAccepted': true,
-          'createdAt': now,
-          'lastUpdated': now,
-        },
+        'status': {'termsAccepted': true, 'createdAt': now, 'lastUpdated': now},
       };
 
       // Agregar perfil según el rol
@@ -384,15 +354,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
             'model': null,
             'year': null,
           },
-          'documents': {
-            'idCardUrl': '',
-            'licenseUrl': null,
-            'padronUrl': null,
-          },
-          'limits': {
-            'maxDistanceKm': 3.0,
-            'maxWeightKg': 7.0,
-          },
+          'documents': {'idCardUrl': '', 'licenseUrl': null, 'padronUrl': null},
+          'limits': {'maxDistanceKm': 3.0, 'maxWeightKg': 7.0},
           'verification': null,
           'deliveredOrders': 0,
           'rating': 0.0,
@@ -402,10 +365,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       await _firestore.collection('users').doc(user.uid).set(newUserData);
 
       // Retornar UserModel
-      return UserModel.fromJson({
-        'id': user.uid,
-        ...newUserData,
-      });
+      return UserModel.fromJson({'id': user.uid, ...newUserData});
     } catch (e) {
       throw Exception('Error al registrar usuario con Google: $e');
     }
@@ -415,7 +375,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   String _getFirebaseErrorMessage(FirebaseAuthException e) {
     print('FirebaseAuthException code: ${e.code}');
     print('FirebaseAuthException message: ${e.message}');
-    
+
     switch (e.code) {
       case 'weak-password':
         return 'La contraseña es muy débil. Debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.';
@@ -437,6 +397,57 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         return 'Demasiados intentos de inicio de sesión. Intenta más tarde.';
       default:
         return 'Error de autenticación: ${e.message ?? e.code}';
+    }
+  }
+
+  @override
+  Future<UserModel> upgradeToRider({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  }) async {
+    try {
+      final now = DateTime.now().toIso8601String();
+
+      // Datos para crear el perfil de rider por defecto
+      final riderProfileData = {
+        'isActive': false,
+        'isVerified': false,
+        'vehicle': {
+          'type': 'bicycle',
+          'plateNumber': null,
+          'model': null,
+          'year': null,
+        },
+        'documents': {'idCardUrl': '', 'licenseUrl': null, 'padronUrl': null},
+        'limits': {'maxDistanceKm': 3.0, 'maxWeightKg': 7.0},
+        'verification': null,
+        'deliveredOrders': 0,
+        'rating': 0.0,
+      };
+
+      // Actualizar documento existente
+      await _firestore.collection('users').doc(uid).update({
+        'identity.firstName': firstName,
+        'identity.lastName': lastName,
+        'identity.documentId': rut,
+        'contact.phoneNumber': phone,
+        'status.lastUpdated': now,
+        'roles': FieldValue.arrayUnion(['rider']),
+        'riderProfile': riderProfileData,
+      });
+
+      // Obtener usuario actualizado para retornarlo
+      final updatedDoc = await _firestore.collection('users').doc(uid).get();
+      if (!updatedDoc.exists || updatedDoc.data() == null) {
+        throw Exception('Error al recuperar usuario actualizado');
+      }
+
+      return UserModel.fromJson({'id': uid, ...updatedDoc.data()!});
+    } catch (e) {
+      throw Exception('Error al actualizar perfil a Rider: $e');
     }
   }
 }

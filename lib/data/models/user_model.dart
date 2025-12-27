@@ -27,6 +27,29 @@ class UserModel {
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    Set<String> rolesSet = {};
+
+    // 1. Cargar roles existentes si los hay
+    if (json['roles'] != null) {
+      rolesSet.addAll(
+        (json['roles'] as List<dynamic>).map((e) => e.toString()),
+      );
+    }
+
+    // 2. FORZAR inferencia basada en perfiles (fuente de verdad)
+    // Esto corrige datos corruptos donde existe perfil pero falta el rol en la lista
+    if (json['riderProfile'] != null) {
+      rolesSet.add('rider');
+    }
+    if (json['heroProfile'] != null) {
+      rolesSet.add('hero');
+    }
+
+    // 3. Fallback por defecto
+    if (rolesSet.isEmpty) {
+      rolesSet.add('hero');
+    }
+
     return UserModel(
       id: json['id'] as String? ?? '',
       identity: IdentityModel.fromJson(
@@ -38,15 +61,19 @@ class UserModel {
       address: json['address'] != null
           ? AddressModel.fromJson(json['address'] as Map<String, dynamic>)
           : null,
-      roles: (json['roles'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? ['hero'],
+      roles: rolesSet.toList(),
       status: UserStatusModel.fromJson(
         json['status'] as Map<String, dynamic>? ?? {},
       ),
       heroProfile: json['heroProfile'] != null
-          ? HeroProfileModel.fromJson(json['heroProfile'] as Map<String, dynamic>)
+          ? HeroProfileModel.fromJson(
+              json['heroProfile'] as Map<String, dynamic>,
+            )
           : null,
       riderProfile: json['riderProfile'] != null
-          ? RiderProfileModel.fromJson(json['riderProfile'] as Map<String, dynamic>)
+          ? RiderProfileModel.fromJson(
+              json['riderProfile'] as Map<String, dynamic>,
+            )
           : null,
     );
   }

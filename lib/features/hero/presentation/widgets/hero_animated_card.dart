@@ -46,7 +46,7 @@ class AnimatedHeroCard extends StatelessWidget {
     );
     final iconSize = ResponsiveUtils.isMobile(context) ? 36.0 : 40.0;
     final Color accentColor = this.accentColor ?? primaryOrange;
-    final Color cardBackgroundColor = this.backgroundColor ?? backgroundWhite;
+    final Color cardBackgroundColor = backgroundColor ?? backgroundWhite;
     final Color iconBackgroundColor =
         this.iconBackgroundColor ?? accentColor.withOpacity(0.12);
 
@@ -78,11 +78,7 @@ class AnimatedHeroCard extends StatelessWidget {
                   color: accentColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  icon,
-                  color: accentColor,
-                  size: iconSize,
-                ),
+                child: Icon(icon, color: accentColor, size: iconSize),
               ),
               SizedBox(height: padding * 0.7),
               Text(

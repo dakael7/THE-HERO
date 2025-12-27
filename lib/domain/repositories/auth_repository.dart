@@ -41,4 +41,15 @@ abstract class AuthRepository {
     required String email,
     required UserRole role,
   });
+
+  Future<User> upgradeToRider({
+    required String uid,
+    required String firstName,
+    required String lastName,
+    required String rut,
+    required String phone,
+  });
+
+  Future<void> saveLastRole(String role);
+  Future<String?> getLastRole();
 }

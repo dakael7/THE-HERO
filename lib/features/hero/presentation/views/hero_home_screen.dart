@@ -21,14 +21,23 @@ const double spacingButtonV = paddingNormal * 0.75;
 const double spacingButtonH = paddingNormal * 1.25;
 const double spacingScreenBottom = paddingLarge * 4;
 
-class HeroHomeScreen extends StatefulWidget {
+class HeroHomeScreen extends ConsumerStatefulWidget {
   const HeroHomeScreen({super.key});
 
   @override
-  State<HeroHomeScreen> createState() => _HeroHomeScreenState();
+  ConsumerState<HeroHomeScreen> createState() => _HeroHomeScreenState();
 }
 
-class _HeroHomeScreenState extends State<HeroHomeScreen> {
+class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Reset navigation to first tab on mount
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(heroHomeViewModelProvider.notifier).reset();
+    });
+  }
+
   bool _isSearchExpanded = false;
 
   // Optimización: Listas estáticas como const para evitar recreación
@@ -146,7 +155,22 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
             final selectedIndex = state.selectedNavIndex;
 
             if (selectedIndex == 4) {
-              return const profile.ProfileScreen();
+              return WillPopScope(
+                onWillPop: () async {
+                  // Al presionar back, volver al tab de inicio
+                  ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
+                  return false; // No hacer pop de la navegación
+                },
+                child: profile.ProfileScreen(
+                  isRiderProfile: false,
+                  onBackPressed: () {
+                    // Al presionar el botón de back del perfil, volver al tab de inicio
+                    ref
+                        .read(heroHomeViewModelProvider.notifier)
+                        .selectNavItem(0);
+                  },
+                ),
+              );
             }
 
             if (selectedIndex == 3) {
@@ -188,38 +212,55 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                               child: LayoutBuilder(
                                 builder: (context, constraints) {
                                   final maxWidth = constraints.maxWidth;
-                                  final scale =
-                                      (maxWidth / 390.0).clamp(0.78, 1.20).toDouble();
-                                  final cardHeight =
-                                      (maxWidth * 0.52).clamp(170.0, 210.0).toDouble();
-                                  final wheelSize =
-                                      (maxWidth * 0.88).clamp(210.0, 320.0).toDouble();
-                                  final contentRightPadding =
-                                      (maxWidth * 0.42).clamp(92.0, 165.0).toDouble();
-
-                                  final cardPadding =
-                                      (paddingLarge * scale).clamp(14.0, 24.0).toDouble();
-                                  final titleSize = (18.0 * scale).clamp(16.0, 22.0).toDouble();
-                                  final subtitleSize =
-                                      (14.0 * scale).clamp(12.0, 18.0).toDouble();
-                                  final buttonFontSize =
-                                      (14.0 * scale).clamp(12.0, 16.0).toDouble();
-                                  final buttonIconSize =
-                                      (20.0 * scale).clamp(18.0, 22.0).toDouble();
-                                  final gapSmall =
-                                      (spacingSmall * scale).clamp(6.0, 10.0).toDouble();
-                                  final gapNormal =
-                                      (paddingNormal * scale).clamp(10.0, 16.0).toDouble();
-                                  final buttonHPadding =
-                                      (spacingButtonH * scale).clamp(14.0, 20.0).toDouble();
-                                  final buttonVPadding =
-                                      (spacingButtonV * scale).clamp(10.0, 14.0).toDouble();
-
-                                  final contentAvailableWidth = (maxWidth -
-                                          (cardPadding * 2) -
-                                          contentRightPadding)
-                                      .clamp(120.0, 520.0)
+                                  final scale = (maxWidth / 390.0)
+                                      .clamp(0.78, 1.20)
                                       .toDouble();
+                                  final cardHeight = (maxWidth * 0.52)
+                                      .clamp(170.0, 210.0)
+                                      .toDouble();
+                                  final wheelSize = (maxWidth * 0.88)
+                                      .clamp(210.0, 320.0)
+                                      .toDouble();
+                                  final contentRightPadding = (maxWidth * 0.42)
+                                      .clamp(92.0, 165.0)
+                                      .toDouble();
+
+                                  final cardPadding = (paddingLarge * scale)
+                                      .clamp(14.0, 24.0)
+                                      .toDouble();
+                                  final titleSize = (18.0 * scale)
+                                      .clamp(16.0, 22.0)
+                                      .toDouble();
+                                  final subtitleSize = (14.0 * scale)
+                                      .clamp(12.0, 18.0)
+                                      .toDouble();
+                                  final buttonFontSize = (14.0 * scale)
+                                      .clamp(12.0, 16.0)
+                                      .toDouble();
+                                  final buttonIconSize = (20.0 * scale)
+                                      .clamp(18.0, 22.0)
+                                      .toDouble();
+                                  final gapSmall = (spacingSmall * scale)
+                                      .clamp(6.0, 10.0)
+                                      .toDouble();
+                                  final gapNormal = (paddingNormal * scale)
+                                      .clamp(10.0, 16.0)
+                                      .toDouble();
+                                  final buttonHPadding =
+                                      (spacingButtonH * scale)
+                                          .clamp(14.0, 20.0)
+                                          .toDouble();
+                                  final buttonVPadding =
+                                      (spacingButtonV * scale)
+                                          .clamp(10.0, 14.0)
+                                          .toDouble();
+
+                                  final contentAvailableWidth =
+                                      (maxWidth -
+                                              (cardPadding * 2) -
+                                              contentRightPadding)
+                                          .clamp(120.0, 520.0)
+                                          .toDouble();
                                   return Container(
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
@@ -233,7 +274,9 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                                       borderRadius: BorderRadius.circular(22),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: primaryOrange.withOpacity(0.22),
+                                          color: primaryOrange.withOpacity(
+                                            0.22,
+                                          ),
                                           blurRadius: 18,
                                           offset: const Offset(0, 10),
                                         ),
@@ -265,47 +308,71 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                                               ),
                                             ),
                                             Padding(
-                                              padding: EdgeInsets.all(cardPadding),
+                                              padding: EdgeInsets.all(
+                                                cardPadding,
+                                              ),
                                               child: Row(
                                                 children: [
                                                   Expanded(
                                                     child: Padding(
                                                       padding: EdgeInsets.only(
-                                                        right: contentRightPadding,
+                                                        right:
+                                                            contentRightPadding,
                                                       ),
                                                       child: FittedBox(
                                                         fit: BoxFit.scaleDown,
-                                                        alignment: Alignment.centerLeft,
+                                                        alignment: Alignment
+                                                            .centerLeft,
                                                         child: SizedBox(
-                                                          width: contentAvailableWidth,
+                                                          width:
+                                                              contentAvailableWidth,
                                                           child: Column(
-                                                            mainAxisSize: MainAxisSize.min,
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
                                                             crossAxisAlignment:
-                                                                CrossAxisAlignment.start,
+                                                                CrossAxisAlignment
+                                                                    .start,
                                                             children: [
                                                               Text(
                                                                 '¿Tienes algo para vender?',
                                                                 maxLines: 2,
-                                                                overflow: TextOverflow.ellipsis,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
                                                                 style: TextStyle(
-                                                                  color: backgroundWhite,
-                                                                  fontSize: titleSize,
+                                                                  color:
+                                                                      backgroundWhite,
+                                                                  fontSize:
+                                                                      titleSize,
                                                                   fontWeight:
-                                                                      FontWeight.bold,
+                                                                      FontWeight
+                                                                          .bold,
                                                                 ),
                                                               ),
-                                                              SizedBox(height: gapSmall),
+                                                              SizedBox(
+                                                                height:
+                                                                    gapSmall,
+                                                              ),
                                                               Text(
                                                                 'Publica tus productos y vende fácilmente',
                                                                 maxLines: 2,
-                                                                overflow: TextOverflow.ellipsis,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
                                                                 style: TextStyle(
                                                                   color: backgroundWhite
-                                                                      .withOpacity(0.92),
-                                                                  fontSize: subtitleSize,
+                                                                      .withOpacity(
+                                                                        0.92,
+                                                                      ),
+                                                                  fontSize:
+                                                                      subtitleSize,
                                                                 ),
                                                               ),
-                                                              SizedBox(height: gapNormal),
+                                                              SizedBox(
+                                                                height:
+                                                                    gapNormal,
+                                                              ),
                                                               ElevatedButton.icon(
                                                                 onPressed: () {
                                                                   debugPrint(
@@ -313,37 +380,39 @@ class _HeroHomeScreenState extends State<HeroHomeScreen> {
                                                                   );
                                                                 },
                                                                 icon: Icon(
-                                                                  Icons.add_circle_outline,
-                                                                  color: primaryOrange,
-                                                                  size: buttonIconSize,
+                                                                  Icons
+                                                                      .add_circle_outline,
+                                                                  color:
+                                                                      primaryOrange,
+                                                                  size:
+                                                                      buttonIconSize,
                                                                 ),
                                                                 label: Text(
                                                                   'Publicar ahora',
                                                                   style: TextStyle(
-                                                                    color: primaryOrange,
+                                                                    color:
+                                                                        primaryOrange,
                                                                     fontSize:
                                                                         buttonFontSize,
                                                                     fontWeight:
-                                                                        FontWeight.w600,
+                                                                        FontWeight
+                                                                            .w600,
                                                                   ),
                                                                 ),
-                                                                style: ElevatedButton
-                                                                    .styleFrom(
+                                                                style: ElevatedButton.styleFrom(
                                                                   backgroundColor:
                                                                       backgroundWhite,
-                                                                  padding:
-                                                                      EdgeInsets.symmetric(
+                                                                  padding: EdgeInsets.symmetric(
                                                                     horizontal:
                                                                         buttonHPadding,
                                                                     vertical:
                                                                         buttonVPadding,
                                                                   ),
-                                                                  shape:
-                                                                      RoundedRectangleBorder(
+                                                                  shape: RoundedRectangleBorder(
                                                                     borderRadius:
                                                                         BorderRadius.circular(
-                                                                      12,
-                                                                    ),
+                                                                          12,
+                                                                        ),
                                                                   ),
                                                                 ),
                                                               ),

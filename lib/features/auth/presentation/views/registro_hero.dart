@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/utils/responsive_utils.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
 
 class RegisterHeroScreen extends ConsumerStatefulWidget {
   final String? email;
 
-  const RegisterHeroScreen({Key? key, this.email}) : super(key: key);
+  const RegisterHeroScreen({super.key, this.email});
 
   @override
   ConsumerState<RegisterHeroScreen> createState() => _RegisterHeroScreenState();
@@ -41,10 +40,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
     _emailController = TextEditingController(text: widget.email ?? '');
 
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration.zero,
-    );
+    _controller = AnimationController(vsync: this, duration: Duration.zero);
 
     _offsetAnimation = Tween<Offset>(
       begin: const Offset(0.0, 0.2),
@@ -383,18 +379,18 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                       },
                                 style: ButtonStyle(
                                   backgroundColor:
-                                      MaterialStateProperty.resolveWith<Color>((
-                                        Set<MaterialState> states,
+                                      WidgetStateProperty.resolveWith<Color>((
+                                        Set<WidgetState> states,
                                       ) {
                                         if (states.contains(
-                                          MaterialState.pressed,
+                                          WidgetState.pressed,
                                         )) {
                                           return const Color(0xFFE67300);
                                         }
                                         return primaryOrange;
                                       }),
                                   shape:
-                                      MaterialStateProperty.all<
+                                      WidgetStateProperty.all<
                                         RoundedRectangleBorder
                                       >(
                                         RoundedRectangleBorder(

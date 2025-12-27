@@ -34,9 +34,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         title: const Text(
           'Configuración',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
       body: ListView(
@@ -64,7 +62,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       _notificationsEnabled = value;
                     });
                   },
-                  activeColor: primaryOrange,
+                  activeThumbColor: primaryOrange,
                   title: const Text(
                     'Notificaciones',
                     style: TextStyle(
@@ -91,7 +89,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                     );
                   },
-                  activeColor: primaryOrange,
+                  activeThumbColor: primaryOrange,
                   title: const Text(
                     'Modo oscuro',
                     style: TextStyle(
