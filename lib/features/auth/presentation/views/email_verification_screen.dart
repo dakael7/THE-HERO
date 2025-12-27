@@ -619,12 +619,69 @@ class _EmailVerificationScreenState
                             );
 
                             if (mounted) {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const HeroHomeScreen(),
-                                ),
-                              );
+                              // Obtener el usuario actual para verificar su perfil
+                              final currentUser = await ref
+                                  .read(getCurrentUserUseCaseProvider)
+                                  .execute();
+
+                              if (currentUser == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Error al obtener datos del usuario',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              // Verificar que el usuario tenga el perfil del rol seleccionado
+                              if (widget.userRole == UserRole.hero) {
+                                if (!currentUser.isHero) {
+                                  // Tiene cuenta pero NO es Hero, redirigir a registro Hero
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => RegisterHeroScreen(
+                                        email: currentUser.email,
+                                        existingUser: currentUser,
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                // Tiene perfil Hero, navegar a Hero Home
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const HeroHomeScreen(),
+                                  ),
+                                );
+                              } else {
+                                // UserRole.rider
+                                if (!currentUser.isRider) {
+                                  // Tiene cuenta pero NO es Rider, redirigir a registro Rider
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => RegisterRiderScreen(
+                                        email: currentUser.email,
+                                        existingUser: currentUser,
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                // Tiene perfil Rider, navegar a Rider Home
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const RiderHomeScreen(),
+                                  ),
+                                );
+                              }
                             }
                           } catch (e) {
                             if (mounted) {

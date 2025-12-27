@@ -330,10 +330,29 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         }
       }
 
+      // Extraer nombre y apellido del displayName de Google
+      String firstName = '';
+      String lastName = '';
+
+      if (user.displayName != null && user.displayName!.isNotEmpty) {
+        final nameParts = user.displayName!.trim().split(' ');
+        if (nameParts.isNotEmpty) {
+          firstName = nameParts.first;
+          // Si hay más de una palabra, el resto se considera apellido
+          if (nameParts.length > 1) {
+            lastName = nameParts.sublist(1).join(' ');
+          }
+        }
+      }
+
       // Usuario nuevo: crear documento con datos mínimos y nueva estructura
       final now = DateTime.now().toIso8601String();
       final newUserData = {
-        'identity': {'firstName': '', 'lastName': '', 'documentId': ''},
+        'identity': {
+          'firstName': firstName,
+          'lastName': lastName,
+          'documentId': '',
+        },
         'contact': {
           'email': email.toLowerCase(),
           'phoneNumber': '',
