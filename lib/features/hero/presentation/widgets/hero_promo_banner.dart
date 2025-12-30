@@ -22,13 +22,7 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subscription;
   int _currentIndex = 0;
 
-  static const List<_PromoSlide> _fallbackSlides = [
-    _PromoSlide.asset('assets/logo_hero.png', order: 0),
-    _PromoSlide.asset('assets/logo_1.png', order: 1),
-    _PromoSlide.asset('assets/the.png', order: 2),
-  ];
-
-  List<_PromoSlide> _slides = _fallbackSlides;
+  List<_PromoSlide> _slides = const [];
 
   @override
   void initState() {
@@ -56,7 +50,7 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
 
       if (mounted) {
         setState(() {
-          _slides = remoteSlides.isNotEmpty ? remoteSlides : _fallbackSlides;
+          _slides = remoteSlides;
           if (_currentIndex >= _slides.length) {
             _currentIndex = 0;
           }
@@ -65,7 +59,7 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
     }, onError: (_) {
       if (mounted) {
         setState(() {
-          _slides = _fallbackSlides;
+          _slides = const [];
           _currentIndex = 0;
         });
       }
@@ -73,7 +67,7 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
   }
 
   void _autoSlide() {
-    if (!_controller.hasClients || _slides.isEmpty) return;
+    if (!_controller.hasClients || _slides.length < 2) return;
     final nextPage = (_currentIndex + 1) % _slides.length;
     _controller.animateToPage(
       nextPage,
@@ -92,6 +86,8 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
 
   @override
   Widget build(BuildContext context) {
+    if (_slides.isEmpty) return const SizedBox.shrink();
+
     final isMobile = ResponsiveUtils.isMobile(context);
     final double bannerHeight = isMobile ? 190 : 220;
 
@@ -145,9 +141,6 @@ class _PromoSlide {
   final int order;
 
   const _PromoSlide._(this.path, this.isNetwork, this.order);
-
-  const _PromoSlide.asset(String assetPath, {int order = 0})
-      : this._(assetPath, false, order);
 
   const _PromoSlide.network(String url, {int order = 0})
       : this._(url, true, order);
