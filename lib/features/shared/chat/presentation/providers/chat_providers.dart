@@ -19,6 +19,11 @@ final userChatsProvider = StreamProvider<List<Chat>>((ref) {
 
 final chatMessagesProvider =
     StreamProvider.family<List<ChatMessage>, String>((ref, chatId) {
+  final auth = ref.read(firebaseAuthProvider);
+  final user = auth.currentUser;
+  if (user == null) {
+    return Stream.error(Exception('Usuario no autenticado'));
+  }
   final repo = ref.read(chatRepositoryProvider);
   return repo.watchChatMessages(chatId, limit: 100);
 });
@@ -37,6 +42,10 @@ class ChatActions {
   ChatActions({required this.repo, required this.currentUserId});
 
   Future<void> ensureChatExists(Chat chat) async {
+    final uid = currentUserId;
+    if (uid == null) {
+      throw Exception('Usuario no autenticado');
+    }
     await repo.ensureChatExists(chat);
   }
 

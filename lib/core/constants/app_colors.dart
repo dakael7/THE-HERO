@@ -36,7 +36,7 @@ const Color categoryBgPink = Color(0xFFFCE7F6); // Ropa
 const Color categoryBgRed = Color(0xFFFEE2E2); // Deportes
 const Color categoryBgYellow = Color(0xFFFEF3C7); // Libros
 
-// Colores de texto/icono de Categorías
+// Colores de texto/icono de Categorías. 
 const Color categoryTextBlue = Color(0xFF2563EB);
 const Color categoryTextGreen = Color(0xFF059669);
 const Color categoryTextPurple = Color(0xFF7C3AED);

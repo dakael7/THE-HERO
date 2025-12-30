@@ -78,6 +78,12 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<User?> getCurrentUser() async {
+    final signedIn = await _remoteDataSource.isSignedIn();
+    if (!signedIn) {
+      await _localDataSource.clearUser();
+      return null;
+    }
+
     final remoteUser = await _remoteDataSource.getCurrentUser();
     if (remoteUser != null) {
       await _localDataSource.saveUser(remoteUser);

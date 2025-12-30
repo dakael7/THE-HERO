@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user_model.dart';
 
 /// DataSource remoto para autenticación con Firebase
@@ -56,6 +57,22 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }) : _firebaseAuth = firebaseAuth,
        _firestore = firestore;
 
+  Future<void> _sendVerificationEmail(User user) async {
+    try {
+      await user.sendEmailVerification();
+    } catch (_) {
+    }
+  }
+
+  Future<void> _syncEmailVerified(User user) async {
+    if (user.emailVerified) {
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .update({'contact.emailVerified': true});
+    }
+  }
+
   @override
   Future<UserModel> signInWithEmail(String email, String password) async {
     try {
@@ -76,6 +93,16 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Usuario no encontrado después del login');
       }
 
+      // Refrescar estado y validar verificación
+      await user.reload();
+      final refreshed = _firebaseAuth.currentUser;
+      final isVerified = refreshed?.emailVerified ?? false;
+
+      if (!isVerified) {
+        // Reenviar por si no lo tiene, pero permitir continuar para mostrar pantalla de verificación
+        await _sendVerificationEmail(user);
+      }
+
       // Obtener datos adicionales del usuario desde Firestore
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
@@ -87,6 +114,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (userData == null) {
         throw Exception('Datos del usuario vacíos en Firestore');
       }
+
+      // Sincronizar bandera de verificación en Firestore si ya está verificado
+      await _syncEmailVerified(user);
 
       return UserModel.fromJson({'id': user.uid, ...userData});
     } on FirebaseAuthException catch (e) {
@@ -138,6 +168,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (user == null) {
         throw Exception('Error al crear usuario');
       }
+
+      // Enviar email de verificación (no bloqueante)
+      await _sendVerificationEmail(user);
 
       // 2. Guardar datos adicionales en Firestore con nueva estructura
       final now = DateTime.now().toIso8601String();
@@ -214,6 +247,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Error al crear usuario');
       }
 
+      await _sendVerificationEmail(user);
+
       // 2. Guardar datos adicionales en Firestore con nueva estructura
       final now = DateTime.now().toIso8601String();
       final userData = {
@@ -261,6 +296,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   @override
   Future<void> signOut() async {
     try {
+      try {
+        await GoogleSignIn.instance.signOut();
+      } catch (_) {}
       await _firebaseAuth.signOut();
     } catch (e) {
       throw Exception('Error al cerrar sesión: $e');

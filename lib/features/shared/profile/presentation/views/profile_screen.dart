@@ -48,11 +48,13 @@ class ProfileScreen extends ConsumerWidget {
                   const Text('No hay datos de usuario'),
                   const SizedBox(height: 32),
                   ElevatedButton(
-                    onPressed: () {
-                      ref.read(authNotifierProvider.notifier).signOut();
-                      Navigator.pushReplacement(
+                    onPressed: () async {
+                      await ref.read(authNotifierProvider.notifier).signOut();
+                      if (!context.mounted) return;
+                      Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(builder: (_) => const LoginPage()),
+                        (_) => false,
                       );
                     },
                     child: const Text('Volver al Login'),
@@ -495,18 +497,18 @@ class ProfileScreen extends ConsumerWidget {
   void _showLogoutDialog(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Cerrar Sesión'),
         content: const Text('¿Estás seguro de que deseas cerrar sesión?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _logout(context, ref);
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _logout(context, ref);
             },
             child: const Text(
               'Cerrar Sesión',
@@ -518,11 +520,13 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  void _logout(BuildContext context, WidgetRef ref) {
-    ref.read(authNotifierProvider.notifier).signOut();
-    Navigator.pushReplacement(
+  Future<void> _logout(BuildContext context, WidgetRef ref) async {
+    await ref.read(authNotifierProvider.notifier).signOut();
+    if (!context.mounted) return;
+    Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
+      (_) => false,
     );
   }
 }

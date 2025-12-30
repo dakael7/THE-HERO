@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/chat.dart';
@@ -21,12 +22,28 @@ class _ChatConversationScreenState
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  late final Future<void> _ensureChatFuture;
+
+  String _friendlyError(Object error) {
+    final raw = error.toString();
+    if (raw.contains('Usuario no autenticado')) {
+      return 'Inicia sesión para ver y enviar mensajes.';
+    }
+    if (error is FirebaseException) {
+      if (error.code == 'permission-denied') {
+        return 'No tienes permisos para ver este chat.';
+      }
+      if (error.code == 'unavailable') {
+        return 'Servicio no disponible. Revisa tu conexión a internet.';
+      }
+    }
+    return 'Ocurrió un error al cargar los mensajes.';
+  }
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(chatActionsProvider).ensureChatExists(widget.chat);
-    });
+    _ensureChatFuture = ref.read(chatActionsProvider).ensureChatExists(widget.chat);
   }
 
   @override
@@ -47,7 +64,7 @@ class _ChatConversationScreenState
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(content: Text(_friendlyError(e))),
       );
     }
   }
@@ -58,9 +75,6 @@ class _ChatConversationScreenState
         ? 'Chat con Rider'
         : 'Chat con Vendedor';
 
-    final messagesAsync = ref.watch(chatMessagesProvider(widget.chat.chatId));
-    final currentUserId = ref.read(chatActionsProvider).currentUserId;
-
     return Scaffold(
       backgroundColor: backgroundGray50,
       appBar: AppBar(
@@ -68,136 +82,164 @@ class _ChatConversationScreenState
         backgroundColor: primaryYellow,
         foregroundColor: textGray900,
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: messagesAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: primaryOrange),
-              ),
-              error: (error, _) => Center(
-                child: Text(
-                  'Error: $error',
-                  style: const TextStyle(color: textGray600),
-                ),
-              ),
-              data: (messages) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_scrollController.hasClients) {
-                    _scrollController.jumpTo(
-                      _scrollController.position.maxScrollExtent,
-                    );
-                  }
-                });
+      body: FutureBuilder<void>(
+        future: _ensureChatFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(
+              child: CircularProgressIndicator(color: primaryOrange),
+            );
+          }
 
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    final isMe =
-                        currentUserId != null && message.senderId == currentUserId;
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                _friendlyError(snapshot.error!),
+                style: const TextStyle(color: textGray600),
+                textAlign: TextAlign.center,
+              ),
+            );
+          }
 
-                    return Align(
-                      alignment:
-                          isMe ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.78,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isMe
-                              ? primaryOrange.withOpacity(0.12)
-                              : backgroundWhite,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isMe
-                                ? primaryOrange.withOpacity(0.18)
-                                : borderGray100,
+          final messagesAsync =
+              ref.watch(chatMessagesProvider(widget.chat.chatId));
+          final currentUserId = ref.read(chatActionsProvider).currentUserId;
+
+          return Column(
+            children: [
+              Expanded(
+                child: messagesAsync.when(
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(color: primaryOrange),
+                  ),
+                  error: (error, _) => Center(
+                    child: Text(
+                      _friendlyError(error),
+                      style: const TextStyle(color: textGray600),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  data: (messages) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_scrollController.hasClients) {
+                        _scrollController.jumpTo(
+                          _scrollController.position.maxScrollExtent,
+                        );
+                      }
+                    });
+
+                    return ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[index];
+                        final isMe = currentUserId != null &&
+                            message.senderId == currentUserId;
+
+                        return Align(
+                          alignment: isMe
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            constraints: BoxConstraints(
+                              maxWidth:
+                                  MediaQuery.of(context).size.width * 0.78,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isMe
+                                  ? primaryOrange.withOpacity(0.12)
+                                  : backgroundWhite,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isMe
+                                    ? primaryOrange.withOpacity(0.18)
+                                    : borderGray100,
+                              ),
+                            ),
+                            child: Text(
+                              message.text,
+                              style: const TextStyle(
+                                color: textGray900,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          message.text,
-                          style: const TextStyle(
-                            color: textGray900,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              decoration: BoxDecoration(
-                color: backgroundWhite,
-                border: Border(
-                  top: BorderSide(color: borderGray100),
                 ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) {
-                        _send();
-                      },
-                      decoration: InputDecoration(
-                        hintText: 'Escribe un mensaje...',
-                        filled: true,
-                        fillColor: backgroundGray50,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
+              SafeArea(
+                top: false,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  decoration: BoxDecoration(
+                    color: backgroundWhite,
+                    border: Border(
+                      top: BorderSide(color: borderGray100),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 46,
-                    height: 46,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        _send();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryOrange,
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) {
+                            _send();
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Escribe un mensaje...',
+                            filled: true,
+                            fillColor: backgroundGray50,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
                         ),
                       ),
-                      child: const Icon(
-                        Icons.send,
-                        color: backgroundWhite,
-                        size: 20,
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        width: 46,
+                        height: 46,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            _send();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryOrange,
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.send,
+                            color: backgroundWhite,
+                            size: 20,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

@@ -8,6 +8,7 @@ import 'registro_hero.dart';
 import 'registro_rider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
+import 'unverified_email_screen.dart';
 import '../../domain/providers/get_current_user_usecase_provider.dart';
 
 class EmailVerificationScreen extends ConsumerStatefulWidget {
@@ -196,6 +197,21 @@ class _EmailVerificationScreenState
 
               if (currentUser == null) {
                 _showErrorDialog('Error al obtener datos del usuario');
+                return;
+              }
+
+              // Si el correo no está verificado, mandar a pantalla de no verificado
+              if (!currentUser.contact.emailVerified) {
+                if (!context.mounted) return;
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => UnverifiedEmailScreen(
+                      userRole: widget.userRole,
+                      email: currentUser.email,
+                    ),
+                  ),
+                );
                 return;
               }
 

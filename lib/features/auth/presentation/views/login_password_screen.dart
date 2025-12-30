@@ -7,6 +7,8 @@ import '../../../hero/presentation/views/hero_home_screen.dart' as hero;
 import '../../../rider/presentation/views/rider_home_screen.dart';
 import '../../domain/providers/get_current_user_usecase_provider.dart';
 import 'registro_rider.dart';
+import 'unverified_email_screen.dart';
+import '../../../../domain/entities/user.dart';
 
 class LoginPasswordScreen extends ConsumerStatefulWidget {
   final String email;
@@ -151,7 +153,33 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
           final authState = ref.read(authNotifierProvider);
 
           if (authState.isAuthenticated && authState.errorMessage == null) {
-            // Navegar a la pantalla de inicio según el rol
+            // Obtener usuario actual para verificar verificación y rol
+            final currentUser = await ref
+                .read(getCurrentUserUseCaseProvider)
+                .execute();
+
+            if (currentUser == null) {
+              _showErrorDialog('No se pudo cargar tu perfil. Intenta de nuevo.');
+              return;
+            }
+
+            final isVerified = currentUser.contact.emailVerified;
+            if (!isVerified) {
+              if (!context.mounted) return;
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => UnverifiedEmailScreen(
+                    userRole: widget.userRole == 'hero'
+                        ? UserRole.hero
+                        : UserRole.rider,
+                    email: currentUser.email,
+                  ),
+                ),
+              );
+              return;
+            }
+
             if (widget.userRole == 'hero') {
               Navigator.pushReplacement(
                 context,
@@ -161,13 +189,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
               );
             } else {
               // LÓGICA SMART RIDER REDIRECT
-              // Si el usuario entra como Rider, verificamos si realmente TIENE el rol.
-              // Si no lo tiene, lo mandamos a completar su perfil.
-              final currentUser = await ref
-                  .read(getCurrentUserUseCaseProvider)
-                  .execute();
-
-              if (currentUser != null && !currentUser.isRider) {
+              if (!currentUser.isRider) {
                 if (context.mounted) {
                   Navigator.pushReplacement(
                     context,
@@ -182,11 +204,9 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                 return;
               }
 
-              // Si ya es rider o no pudimos verificar, procedemos normal
               // Guardar preferencia de rol
               ref.read(authNotifierProvider.notifier).saveLastRole('rider');
 
-              // Navegar a RiderHomeScreen
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
@@ -195,7 +215,6 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
               );
             }
           } else {
-            // Si hay error, mostrar el diálogo mejorado
             if (authState.errorMessage != null) {
               _showErrorDialog(authState.errorMessage!);
             }

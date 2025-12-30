@@ -7,9 +7,11 @@ import '../widgets/hero_categories_section.dart';
 import '../widgets/hero_featured_products_section.dart';
 import '../widgets/hero_bottom_nav.dart';
 import '../widgets/hero_fab.dart';
+import '../widgets/hero_promo_banner.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
 import '../../../shared/profile/presentation/views/profile_screen.dart'
     as profile;
+import '../../../shared/profile/presentation/views/my_products_screen.dart';
 import '../../../shared/chat/presentation/views/chat_list_screen.dart' as chat;
 import '../../../map/presentation/views/map_location_screen.dart';
 
@@ -207,234 +209,93 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            // --- SECCIÓN PUBLICAR PRODUCTOS ---
-                            RepaintBoundary(
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final maxWidth = constraints.maxWidth;
-                                  final scale = (maxWidth / 390.0)
-                                      .clamp(0.78, 1.20)
-                                      .toDouble();
-                                  final cardHeight = (maxWidth * 0.52)
-                                      .clamp(170.0, 210.0)
-                                      .toDouble();
-                                  final wheelSize = (maxWidth * 0.88)
-                                      .clamp(210.0, 320.0)
-                                      .toDouble();
-                                  final contentRightPadding = (maxWidth * 0.42)
-                                      .clamp(92.0, 165.0)
-                                      .toDouble();
-
-                                  final cardPadding = (paddingLarge * scale)
-                                      .clamp(14.0, 24.0)
-                                      .toDouble();
-                                  final titleSize = (18.0 * scale)
-                                      .clamp(16.0, 22.0)
-                                      .toDouble();
-                                  final subtitleSize = (14.0 * scale)
-                                      .clamp(12.0, 18.0)
-                                      .toDouble();
-                                  final buttonFontSize = (14.0 * scale)
-                                      .clamp(12.0, 16.0)
-                                      .toDouble();
-                                  final buttonIconSize = (20.0 * scale)
-                                      .clamp(18.0, 22.0)
-                                      .toDouble();
-                                  final gapSmall = (spacingSmall * scale)
-                                      .clamp(6.0, 10.0)
-                                      .toDouble();
-                                  final gapNormal = (paddingNormal * scale)
-                                      .clamp(10.0, 16.0)
-                                      .toDouble();
-                                  final buttonHPadding =
-                                      (spacingButtonH * scale)
-                                          .clamp(14.0, 20.0)
-                                          .toDouble();
-                                  final buttonVPadding =
-                                      (spacingButtonV * scale)
-                                          .clamp(10.0, 14.0)
-                                          .toDouble();
-
-                                  final contentAvailableWidth =
-                                      (maxWidth -
-                                              (cardPadding * 2) -
-                                              contentRightPadding)
-                                          .clamp(120.0, 520.0)
-                                          .toDouble();
-                                  return Container(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          primaryOrange,
-                                          primaryYellow.withOpacity(0.95),
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      ),
-                                      borderRadius: BorderRadius.circular(22),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: primaryOrange.withOpacity(
-                                            0.22,
-                                          ),
-                                          blurRadius: 18,
-                                          offset: const Offset(0, 10),
-                                        ),
-                                      ],
-                                    ),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(22),
-                                      child: SizedBox(
-                                        height: cardHeight,
-                                        child: Stack(
-                                          clipBehavior: Clip.hardEdge,
-                                          children: [
-                                            Positioned(
-                                              right: -wheelSize * 0.22,
-                                              bottom: -wheelSize * 0.26,
-                                              child: IgnorePointer(
-                                                child: Opacity(
-                                                  opacity: 0.95,
-                                                  child: Transform.rotate(
-                                                    angle: -0.22,
-                                                    child: Image.asset(
-                                                      'assets/wheel.png',
-                                                      width: wheelSize,
-                                                      height: wheelSize,
-                                                      fit: BoxFit.contain,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                            Padding(
-                                              padding: EdgeInsets.all(
-                                                cardPadding,
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Padding(
-                                                      padding: EdgeInsets.only(
-                                                        right:
-                                                            contentRightPadding,
-                                                      ),
-                                                      child: FittedBox(
-                                                        fit: BoxFit.scaleDown,
-                                                        alignment: Alignment
-                                                            .centerLeft,
-                                                        child: SizedBox(
-                                                          width:
-                                                              contentAvailableWidth,
-                                                          child: Column(
-                                                            mainAxisSize:
-                                                                MainAxisSize
-                                                                    .min,
-                                                            crossAxisAlignment:
-                                                                CrossAxisAlignment
-                                                                    .start,
-                                                            children: [
-                                                              Text(
-                                                                '¿Tienes algo para vender?',
-                                                                maxLines: 2,
-                                                                overflow:
-                                                                    TextOverflow
-                                                                        .ellipsis,
-                                                                style: TextStyle(
-                                                                  color:
-                                                                      backgroundWhite,
-                                                                  fontSize:
-                                                                      titleSize,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                ),
-                                                              ),
-                                                              SizedBox(
-                                                                height:
-                                                                    gapSmall,
-                                                              ),
-                                                              Text(
-                                                                'Publica tus productos y vende fácilmente',
-                                                                maxLines: 2,
-                                                                overflow:
-                                                                    TextOverflow
-                                                                        .ellipsis,
-                                                                style: TextStyle(
-                                                                  color: backgroundWhite
-                                                                      .withOpacity(
-                                                                        0.92,
-                                                                      ),
-                                                                  fontSize:
-                                                                      subtitleSize,
-                                                                ),
-                                                              ),
-                                                              SizedBox(
-                                                                height:
-                                                                    gapNormal,
-                                                              ),
-                                                              ElevatedButton.icon(
-                                                                onPressed: () {
-                                                                  debugPrint(
-                                                                    'Navegando a publicar producto',
-                                                                  );
-                                                                },
-                                                                icon: Icon(
-                                                                  Icons
-                                                                      .add_circle_outline,
-                                                                  color:
-                                                                      primaryOrange,
-                                                                  size:
-                                                                      buttonIconSize,
-                                                                ),
-                                                                label: Text(
-                                                                  'Publicar ahora',
-                                                                  style: TextStyle(
-                                                                    color:
-                                                                        primaryOrange,
-                                                                    fontSize:
-                                                                        buttonFontSize,
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w600,
-                                                                  ),
-                                                                ),
-                                                                style: ElevatedButton.styleFrom(
-                                                                  backgroundColor:
-                                                                      backgroundWhite,
-                                                                  padding: EdgeInsets.symmetric(
-                                                                    horizontal:
-                                                                        buttonHPadding,
-                                                                    vertical:
-                                                                        buttonVPadding,
-                                                                  ),
-                                                                  shape: RoundedRectangleBorder(
-                                                                    borderRadius:
-                                                                        BorderRadius.circular(
-                                                                          12,
-                                                                        ),
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
+                            // --- SECCIÓN BANNER PROMOCIONAL ---
+                            const RepaintBoundary(child: HeroPromoBanner()),
                             const SizedBox(height: paddingNormal),
                           ],
+                        ),
+                      ),
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: paddingNormal,
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(18),
+                          child: Material(
+                            color: backgroundWhite,
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const MyProductsScreen(),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: borderGray100,
+                                    width: 1,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: textGray900.withOpacity(0.05),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: primaryYellow.withOpacity(0.18),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: const Icon(
+                                        Icons.inventory_2_outlined,
+                                        color: textGray900,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Mis productos',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
+                                              color: textGray900,
+                                            ),
+                                          ),
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Administra tus publicaciones y stock',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: textGray600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.chevron_right,
+                                      color: textGray600,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
 
@@ -458,7 +319,7 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
 
         // 3. Navegación Inferior y FAB - solo visible cuando no hay búsqueda activa
         bottomNavigationBar: _isSearchExpanded ? null : const HeroBottomNav(),
-        floatingActionButton: _isSearchExpanded ? null : const HeroFAB(),
+        floatingActionButton: _isSearchExpanded ? null : HeroFAB(),
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       ),
     );

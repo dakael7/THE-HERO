@@ -32,7 +32,12 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     ) {
       return query.snapshots().map(
             (snapshot) => snapshot.docs
-                .map((doc) => ChatModel.fromJson(doc.data()))
+                .map(
+                  (doc) => ChatModel.fromJson({
+                    'chatId': doc.id,
+                    ...doc.data(),
+                  }),
+                )
                 .toList(),
           );
     }

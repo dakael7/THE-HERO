@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/chat_type.dart';
@@ -8,6 +9,22 @@ import 'chat_conversation_screen.dart';
 
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
+
+  String _friendlyError(Object error) {
+    final raw = error.toString();
+    if (raw.contains('Usuario no autenticado')) {
+      return 'Inicia sesión para ver tus mensajes.';
+    }
+    if (error is FirebaseException) {
+      if (error.code == 'permission-denied') {
+        return 'No tienes permisos para ver tus mensajes.\nRevisa sesión y reglas de Firestore.';
+      }
+      if (error.code == 'unavailable') {
+        return 'Servicio no disponible. Revisa tu conexión a internet.';
+      }
+    }
+    return 'Ocurrió un error al cargar los mensajes.';
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,8 +43,9 @@ class ChatListScreen extends ConsumerWidget {
         ),
         error: (error, _) => Center(
           child: Text(
-            'Error: $error',
+            _friendlyError(error),
             style: const TextStyle(color: textGray600),
+            textAlign: TextAlign.center,
           ),
         ),
         data: (chats) {

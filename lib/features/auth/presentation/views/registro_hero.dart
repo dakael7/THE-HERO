@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
-import '../../../hero/presentation/views/hero_home_screen.dart';
+import 'unverified_email_screen.dart';
+import '../../../hero/presentation/views/hero_home_screen.dart' as hero;
 
 class RegisterHeroScreen extends ConsumerStatefulWidget {
   final String? email;
@@ -153,7 +154,12 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
       if (!wasAuthenticated && next.isAuthenticated) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HeroHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => UnverifiedEmailScreen(
+              userRole: UserRole.hero,
+              email: _emailController.text.trim(),
+            ),
+          ),
         );
       }
     });
@@ -372,21 +378,11 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                             if (currentState.errorMessage ==
                                                 null) {
                                               if (context.mounted) {
-                                                ScaffoldMessenger.of(
-                                                  context,
-                                                ).showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                      '¡Perfil Hero Activado!',
-                                                    ),
-                                                  ),
-                                                );
-                                                Navigator.of(
-                                                  context,
-                                                ).pushAndRemoveUntil(
+                                                Navigator.of(context)
+                                                    .pushAndRemoveUntil(
                                                   MaterialPageRoute(
                                                     builder: (_) =>
-                                                        const HeroHomeScreen(),
+                                                        const hero.HeroHomeScreen(),
                                                   ),
                                                   (route) => false,
                                                 );
