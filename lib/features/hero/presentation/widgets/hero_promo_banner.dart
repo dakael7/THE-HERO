@@ -5,7 +5,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/utils/responsive_utils.dart';
 
 const double paddingNormal = 16.0;
 
@@ -106,49 +105,61 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
   Widget build(BuildContext context) {
     if (_slides.isEmpty) return const SizedBox.shrink();
 
-    final isMobile = ResponsiveUtils.isMobile(context);
-    final double bannerHeight = isMobile ? 190 : 220;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
 
-    return SizedBox(
-      height: bannerHeight + 20,
-      child: Column(
-        children: [
-          SizedBox(
-            height: bannerHeight,
-            child: PageView.builder(
-              controller: _controller,
-              itemCount: _slides.length,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
-              itemBuilder: (context, index) {
-                final slide = _slides[index];
-                return _PromoImageView(slide: slide);
-              },
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              _slides.length,
-              (index) => AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                height: 6,
-                width: _currentIndex == index ? 16 : 8,
-                decoration: BoxDecoration(
-                  color:
-                      _currentIndex == index ? primaryOrange : primaryOrange.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(12),
+        const aspectRatio = 2.0; // width / height
+        final computedHeight = maxWidth / aspectRatio;
+
+        final double bannerHeight = computedHeight.clamp(190.0, 260.0).toDouble();
+
+        return SizedBox(
+          height: bannerHeight + 20,
+          child: Column(
+            children: [
+              SizedBox(
+                height: bannerHeight,
+                width: double.infinity,
+                child: PageView.builder(
+                  controller: _controller,
+                  itemCount: _slides.length,
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentIndex = index;
+                    });
+                  },
+                  itemBuilder: (context, index) {
+                    final slide = _slides[index];
+                    return _PromoImageView(slide: slide);
+                  },
                 ),
               ),
-            ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  _slides.length,
+                  (index) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    height: 6,
+                    width: _currentIndex == index ? 16 : 8,
+                    decoration: BoxDecoration(
+                      color: _currentIndex == index
+                          ? primaryOrange
+                          : primaryOrange.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
