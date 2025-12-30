@@ -41,8 +41,20 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
           .map((doc) {
             final data = doc.data();
             final url = (data['imageUrl'] as String?)?.trim() ?? '';
+            final cacheBusterRaw = data['cacheBuster'];
+            final String cacheBuster = switch (cacheBusterRaw) {
+              String v => v.trim(),
+              num v => v.toString(),
+              Timestamp v => v.millisecondsSinceEpoch.toString(),
+              _ => '',
+            };
+            final resolvedUrl = (cacheBuster.isNotEmpty)
+                ? _appendQueryParam(url, 'v', cacheBuster)
+                : url;
             final order = (data['order'] as num?)?.toInt() ?? 0;
-            return (url.isNotEmpty) ? _PromoSlide.network(url, order: order) : null;
+            return (resolvedUrl.isNotEmpty)
+                ? _PromoSlide.network(resolvedUrl, order: order)
+                : null;
           })
           .whereType<_PromoSlide>()
           .toList()
@@ -64,6 +76,12 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
         });
       }
     });
+  }
+
+  String _appendQueryParam(String url, String key, String value) {
+    if (url.isEmpty) return url;
+    final separator = url.contains('?') ? '&' : '?';
+    return '$url$separator$key=$value';
   }
 
   void _autoSlide() {
