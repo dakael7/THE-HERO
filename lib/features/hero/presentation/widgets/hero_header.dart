@@ -267,11 +267,13 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   }
 
   Widget _buildNotificationIcon() {
-    final asyncNotifications = ref.watch(notificationsProvider);
-    final badgeCount = asyncNotifications.when(
-      data: (notifications) => notifications.where((n) => !n.read).length,
-      loading: () => 0,
-      error: (_, __) => 0,
+    final badgeCount = ref.watch(
+      notificationsProvider.select(
+        (async) => async.maybeWhen(
+          data: (notifications) => notifications.where((n) => !n.read).length,
+          orElse: () => 0,
+        ),
+      ),
     );
 
     return GestureDetector(

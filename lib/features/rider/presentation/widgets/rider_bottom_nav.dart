@@ -10,7 +10,9 @@ class RiderBottomNav extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(riderHomeViewModelProvider);
+    final selectedIndex = ref.watch(
+      riderHomeViewModelProvider.select((state) => state.selectedNavIndex),
+    );
     final viewModel = ref.read(riderHomeViewModelProvider.notifier);
     final mediaQuery = MediaQuery.of(context);
     final screenWidth = mediaQuery.size.width;
@@ -114,7 +116,7 @@ class RiderBottomNav extends ConsumerWidget {
                             Icons.delivery_dining,
                             'Solicitudes',
                             0,
-                            state.selectedNavIndex,
+                            selectedIndex,
                             () => viewModel.selectNavItem(0),
                             itemPadding: itemPadding,
                             fontSize: fontSize,
@@ -129,7 +131,7 @@ class RiderBottomNav extends ConsumerWidget {
                             Icons.local_shipping,
                             'Activas',
                             1,
-                            state.selectedNavIndex,
+                            selectedIndex,
                             () => viewModel.selectNavItem(1),
                             itemPadding: itemPadding,
                             fontSize: fontSize,
@@ -144,7 +146,7 @@ class RiderBottomNav extends ConsumerWidget {
                             Icons.chat_bubble_outline,
                             'Mensajes',
                             2,
-                            state.selectedNavIndex,
+                            selectedIndex,
                             () => viewModel.selectNavItem(2),
                             itemPadding: itemPadding,
                             fontSize: fontSize,
@@ -159,7 +161,7 @@ class RiderBottomNav extends ConsumerWidget {
                             Icons.account_circle_outlined,
                             'Perfil',
                             3,
-                            state.selectedNavIndex,
+                            selectedIndex,
                             () => viewModel.selectNavItem(3),
                             itemPadding: itemPadding,
                             fontSize: fontSize,

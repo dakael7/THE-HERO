@@ -95,11 +95,13 @@ class MapViewModel extends Notifier<MapState> {
 
   /// Update map center when user pans
   void updateMapCenter(LatLng center) {
+    if (state.mapCenter == center) return;
     state = state.copyWith(mapCenter: center);
   }
 
   /// Update zoom level
   void updateZoom(double zoom) {
+    if (state.currentZoom == zoom) return;
     state = state.copyWith(currentZoom: zoom);
   }
 

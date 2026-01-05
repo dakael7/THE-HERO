@@ -6,10 +6,12 @@ import '../../../../auth/presentation/providers/auth_provider.dart';
 // Provider que depende de la autenticación y recarga el perfil cuando cambia
 final profileProvider = FutureProvider<User?>((ref) async {
   // Observar cambios en la autenticación
-  final authState = ref.watch(authNotifierProvider);
+  final isAuthenticated = ref.watch(
+    authNotifierProvider.select((state) => state.isAuthenticated),
+  );
   
   // Si no está autenticado, retornar null
-  if (!authState.isAuthenticated) {
+  if (!isAuthenticated) {
     return null;
   }
   

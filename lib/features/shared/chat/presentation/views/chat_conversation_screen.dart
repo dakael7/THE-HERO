@@ -22,6 +22,8 @@ class _ChatConversationScreenState
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  int _lastMessageCount = 0;
+
   late final Future<void> _ensureChatFuture;
 
   String _friendlyError(Object error) {
@@ -120,13 +122,17 @@ class _ChatConversationScreenState
                     ),
                   ),
                   data: (messages) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_scrollController.hasClients) {
-                        _scrollController.jumpTo(
-                          _scrollController.position.maxScrollExtent,
-                        );
-                      }
-                    });
+                    final shouldAutoScroll = messages.length != _lastMessageCount;
+                    _lastMessageCount = messages.length;
+                    if (shouldAutoScroll) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (_scrollController.hasClients) {
+                          _scrollController.jumpTo(
+                            _scrollController.position.maxScrollExtent,
+                          );
+                        }
+                      });
+                    }
 
                     return ListView.builder(
                       controller: _scrollController,
@@ -138,6 +144,7 @@ class _ChatConversationScreenState
                             message.senderId == currentUserId;
 
                         return Align(
+                          key: ValueKey(message.messageId),
                           alignment: isMe
                               ? Alignment.centerRight
                               : Alignment.centerLeft,

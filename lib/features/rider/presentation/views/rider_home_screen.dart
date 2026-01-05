@@ -17,6 +17,49 @@ class RiderHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
+  static const List<Map<String, Object>> _mockRequests = [
+    {
+      'productName': 'MacBook Pro 16" M3',
+      'productImage':
+          'https://via.placeholder.com/400x300/4A90E2/FFFFFF?text=MacBook',
+      'weight': 2.1,
+      'distance': 3.5,
+      'earnings': 3500.0,
+      'pickupAddress': 'Av. Providencia 1234, Providencia',
+      'deliveryAddress': 'Calle Los Leones 567, Las Condes',
+    },
+    {
+      'productName': 'iPhone 15 Pro Max',
+      'productImage':
+          'https://via.placeholder.com/400x300/50C878/FFFFFF?text=iPhone',
+      'weight': 0.3,
+      'distance': 1.8,
+      'earnings': 1800.0,
+      'pickupAddress': 'Mall Plaza Vespucio, La Florida',
+      'deliveryAddress': 'Av. Vicuña Mackenna 2890, Ñuñoa',
+    },
+    {
+      'productName': 'Silla Gamer RGB',
+      'productImage':
+          'https://via.placeholder.com/400x300/FF6B6B/FFFFFF?text=Silla+Gamer',
+      'weight': 15.5,
+      'distance': 5.2,
+      'earnings': 5200.0,
+      'pickupAddress': 'Av. Apoquindo 4500, Las Condes',
+      'deliveryAddress': 'Calle San Diego 1200, Santiago Centro',
+    },
+    {
+      'productName': 'Bicicleta de Montaña',
+      'productImage':
+          'https://via.placeholder.com/400x300/FFA500/FFFFFF?text=Bicicleta',
+      'weight': 12.0,
+      'distance': 4.3,
+      'earnings': 4300.0,
+      'pickupAddress': 'Av. Irarrázaval 3456, Ñuñoa',
+      'deliveryAddress': 'Av. Grecia 8900, Peñalolén',
+    },
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -28,8 +71,9 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(riderHomeViewModelProvider);
-    final selectedIndex = state.selectedNavIndex;
+    final selectedIndex = ref.watch(
+      riderHomeViewModelProvider.select((state) => state.selectedNavIndex),
+    );
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -91,56 +135,13 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
   }
 
   Widget _buildDeliveryRequests() {
-    // Mock data para solicitudes de entrega
-    final mockRequests = [
-      {
-        'productName': 'MacBook Pro 16" M3',
-        'productImage':
-            'https://via.placeholder.com/400x300/4A90E2/FFFFFF?text=MacBook',
-        'weight': 2.1,
-        'distance': 3.5,
-        'earnings': 3500.0,
-        'pickupAddress': 'Av. Providencia 1234, Providencia',
-        'deliveryAddress': 'Calle Los Leones 567, Las Condes',
-      },
-      {
-        'productName': 'iPhone 15 Pro Max',
-        'productImage':
-            'https://via.placeholder.com/400x300/50C878/FFFFFF?text=iPhone',
-        'weight': 0.3,
-        'distance': 1.8,
-        'earnings': 1800.0,
-        'pickupAddress': 'Mall Plaza Vespucio, La Florida',
-        'deliveryAddress': 'Av. Vicuña Mackenna 2890, Ñuñoa',
-      },
-      {
-        'productName': 'Silla Gamer RGB',
-        'productImage':
-            'https://via.placeholder.com/400x300/FF6B6B/FFFFFF?text=Silla+Gamer',
-        'weight': 15.5,
-        'distance': 5.2,
-        'earnings': 5200.0,
-        'pickupAddress': 'Av. Apoquindo 4500, Las Condes',
-        'deliveryAddress': 'Calle San Diego 1200, Santiago Centro',
-      },
-      {
-        'productName': 'Bicicleta de Montaña',
-        'productImage':
-            'https://via.placeholder.com/400x300/FFA500/FFFFFF?text=Bicicleta',
-        'weight': 12.0,
-        'distance': 4.3,
-        'earnings': 4300.0,
-        'pickupAddress': 'Av. Irarrázaval 3456, Ñuñoa',
-        'deliveryAddress': 'Av. Grecia 8900, Peñalolén',
-      },
-    ];
-
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: mockRequests.length,
+      itemCount: _mockRequests.length,
       itemBuilder: (context, index) {
-        final request = mockRequests[index];
+        final request = _mockRequests[index];
         return DeliveryRequestCard(
+          key: ValueKey('request_$index'),
           productName: request['productName'] as String,
           productImage: request['productImage'] as String,
           weight: request['weight'] as double,

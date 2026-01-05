@@ -1,6 +1,9 @@
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../providers/map_providers.dart';
@@ -17,10 +20,17 @@ class MapLocationScreen extends ConsumerStatefulWidget {
 
 class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
   final MapController _mapController = MapController();
+  late final http.BaseClient _tileHttpClient;
+
+  Timer? _positionUpdateDebounce;
+  LatLng? _pendingCenter;
+  double? _pendingZoom;
+  bool _pendingCenterWasGesture = false;
 
   @override
   void initState() {
     super.initState();
+    _tileHttpClient = _OsmSafeHttpClient(http.Client());
     // Initialize map on first load
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(mapViewModelProvider.notifier).initialize();
@@ -29,6 +39,8 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
 
   @override
   void dispose() {
+    _positionUpdateDebounce?.cancel();
+    _tileHttpClient.close();
     _mapController.dispose();
     super.dispose();
   }
@@ -96,23 +108,50 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
               minZoom: 5.0,
               maxZoom: 18.0,
               onPositionChanged: (position, hasGesture) {
-                if (hasGesture && position.center != null) {
-                  ref
-                      .read(mapViewModelProvider.notifier)
-                      .updateMapCenter(position.center!);
+                if (position.center != null) {
+                  _pendingCenter = position.center;
+                  _pendingCenterWasGesture = _pendingCenterWasGesture || hasGesture;
                 }
                 if (position.zoom != null) {
-                  ref
-                      .read(mapViewModelProvider.notifier)
-                      .updateZoom(position.zoom!);
+                  _pendingZoom = position.zoom;
                 }
+
+                _positionUpdateDebounce?.cancel();
+                _positionUpdateDebounce = Timer(const Duration(milliseconds: 150), () {
+                  if (!mounted) return;
+
+                  final vm = ref.read(mapViewModelProvider.notifier);
+
+                  if (_pendingCenterWasGesture && _pendingCenter != null) {
+                    vm.updateMapCenter(_pendingCenter!);
+                  }
+                  if (_pendingZoom != null) {
+                    vm.updateZoom(_pendingZoom!);
+                  }
+
+                  _pendingCenterWasGesture = false;
+                });
               },
             ),
             children: [
               // OpenStreetMap Tiles
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.thehero.app',
+                urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                subdomains: const ['a', 'b', 'c'],
+                userAgentPackageName: 'com.example.the_hero',
+                tileProvider: NetworkTileProvider(httpClient: _tileHttpClient),
+                tileUpdateTransformer: TileUpdateTransformers.throttle(
+                  const Duration(milliseconds: 200),
+                ),
+                tileBuilder: (context, _, tile) {
+                  return Image(
+                    image: tile.imageProvider,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const SizedBox.shrink();
+                    },
+                  );
+                },
                 maxZoom: 19,
               ),
 
@@ -242,5 +281,110 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
         ),
       ),
     );
+  }
+}
+
+class _OsmSafeHttpClient extends http.BaseClient {
+  _OsmSafeHttpClient(this._inner);
+
+  final http.Client _inner;
+
+  static final Uint8List _transparentPng = Uint8List.fromList(<int>[
+    0x89,
+    0x50,
+    0x4E,
+    0x47,
+    0x0D,
+    0x0A,
+    0x1A,
+    0x0A,
+    0x00,
+    0x00,
+    0x00,
+    0x0D,
+    0x49,
+    0x48,
+    0x44,
+    0x52,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x08,
+    0x06,
+    0x00,
+    0x00,
+    0x00,
+    0x1F,
+    0x15,
+    0xC4,
+    0x89,
+    0x00,
+    0x00,
+    0x00,
+    0x0A,
+    0x49,
+    0x44,
+    0x41,
+    0x54,
+    0x78,
+    0x9C,
+    0x63,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x05,
+    0x00,
+    0x01,
+    0x0D,
+    0x0A,
+    0x2D,
+    0xB4,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x49,
+    0x45,
+    0x4E,
+    0x44,
+    0xAE,
+    0x42,
+    0x60,
+    0x82,
+  ]);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    try {
+      final response = await _inner.send(request);
+      if (response.statusCode == 200) return response;
+      await response.stream.drain();
+      return _transparentPngResponse(request);
+    } on http.ClientException {
+      return _transparentPngResponse(request);
+    } catch (_) {
+      return _transparentPngResponse(request);
+    }
+  }
+
+  http.StreamedResponse _transparentPngResponse(http.BaseRequest request) {
+    return http.StreamedResponse(
+      Stream<List<int>>.value(_transparentPng),
+      200,
+      contentLength: _transparentPng.length,
+      request: request,
+      headers: const {'content-type': 'image/png'},
+    );
+  }
+
+  @override
+  void close() {
+    _inner.close();
   }
 }

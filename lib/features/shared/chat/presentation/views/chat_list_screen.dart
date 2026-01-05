@@ -72,6 +72,7 @@ class ChatListScreen extends ConsumerWidget {
                   : 'Chat con Vendedor';
 
               return Material(
+                key: ValueKey(chat.chatId),
                 color: backgroundWhite,
                 borderRadius: BorderRadius.circular(16),
                 child: InkWell(

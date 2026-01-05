@@ -34,6 +34,12 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+      ),
+    );
     // Reset navigation to first tab on mount
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(heroHomeViewModelProvider.notifier).reset();
@@ -139,13 +145,6 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-      ),
-    );
-
     return WillPopScope(
       onWillPop: () async => false,
       child: Scaffold(
@@ -153,8 +152,9 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
         resizeToAvoidBottomInset: false,
         body: Consumer(
           builder: (context, ref, _) {
-            final state = ref.watch(heroHomeViewModelProvider);
-            final selectedIndex = state.selectedNavIndex;
+            final selectedIndex = ref.watch(
+              heroHomeViewModelProvider.select((state) => state.selectedNavIndex),
+            );
 
             if (selectedIndex == 4) {
               return WillPopScope(

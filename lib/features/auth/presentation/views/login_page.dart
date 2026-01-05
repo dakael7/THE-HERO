@@ -6,6 +6,8 @@ import '../../../../domain/entities/user.dart';
 import '../widgets/animated_role_button.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
+import '../../../rider/presentation/views/rider_home_screen.dart';
+import '../../domain/providers/get_current_user_usecase_provider.dart';
 import 'email_verification_screen.dart';
 
 // =========================================================
@@ -39,10 +41,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
       final wasAuthenticated = previous?.isAuthenticated ?? false;
       if (!wasAuthenticated && next.isAuthenticated) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HeroHomeScreen()),
-        );
+        Future.microtask(() async {
+          final currentUser =
+              await ref.read(getCurrentUserUseCaseProvider).execute();
+          if (!mounted) return;
+          if (currentUser?.isRider == true) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const RiderHomeScreen(),
+              ),
+            );
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const HeroHomeScreen(),
+              ),
+            );
+          }
+        });
       }
     });
 

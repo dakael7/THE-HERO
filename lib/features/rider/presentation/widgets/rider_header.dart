@@ -209,11 +209,13 @@ class RiderHeader extends ConsumerWidget {
   }
 
   Widget _buildNotificationIcon(BuildContext context, WidgetRef ref) {
-    final asyncNotifications = ref.watch(notificationsProvider);
-    final badgeCount = asyncNotifications.when(
-      data: (notifications) => notifications.where((n) => !n.read).length,
-      loading: () => 0,
-      error: (_, __) => 0,
+    final badgeCount = ref.watch(
+      notificationsProvider.select(
+        (async) => async.maybeWhen(
+          data: (notifications) => notifications.where((n) => !n.read).length,
+          orElse: () => 0,
+        ),
+      ),
     );
 
     return GestureDetector(

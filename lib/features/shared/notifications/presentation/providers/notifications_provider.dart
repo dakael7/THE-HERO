@@ -6,9 +6,11 @@ import '../../domain/providers/get_user_notifications_usecase_provider.dart';
 
 final notificationsProvider =
     FutureProvider<List<AppNotification>>((ref) async {
-  final authState = ref.watch(authNotifierProvider);
+  final isAuthenticated = ref.watch(
+    authNotifierProvider.select((state) => state.isAuthenticated),
+  );
 
-  if (!authState.isAuthenticated) {
+  if (!isAuthenticated) {
     return [];
   }
 

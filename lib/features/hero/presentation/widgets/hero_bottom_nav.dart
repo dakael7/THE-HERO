@@ -11,7 +11,9 @@ class HeroBottomNav extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(heroHomeViewModelProvider);
+    final selectedIndex = ref.watch(
+      heroHomeViewModelProvider.select((state) => state.selectedNavIndex),
+    );
     final viewModel = ref.read(heroHomeViewModelProvider.notifier);
     final mediaQuery = MediaQuery.of(context);
     final screenWidth = mediaQuery.size.width;
@@ -71,11 +73,13 @@ class HeroBottomNav extends ConsumerWidget {
     final badgeFontSize = (8.0 * scaleFactor).clamp(7.0, 10.0);
     final badgeMinSize = (14.0 * scaleFactor).clamp(12.0, 18.0);
 
-    final chatsAsync = ref.watch(userChatsProvider);
-    final int chatCount = chatsAsync.when(
-      data: (chats) => chats.length,
-      loading: () => 0,
-      error: (_, __) => 0,
+    final int chatCount = ref.watch(
+      userChatsProvider.select(
+        (async) => async.maybeWhen(
+          data: (chats) => chats.length,
+          orElse: () => 0,
+        ),
+      ),
     );
 
     return SafeArea(
@@ -128,7 +132,7 @@ class HeroBottomNav extends ConsumerWidget {
                             Icons.home,
                             'Inicio',
                             0,
-                            state.selectedNavIndex,
+                            selectedIndex,
                             () => viewModel.selectNavItem(0),
                             itemPadding: itemPadding,
                             fontSize: fontSize,
@@ -143,7 +147,7 @@ class HeroBottomNav extends ConsumerWidget {
                             Icons.location_on_outlined,
                             'Ubicación',
                             1,
-                            state.selectedNavIndex,
+                            selectedIndex,
                             () => viewModel.selectNavItem(1),
                             itemPadding: itemPadding,
                             fontSize: fontSize,
@@ -159,7 +163,7 @@ class HeroBottomNav extends ConsumerWidget {
                             Icons.chat_bubble_outline,
                             'Chat',
                             3,
-                            state.selectedNavIndex,
+                            selectedIndex,
                             () => viewModel.selectNavItem(3),
                             badgeCount: chatCount > 0 ? chatCount : null,
                             itemPadding: itemPadding,
@@ -175,7 +179,7 @@ class HeroBottomNav extends ConsumerWidget {
                             Icons.person_outline,
                             'Perfil',
                             4,
-                            state.selectedNavIndex,
+                            selectedIndex,
                             () => viewModel.selectNavItem(4),
                             itemPadding: itemPadding,
                             fontSize: fontSize,

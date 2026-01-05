@@ -86,10 +86,10 @@ class _HeroFABState extends ConsumerState<HeroFAB>
 
   @override
   Widget build(BuildContext context) {
-    final cartItems = ref.watch(cartProvider);
-    final itemCount = cartItems.fold<int>(
-      0,
-      (sum, item) => sum + item.quantity,
+    final itemCount = ref.watch(
+      cartProvider.select(
+        (items) => items.fold<int>(0, (sum, item) => sum + item.quantity),
+      ),
     );
     final isMobile = ResponsiveUtils.isMobile(context);
     final fabSize = isMobile ? 70.0 : 80.0;
