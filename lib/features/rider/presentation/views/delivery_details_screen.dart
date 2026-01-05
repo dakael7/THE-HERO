@@ -63,7 +63,7 @@ class DeliveryDetailsScreen extends StatelessWidget {
                     TileLayer(
                       urlTemplate:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.thehero.app',
+                      userAgentPackageName: 'com.example.the_hero',
                     ),
                     PolylineLayer(
                       polylines: [

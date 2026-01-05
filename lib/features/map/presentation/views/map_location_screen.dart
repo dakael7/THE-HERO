@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -22,11 +21,6 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
   final MapController _mapController = MapController();
   late final http.BaseClient _tileHttpClient;
 
-  Timer? _positionUpdateDebounce;
-  LatLng? _pendingCenter;
-  double? _pendingZoom;
-  bool _pendingCenterWasGesture = false;
-
   @override
   void initState() {
     super.initState();
@@ -39,7 +33,6 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
 
   @override
   void dispose() {
-    _positionUpdateDebounce?.cancel();
     _tileHttpClient.close();
     _mapController.dispose();
     super.dispose();
@@ -82,7 +75,7 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
                         // Animate map to product location
                         _mapController.move(
                           product.location,
-                          mapState.currentZoom,
+                          _mapController.zoom,
                         );
                       },
                     ),
@@ -101,57 +94,26 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
           child: FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              center:
-                  mapState.mapCenter ??
-                  const LatLng(-33.4489, -70.6693), // Santiago default
-              zoom: mapState.currentZoom,
+              initialCenter: mapState.mapCenter ??
+                  (mapState.userLocation != null
+                      ? LatLng(
+                          mapState.userLocation!.latitude,
+                          mapState.userLocation!.longitude,
+                        )
+                      : const LatLng(-33.4489, -70.6693)), // Santiago default
+              initialZoom: mapState.currentZoom,
               minZoom: 5.0,
               maxZoom: 18.0,
-              onPositionChanged: (position, hasGesture) {
-                if (position.center != null) {
-                  _pendingCenter = position.center;
-                  _pendingCenterWasGesture = _pendingCenterWasGesture || hasGesture;
-                }
-                if (position.zoom != null) {
-                  _pendingZoom = position.zoom;
-                }
-
-                _positionUpdateDebounce?.cancel();
-                _positionUpdateDebounce = Timer(const Duration(milliseconds: 150), () {
-                  if (!mounted) return;
-
-                  final vm = ref.read(mapViewModelProvider.notifier);
-
-                  if (_pendingCenterWasGesture && _pendingCenter != null) {
-                    vm.updateMapCenter(_pendingCenter!);
-                  }
-                  if (_pendingZoom != null) {
-                    vm.updateZoom(_pendingZoom!);
-                  }
-
-                  _pendingCenterWasGesture = false;
-                });
-              },
             ),
             children: [
               // OpenStreetMap Tiles
               TileLayer(
-                urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                subdomains: const ['a', 'b', 'c'],
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.the_hero',
                 tileProvider: NetworkTileProvider(httpClient: _tileHttpClient),
                 tileUpdateTransformer: TileUpdateTransformers.throttle(
                   const Duration(milliseconds: 200),
                 ),
-                tileBuilder: (context, _, tile) {
-                  return Image(
-                    image: tile.imageProvider,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const SizedBox.shrink();
-                    },
-                  );
-                },
                 maxZoom: 19,
               ),
 
@@ -185,6 +147,10 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
                           ref
                               .read(mapViewModelProvider.notifier)
                               .selectProduct(product);
+                          _mapController.move(
+                            product.location,
+                            _mapController.zoom,
+                          );
                         },
                         child: buildProductMarker(
                           product: product,
