@@ -9,6 +9,7 @@ import '../widgets/hero_bottom_nav.dart';
 import '../widgets/hero_fab.dart';
 import '../widgets/hero_promo_banner.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
+import 'buyer_catalog_screen.dart';
 import '../../../shared/profile/presentation/views/profile_screen.dart'
     as profile;
 import '../../../shared/profile/presentation/views/my_products_screen.dart';
@@ -220,82 +221,164 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                         padding: const EdgeInsets.symmetric(
                           horizontal: paddingNormal,
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: Material(
-                            color: backgroundWhite,
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => const MyProductsScreen(),
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                    color: borderGray100,
-                                    width: 1,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: textGray900.withOpacity(0.05),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 10),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: primaryYellow.withOpacity(0.18),
-                                        borderRadius: BorderRadius.circular(14),
+                        child: Column(
+                          children: [
+                            // Catálogo comprador
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(18),
+                              child: Material(
+                                color: backgroundWhite,
+                                child: InkWell(
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => const BuyerCatalogScreen(),
                                       ),
-                                      child: const Icon(
-                                        Icons.inventory_2_outlined,
-                                        color: textGray900,
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: borderGray100,
+                                        width: 1,
                                       ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: textGray900.withOpacity(0.05),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 10),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 12),
-                                    const Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Mis productos',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                              color: textGray900,
-                                            ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: primaryOrange.withOpacity(0.14),
+                                            borderRadius: BorderRadius.circular(14),
                                           ),
-                                          SizedBox(height: 2),
-                                          Text(
-                                            'Administra tus publicaciones y stock',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                              color: textGray600,
-                                            ),
+                                          child: const Icon(
+                                            Icons.storefront_outlined,
+                                            color: primaryOrange,
+                                            size: 28,
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: const [
+                                              Text(
+                                                'Catálogo',
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: textGray900,
+                                                ),
+                                              ),
+                                              SizedBox(height: 6),
+                                              Text(
+                                                'Explora productos activos y ve el detalle',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: textGray700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(
+                                          Icons.chevron_right_rounded,
+                                          color: textGray600,
+                                        ),
+                                      ],
                                     ),
-                                    const Icon(
-                                      Icons.chevron_right,
-                                      color: textGray600,
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 12),
+                            // Mis ofertas
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(18),
+                              child: Material(
+                                color: backgroundWhite,
+                                child: InkWell(
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => const MyProductsScreen(),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: borderGray100,
+                                        width: 1,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: textGray900.withOpacity(0.05),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 10),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: primaryYellow.withOpacity(0.18),
+                                            borderRadius: BorderRadius.circular(14),
+                                          ),
+                                          child: const Icon(
+                                            Icons.inventory_2_outlined,
+                                            color: primaryOrange,
+                                            size: 28,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: const [
+                                              Text(
+                                                'Mis ofertas',
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: textGray900,
+                                                ),
+                                              ),
+                                              SizedBox(height: 6),
+                                              Text(
+                                                'Publica y edita tus productos',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: textGray700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(
+                                          Icons.chevron_right_rounded,
+                                          color: textGray600,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
 

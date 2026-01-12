@@ -12,6 +12,8 @@ class ProductCard extends ConsumerWidget {
   final Color colorCondition;
   final double price;
   final double weight;
+  final bool showShadow;
+  final String? sellerName;
 
   const ProductCard({
     super.key,
@@ -20,11 +22,12 @@ class ProductCard extends ConsumerWidget {
     required this.colorCondition,
     required this.price,
     this.weight = 0.5,
+    this.showShadow = true,
+    this.sellerName,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Optimización: RepaintBoundary para evitar repintados innecesarios
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -68,19 +71,21 @@ class ProductCard extends ConsumerWidget {
             decoration: BoxDecoration(
               color: backgroundWhite,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: textGray900.withOpacity(0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                  spreadRadius: 1,
-                ),
-                BoxShadow(
-                  color: primaryOrange.withOpacity(0.05),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              boxShadow: showShadow
+                  ? [
+                      BoxShadow(
+                        color: textGray900.withOpacity(0.08),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                        spreadRadius: 1,
+                      ),
+                      BoxShadow(
+                        color: primaryOrange.withOpacity(0.05),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : const [],
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -129,7 +134,7 @@ class ProductCard extends ConsumerWidget {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              'Publicado por: Juan Pérez',
+                              'Publicado por: ${sellerName ?? 'Juan Pérez'}',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: textGray600,

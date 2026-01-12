@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../domain/entities/offer.dart';
 import '../../domain/entities/offer_status.dart';
+import '../../domain/entities/offer_condition.dart';
 
 class OfferModel {
   final String offerId;
@@ -8,6 +9,7 @@ class OfferModel {
   final String title;
   final String description;
   final String category;
+  final OfferCondition condition;
   final double price;
   final String currency;
   final int stock;
@@ -28,6 +30,7 @@ class OfferModel {
     required this.title,
     required this.description,
     required this.category,
+    required this.condition,
     required this.price,
     required this.currency,
     required this.stock,
@@ -50,6 +53,7 @@ class OfferModel {
       title: json['title'] as String? ?? '',
       description: json['description'] as String? ?? '',
       category: json['category'] as String? ?? '',
+      condition: _stringToCondition(json['condition'] as String? ?? 'new'),
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] as String? ?? 'CLP',
       stock: json['stock'] as int? ?? 0,
@@ -73,6 +77,7 @@ class OfferModel {
       'title': title,
       'description': description,
       'category': category,
+      'condition': _conditionToString(condition),
       'price': price,
       'currency': currency,
       'stock': stock,
@@ -96,6 +101,7 @@ class OfferModel {
       title: title,
       description: description,
       category: category,
+      condition: condition,
       price: price,
       currency: currency,
       stock: stock,
@@ -119,6 +125,7 @@ class OfferModel {
       title: entity.title,
       description: entity.description,
       category: entity.category,
+      condition: entity.condition,
       price: entity.price,
       currency: entity.currency,
       stock: entity.stock,
@@ -133,6 +140,38 @@ class OfferModel {
       viewCount: entity.viewCount,
       orderCount: entity.orderCount,
     );
+  }
+
+  static OfferCondition _stringToCondition(String value) {
+    switch (value.toLowerCase()) {
+      case 'new':
+      case 'nuevo':
+        return OfferCondition.newProduct;
+      case 'excellent':
+      case 'excelente':
+        return OfferCondition.excellent;
+      case 'good':
+      case 'good_condition':
+      case 'buen':
+        return OfferCondition.good;
+      case 'used':
+        return OfferCondition.used;
+      default:
+        return OfferCondition.newProduct;
+    }
+  }
+
+  static String _conditionToString(OfferCondition condition) {
+    switch (condition) {
+      case OfferCondition.newProduct:
+        return 'new';
+      case OfferCondition.excellent:
+        return 'excellent';
+      case OfferCondition.good:
+        return 'good';
+      case OfferCondition.used:
+        return 'used';
+    }
   }
 
   static OfferStatus _stringToOfferStatus(String value) {

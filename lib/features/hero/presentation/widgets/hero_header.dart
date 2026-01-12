@@ -171,6 +171,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
     with SingleTickerProviderStateMixin {
   bool _isSearchExpanded = false;
   late TextEditingController _searchController;
+  late FocusNode _searchFocusNode;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
@@ -178,6 +179,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   void initState() {
     super.initState();
     _searchController = TextEditingController();
+    _searchFocusNode = FocusNode();
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -190,6 +192,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -201,15 +204,34 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
     widget.onSearchExpandedChanged?.call(expanded);
     if (expanded) {
       _animationController.forward();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _searchFocusNode.requestFocus();
+      });
     } else {
       _animationController.reverse();
+
+      final currentQuery = _searchController.text.trim();
+      if (currentQuery.isNotEmpty) {
+        ref.read(searchViewModelProvider.notifier).addRecentQuery(currentQuery);
+      }
+
       _searchController.clear();
+      _searchFocusNode.unfocus();
       ref.read(searchViewModelProvider.notifier).clearSearch();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(searchViewModelProvider, (previous, next) {
+      if (_searchController.text == next.query) return;
+      _searchController.value = TextEditingValue(
+        text: next.query,
+        selection: TextSelection.collapsed(offset: next.query.length),
+      );
+    });
+
     final isMobile = ResponsiveUtils.isMobile(context);
     final expandedHeight = isMobile ? 220.0 : 220.0;
     final collapsedHeight = isMobile ? 140.0 : 140.0;
@@ -344,129 +366,130 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   }
 
   Widget _buildSearchBar(BuildContext context) {
-    if (_isSearchExpanded) {
-      // Barra de búsqueda activa con TextField funcional
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: paddingNormal),
-        decoration: BoxDecoration(
-          color: backgroundWhite,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: primaryOrange.withOpacity(0.3), width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: primaryOrange.withOpacity(0.2),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-              spreadRadius: 2,
-            ),
-            BoxShadow(
-              color: textGray900.withOpacity(0.08),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: TextField(
-          controller: _searchController,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'Buscar productos...',
-            hintStyle: TextStyle(
-              color: textGray600.withOpacity(0.7),
-              fontSize: 15,
-            ),
-            prefixIcon: const Icon(
-              Icons.search,
-              color: primaryOrange,
-              size: 24,
-            ),
-            suffixIcon: Container(
-              margin: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: backgroundGray50,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.close, color: textGray600, size: 20),
-                onPressed: () => _toggleSearch(false),
-              ),
-            ),
-            filled: true,
-            fillColor: Colors.transparent,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 16,
-              horizontal: 4,
-            ),
-          ),
-          style: const TextStyle(
-            color: textGray900,
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-          ),
-          cursorColor: primaryOrange,
-          onChanged: (value) {
-            ref.read(searchViewModelProvider.notifier).search(value);
-          },
-        ),
-      );
-    }
-
+    // Barra de búsqueda activa con TextField funcional
     // Barra de búsqueda inactiva (placeholder)
-    return GestureDetector(
-      onTap: () => _toggleSearch(true),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: paddingNormal),
-        decoration: BoxDecoration(
-          color: backgroundWhite,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: backgroundWhite.withOpacity(0.5), width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: textGray900.withOpacity(0.1),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-              spreadRadius: 1,
-            ),
-            BoxShadow(
-              color: primaryOrange.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      padding: const EdgeInsets.symmetric(horizontal: paddingNormal),
+      decoration: BoxDecoration(
+        color: backgroundWhite,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: _isSearchExpanded
+              ? primaryOrange.withOpacity(0.3)
+              : backgroundWhite.withOpacity(0.5),
+          width: _isSearchExpanded ? 2 : 1,
         ),
-        child: TextField(
-          enabled: false,
-          decoration: InputDecoration(
-            hintText: 'Buscar productos...',
-            hintStyle: TextStyle(
-              color: textGray600.withOpacity(0.7),
-              fontSize: 15,
-            ),
-            prefixIcon: const Icon(
-              Icons.search,
-              color: primaryOrange,
-              size: 24,
-            ),
-            suffixIcon: Container(
-              margin: const EdgeInsets.all(8),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: primaryOrange.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
+        boxShadow: _isSearchExpanded
+            ? [
+                BoxShadow(
+                  color: primaryOrange.withOpacity(0.2),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                  spreadRadius: 2,
+                ),
+                BoxShadow(
+                  color: textGray900.withOpacity(0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: textGray900.withOpacity(0.1),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                  spreadRadius: 1,
+                ),
+                BoxShadow(
+                  color: primaryOrange.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: SizedBox(
+        height: 56,
+        child: Center(
+          child: TextField(
+            focusNode: _searchFocusNode,
+            controller: _searchController,
+            readOnly: !_isSearchExpanded,
+            showCursor: _isSearchExpanded,
+            decoration: InputDecoration(
+              hintText: 'Buscar productos...',
+              hintStyle: TextStyle(
+                color: textGray600.withOpacity(0.7),
+                fontSize: 15,
               ),
-              child: Icon(Icons.tune, color: primaryOrange, size: 20),
+              prefixIcon: const Icon(
+                Icons.search,
+                color: primaryOrange,
+                size: 24,
+              ),
+              suffixIcon: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: _isSearchExpanded
+                    ? Container(
+                        key: const ValueKey('close'),
+                        margin: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: backgroundGray50,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.close,
+                            color: textGray600,
+                            size: 20,
+                          ),
+                          onPressed: () => _toggleSearch(false),
+                        ),
+                      )
+                    : Container(
+                        key: const ValueKey('tune'),
+                        margin: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: primaryOrange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.tune,
+                          color: primaryOrange,
+                          size: 20,
+                        ),
+                      ),
+              ),
+              filled: true,
+              fillColor: Colors.transparent,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(
+                vertical: 16,
+                horizontal: 4,
+              ),
             ),
-            filled: true,
-            fillColor: Colors.transparent,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 16,
-              horizontal: 4,
+            style: const TextStyle(
+              color: textGray900,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
             ),
+            cursorColor: primaryOrange,
+            onTap: () {
+              if (!_isSearchExpanded) _toggleSearch(true);
+            },
+            onChanged: (value) {
+              if (_isSearchExpanded) {
+                ref.read(searchViewModelProvider.notifier).search(value);
+              }
+            },
+            onSubmitted: (value) {
+              ref.read(searchViewModelProvider.notifier).addRecentQuery(value);
+            },
           ),
-          style: const TextStyle(color: textGray900, fontSize: 15),
-          cursorColor: primaryOrange,
         ),
       ),
     );
@@ -475,102 +498,276 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   TextEditingController get searchController => _searchController;
 }
 
-class HeroSearchContent extends ConsumerWidget {
+class HeroSearchContent extends ConsumerStatefulWidget {
   final TextEditingController? searchController;
 
   const HeroSearchContent({super.key, this.searchController});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HeroSearchContent> createState() => _HeroSearchContentState();
+}
+
+class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _panelController;
+  late final Animation<double> _panelOpacity;
+  late final Animation<Offset> _panelOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    _panelController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+    _panelOpacity = CurvedAnimation(
+      parent: _panelController,
+      curve: Curves.easeOut,
+    );
+    _panelOffset = Tween<Offset>(
+      begin: const Offset(0, 0.03),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _panelController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _panelController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final searchState = ref.watch(searchViewModelProvider);
+    final showRecent = searchState.query.trim().isEmpty;
+
+    if (showRecent) {
+      _panelController.forward();
+    } else {
+      _panelController.reverse();
+    }
 
     return Container(
       color: backgroundGray50,
       padding: const EdgeInsets.all(16),
       child: searchState.isSearching
           ? const Center(child: CircularProgressIndicator(color: primaryOrange))
-          : searchState.results.isEmpty && searchState.query.isNotEmpty
-          ? Center(
-              child: Text(
-                'No se encontraron resultados',
-                style: TextStyle(fontSize: 14, color: textGray600),
-              ),
-            )
-          : searchState.results.isNotEmpty
-          ? ListView.separated(
-              itemCount: searchState.results.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final product = searchState.results[index];
-                return Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: backgroundWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: textGray900.withOpacity(0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: backgroundGray50,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.image_not_supported_outlined,
-                          color: textGray600,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              product['name'],
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                                color: textGray900,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              product['condition'],
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: textGray600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        '\$${product['price']}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          color: primaryOrange,
-                        ),
-                      ),
-                    ],
-                  ),
+          : AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) {
+                final slide = Tween<Offset>(
+                  begin: const Offset(0, 0.02),
+                  end: Offset.zero,
+                ).animate(animation);
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(position: slide, child: child),
                 );
               },
-            )
-          : Center(
-              child: Text(
-                'Búsquedas recientes',
-                style: TextStyle(fontSize: 14, color: textGray600),
-              ),
+              child: searchState.results.isEmpty && searchState.query.isNotEmpty
+                  ? Center(
+                      key: const ValueKey('empty'),
+                      child: Text(
+                        'No se encontraron resultados',
+                        style: TextStyle(fontSize: 14, color: textGray600),
+                      ),
+                    )
+                  : searchState.results.isNotEmpty
+                      ? ListView.separated(
+                          key: const ValueKey('results'),
+                          itemCount: searchState.results.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final product = searchState.results[index];
+                            return InkWell(
+                              onTap: () {
+                                ref
+                                    .read(searchViewModelProvider.notifier)
+                                    .addRecentQuery(searchState.query);
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: backgroundWhite,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: textGray900.withOpacity(0.05),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: backgroundGray50,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.image_not_supported_outlined,
+                                        color: textGray600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            product['name'],
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                              color: textGray900,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            product['condition'],
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: textGray600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      '\$${product['price']}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: primaryOrange,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : FadeTransition(
+                          key: const ValueKey('recent'),
+                          opacity: _panelOpacity,
+                          child: SlideTransition(
+                            position: _panelOffset,
+                            child: searchState.recentQueries.isEmpty
+                                ? Center(
+                                    child: Text(
+                                      'Búsquedas recientes',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: textGray600,
+                                      ),
+                                    ),
+                                  )
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Búsquedas recientes',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: textGray600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Expanded(
+                                        child: ListView.separated(
+                                          itemCount:
+                                              searchState.recentQueries.length,
+                                          separatorBuilder: (_, __) =>
+                                              const SizedBox(height: 8),
+                                          itemBuilder: (context, index) {
+                                            final query =
+                                                searchState.recentQueries[index];
+                                            return Material(
+                                              color: backgroundWhite,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              child: InkWell(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                onTap: () {
+                                                  ref
+                                                      .read(
+                                                        searchViewModelProvider
+                                                            .notifier,
+                                                      )
+                                                      .selectRecentQuery(query);
+                                                },
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 10,
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      const Icon(
+                                                        Icons.history,
+                                                        color: textGray600,
+                                                        size: 18,
+                                                      ),
+                                                      const SizedBox(width: 10),
+                                                      Expanded(
+                                                        child: Text(
+                                                          query,
+                                                          style: const TextStyle(
+                                                            color: textGray900,
+                                                            fontSize: 14,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                        ),
+                                                      ),
+                                                      IconButton(
+                                                        icon: const Icon(
+                                                          Icons.close,
+                                                          size: 18,
+                                                          color: textGray600,
+                                                        ),
+                                                        onPressed: () {
+                                                          ref
+                                                              .read(
+                                                                searchViewModelProvider
+                                                                    .notifier,
+                                                              )
+                                                              .removeRecentQuery(
+                                                                query,
+                                                              );
+                                                        },
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
             ),
     );
   }

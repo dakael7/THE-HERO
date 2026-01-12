@@ -7,22 +7,28 @@ class SearchState {
   final String query;
   final List<Map<String, dynamic>> results;
   final bool isSearching;
+  final List<String>? _recentQueries;
+
+  List<String> get recentQueries => _recentQueries ?? const [];
 
   const SearchState({
     this.query = '',
     this.results = const [],
     this.isSearching = false,
-  });
+    List<String>? recentQueries = const [],
+  }) : _recentQueries = recentQueries;
 
   SearchState copyWith({
     String? query,
     List<Map<String, dynamic>>? results,
     bool? isSearching,
+    List<String>? recentQueries,
   }) {
     return SearchState(
       query: query ?? this.query,
       results: results ?? this.results,
       isSearching: isSearching ?? this.isSearching,
+      recentQueries: recentQueries ?? _recentQueries,
     );
   }
 }
@@ -30,6 +36,8 @@ class SearchState {
 class SearchViewModel extends Notifier<SearchState> {
   late List<Map<String, dynamic>> _allProducts;
   Timer? _debounceTimer;
+
+  static const int _maxRecentQueries = 8;
 
   @override
   SearchState build() {
@@ -109,14 +117,16 @@ class SearchViewModel extends Notifier<SearchState> {
   void search(String query) {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
 
+    state = state.copyWith(query: query);
+
+    if (query.trim().isEmpty) {
+      state = state.copyWith(results: const [], isSearching: false);
+      return;
+    }
+
+    state = state.copyWith(isSearching: true);
+
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      state = state.copyWith(query: query, isSearching: true);
-
-      if (query.isEmpty) {
-        state = state.copyWith(results: const [], isSearching: false);
-        return;
-      }
-
       final lowerQuery = query.toLowerCase();
       final filtered = _allProducts
           .where(
@@ -135,9 +145,45 @@ class SearchViewModel extends Notifier<SearchState> {
     });
   }
 
+  void addRecentQuery(String query) {
+    final value = query.trim();
+    if (value.isEmpty) return;
+
+    final updated = <String>[
+      value,
+      ...state.recentQueries.where((q) => q.toLowerCase() != value.toLowerCase()),
+    ];
+
+    state = state.copyWith(
+      recentQueries: updated.take(_maxRecentQueries).toList(growable: false),
+    );
+  }
+
+  void removeRecentQuery(String query) {
+    final value = query.trim();
+    if (value.isEmpty) return;
+
+    state = state.copyWith(
+      recentQueries: state.recentQueries
+          .where((q) => q.toLowerCase() != value.toLowerCase())
+          .toList(growable: false),
+    );
+  }
+
+  void selectRecentQuery(String query) {
+    final value = query.trim();
+    if (value.isEmpty) return;
+    addRecentQuery(value);
+    search(value);
+  }
+
   void clearSearch() {
     _debounceTimer?.cancel();
-    state = const SearchState();
+    state = state.copyWith(
+      query: '',
+      results: const [],
+      isSearching: false,
+    );
   }
 }
 

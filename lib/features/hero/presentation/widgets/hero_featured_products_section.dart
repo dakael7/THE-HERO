@@ -75,29 +75,63 @@ class HeroFeaturedProductsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: paddingLarge),
-        // Optimización: RepaintBoundary para cada producto
-        ...products.asMap().entries.map((entry) {
-          final index = entry.key;
-          final product = entry.value;
-          final price = (product['price'] as double?) ?? 45990.0;
-          final weight = (product['weight'] as double?) ?? 0.5;
-          return RepaintBoundary(
-            key: ValueKey('product_$index'),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: paddingLarge,
-                vertical: paddingNormal,
-              ),
-              child: ProductCard(
-                name: product['name'],
-                condition: product['condition'],
-                colorCondition: product['colorCondition'],
-                price: price,
-                weight: weight,
-              ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: paddingNormal),
+          child: Container(
+            decoration: BoxDecoration(
+              color: backgroundWhite,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: borderGray100),
+              boxShadow: [
+                BoxShadow(
+                  color: textGray900.withOpacity(0.05),
+                  blurRadius: 12,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
-          );
-        }),
+            child: Column(
+              children: [
+                ...products.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final product = entry.value;
+                  final isLast = index == products.length - 1;
+                  final price = (product['price'] as double?) ?? 45990.0;
+                  final weight = (product['weight'] as double?) ?? 0.5;
+                  return Column(
+                    children: [
+                      RepaintBoundary(
+                        key: ValueKey('product_$index'),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: paddingNormal,
+                            vertical: 0,
+                          ),
+                          child: ProductCard(
+                            name: product['name'],
+                            condition: product['condition'],
+                            colorCondition: product['colorCondition'],
+                            price: price,
+                            weight: weight,
+                            showShadow: false,
+                          ),
+                        ),
+                      ),
+                      if (!isLast)
+                        const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: borderGray100,
+                          indent: paddingNormal,
+                          endIndent: paddingNormal,
+                        ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }

@@ -7,6 +7,7 @@ import '../../../../shared/profile/presentation/providers/profile_provider.dart'
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
+import 'offer_form_screen.dart';
 
 class MyProductsScreen extends ConsumerStatefulWidget {
   const MyProductsScreen({super.key});
@@ -19,6 +20,20 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
   final TextEditingController _searchController = TextEditingController();
   OfferStatus? _statusFilter;
   final Set<String> _busyOfferIds = <String>{};
+
+  Future<void> _openOfferForm({Offer? offer}) async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => OfferFormScreen(initialOffer: offer),
+      ),
+    );
+    if (result == true && mounted) {
+      final user = ref.read(profileProvider).value;
+      if (user != null) {
+        ref.invalidate(myOffersProvider(user.id));
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -322,7 +337,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
 
     final isBusy = _busyOfferIds.contains(offer.offerId);
 
-    final hasImage = offer.coverImageUrl.trim().isNotEmpty;
+    final cover = offer.coverImageUrl.trim();
+    final hasImage = cover.isNotEmpty;
+    final isAsset = cover.startsWith('assets/');
     final currency = offer.currency.trim().isEmpty ? 'CLP' : offer.currency.trim();
 
     return Material(
@@ -354,18 +371,23 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                   height: 78,
                   color: borderGray100,
                   child: hasImage
-                      ? Image.network(
-                          offer.coverImageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Center(
-                              child: Icon(
-                                Icons.image_not_supported_outlined,
-                                color: textGray600,
-                              ),
-                            );
-                          },
-                        )
+                      ? isAsset
+                          ? Image.asset(
+                              cover,
+                              fit: BoxFit.cover,
+                            )
+                          : Image.network(
+                              cover,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Center(
+                                  child: Icon(
+                                    Icons.image_not_supported_outlined,
+                                    color: textGray600,
+                                  ),
+                                );
+                              },
+                            )
                       : const Center(
                           child: Icon(
                             Icons.image_outlined,
@@ -416,12 +438,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                             onSelected: (value) async {
                               switch (value) {
                                 case 'edit':
-                                  _showComingSoon(
-                                    context,
-                                    'Editar producto próximamente',
-                                  );
+                                  await _openOfferForm(offer: offer);
                                   break;
-                                case 'activate':
+                                case 'publish':
                                   await _setOfferStatus(
                                     context: context,
                                     offer: offer,
@@ -438,20 +457,64 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                   );
                                   break;
                                 case 'archive':
-                                  final confirmed = await _confirmAction(
-                                    context: context,
-                                    title: 'Archivar publicación',
-                                    message:
-                                        'Tu producto dejará de estar visible para los clientes. Puedes reactivarlo cuando quieras.',
-                                    confirmText: 'Archivar',
-                                  );
-                                  if (!confirmed) return;
-                                  await _setOfferStatus(
-                                    context: context,
-                                    offer: offer,
-                                    status: 'archived',
-                                    successMessage: 'Publicación archivada',
-                                  );
+                                  {
+                                    final confirmed = await _confirmAction(
+                                      context: context,
+                                      title: 'Archivar publicación',
+                                      message:
+                                          'Tu producto dejará de estar visible para los clientes. Puedes reactivarlo cuando quieras.',
+                                      confirmText: 'Archivar',
+                                    );
+                                    if (!confirmed) break;
+                                    await _setOfferStatus(
+                                      context: context,
+                                      offer: offer,
+                                      status: 'archived',
+                                      successMessage: 'Publicación archivada',
+                                    );
+                                  }
+                                  break;
+                                case 'delete':
+                                  {
+                                    final confirmed = await _confirmAction(
+                                      context: context,
+                                      title: 'Eliminar publicación',
+                                      message:
+                                          'Esta acción es permanente. ¿Eliminar esta oferta?',
+                                      confirmText: 'Eliminar',
+                                    );
+                                    if (!confirmed) break;
+                                    if (_busyOfferIds.contains(offer.offerId)) break;
+                                    setState(() => _busyOfferIds.add(offer.offerId));
+                                    try {
+                                      await ref
+                                          .read(offersRepositoryProvider)
+                                          .deleteOffer(offer.offerId);
+                                      ref.invalidate(myOffersProvider(offer.heroId));
+                                      if (!mounted) break;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Oferta eliminada'),
+                                          duration: Duration(milliseconds: 1500),
+                                        ),
+                                      );
+                                    } catch (e) {
+                                      if (!mounted) break;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content:
+                                              Text('No se pudo eliminar: $e'),
+                                          duration:
+                                              const Duration(milliseconds: 2200),
+                                        ),
+                                      );
+                                    } finally {
+                                      if (mounted) {
+                                        setState(() => _busyOfferIds
+                                            .remove(offer.offerId));
+                                      }
+                                    }
+                                  }
                                   break;
                               }
                             },
@@ -467,11 +530,14 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                 );
                               }
 
-                              if (offer.status != OfferStatus.active) {
+                              if (offer.status == OfferStatus.draft ||
+                                  offer.status == OfferStatus.paused ||
+                                  offer.status == OfferStatus.archived ||
+                                  offer.status == OfferStatus.soldOut) {
                                 items.add(
                                   const PopupMenuItem(
-                                    value: 'activate',
-                                    child: Text('Activar'),
+                                    value: 'publish',
+                                    child: Text('Publicar'),
                                   ),
                                 );
                               }
@@ -493,6 +559,13 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                   ),
                                 );
                               }
+
+                              items.add(
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('Eliminar'),
+                                ),
+                              );
 
                               return items;
                             },
@@ -946,12 +1019,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                             ),
                                                             SizedBox(height: gapNormal),
                                                             ElevatedButton.icon(
-                                                              onPressed: () {
-                                                                _showComingSoon(
-                                                                  context,
-                                                                  'Publicación de productos próximamente',
-                                                                );
-                                                              },
+                                                              onPressed: () => _openOfferForm(),
                                                               icon: Icon(
                                                                 Icons.add_circle_outline,
                                                                 color: primaryOrange,
@@ -1043,7 +1111,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                         ),
                       ),
                     ),
-                    if (offers.isEmpty)
+                    if (offers.isEmpty) ...[
                       SliverFillRemaining(
                         hasScrollBody: false,
                         child: Padding(
@@ -1085,37 +1153,12 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                     color: textGray600,
                                   ),
                                 ),
-                                const SizedBox(height: 14),
-                                ElevatedButton.icon(
-                                  onPressed: () {
-                                    _showComingSoon(
-                                      context,
-                                      'Publicación de productos próximamente',
-                                    );
-                                  },
-                                  icon: const Icon(Icons.add_circle_outline),
-                                  label: const Text(
-                                    'Publicar ahora',
-                                    style: TextStyle(fontWeight: FontWeight.w800),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: primaryOrange,
-                                    foregroundColor: backgroundWhite,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 18,
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                ),
                               ],
                             ),
                           ),
                         ),
-                      )
-                    else if (filtered.isEmpty)
+                      ),
+                    ] else if (filtered.isEmpty) ...[
                       SliverFillRemaining(
                         hasScrollBody: false,
                         child: Padding(
@@ -1164,8 +1207,8 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                             ),
                           ),
                         ),
-                      )
-                    else
+                      ),
+                    ] else ...[
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
                         sliver: SliverList(
@@ -1183,6 +1226,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                           ),
                         ),
                       ),
+                    ],
                   ],
                 ),
               );

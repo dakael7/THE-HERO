@@ -1,4 +1,5 @@
 import 'offer_status.dart';
+import 'offer_condition.dart';
 
 class Offer {
   final String offerId;
@@ -6,6 +7,7 @@ class Offer {
   final String title;
   final String description;
   final String category;
+  final OfferCondition condition;
   final double price;
   final String currency;
   final int stock;
@@ -26,6 +28,7 @@ class Offer {
     required this.title,
     required this.description,
     required this.category,
+    required this.condition,
     required this.price,
     required this.currency,
     required this.stock,
@@ -53,6 +56,7 @@ class Offer {
     String? title,
     String? description,
     String? category,
+    OfferCondition? condition,
     double? price,
     String? currency,
     int? stock,
@@ -73,6 +77,7 @@ class Offer {
       title: title ?? this.title,
       description: description ?? this.description,
       category: category ?? this.category,
+      condition: condition ?? this.condition,
       price: price ?? this.price,
       currency: currency ?? this.currency,
       stock: stock ?? this.stock,

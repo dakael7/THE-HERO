@@ -152,24 +152,61 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
                           ],
                         ),
                       )
-                    : ListView.separated(
+                    : ListView(
                         padding: const EdgeInsets.all(16),
-                        itemCount: searchState.results.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          final product = searchState.results[index];
-                          final price =
-                              (product['price'] as double?) ?? 45990.0;
-                          final weight =
-                              (product['weight'] as double?) ?? 0.5;
-                          return ProductCard(
-                            name: product['name'],
-                            condition: product['condition'],
-                            colorCondition: product['colorCondition'],
-                            price: price,
-                            weight: weight,
-                          );
-                        },
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: backgroundWhite,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: borderGray100),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: textGray900.withOpacity(0.05),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              children: [
+                                ...searchState.results.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final product = entry.value;
+                                  final isLast = index == searchState.results.length - 1;
+                                  final price = (product['price'] as double?) ?? 45990.0;
+                                  final weight = (product['weight'] as double?) ?? 0.5;
+                                  return Column(
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 0,
+                                        ),
+                                        child: ProductCard(
+                                          name: product['name'],
+                                          condition: product['condition'],
+                                          colorCondition: product['colorCondition'],
+                                          price: price,
+                                          weight: weight,
+                                          showShadow: false,
+                                        ),
+                                      ),
+                                      if (!isLast)
+                                        const Divider(
+                                          height: 1,
+                                          thickness: 1,
+                                          color: borderGray100,
+                                          indent: 16,
+                                          endIndent: 16,
+                                        ),
+                                    ],
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
           ),
         ],
