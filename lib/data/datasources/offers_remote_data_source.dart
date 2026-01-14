@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:typed_data';
 import '../models/offer_model.dart';
 
 abstract class OffersRemoteDataSource {
@@ -10,13 +12,23 @@ abstract class OffersRemoteDataSource {
   Stream<List<OfferModel>> getActiveOffers({String? category, int limit = 20});
   Future<void> updateOfferStatus(String offerId, String status);
   Future<void> decrementStock(String offerId, int qty);
+  Future<String> uploadOfferImage({
+    required String heroId,
+    required String offerId,
+    required Uint8List bytes,
+    required String fileName,
+  });
 }
 
 class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
   final FirebaseFirestore _firestore;
+  final FirebaseStorage _storage;
 
-  OffersRemoteDataSourceImpl({required FirebaseFirestore firestore})
-      : _firestore = firestore;
+  OffersRemoteDataSourceImpl({
+    required FirebaseFirestore firestore,
+    required FirebaseStorage storage,
+  })  : _firestore = firestore,
+        _storage = storage;
 
   @override
   Future<OfferModel> createOffer(OfferModel offer) async {
@@ -28,6 +40,49 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
       return OfferModel.fromJson(createdOffer);
     } catch (e) {
       throw Exception('Error al crear oferta: $e');
+    }
+  }
+
+  @override
+  Future<String> uploadOfferImage({
+    required String heroId,
+    required String offerId,
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    try {
+      if (bytes.isEmpty) {
+        throw Exception('Archivo vacío');
+      }
+
+      final trimmedName = fileName.trim();
+      final safeName = trimmedName.isEmpty ? 'image.jpg' : trimmedName;
+      final ext = safeName.contains('.')
+          ? safeName.split('.').last.toLowerCase()
+          : 'jpg';
+
+      final contentType = switch (ext) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+        _ => 'application/octet-stream',
+      };
+
+      final ref = _storage
+          .ref()
+          .child('offers')
+          .child(heroId)
+          .child(offerId)
+          .child('${DateTime.now().millisecondsSinceEpoch}.$ext');
+
+      await ref.putData(
+        bytes,
+        SettableMetadata(contentType: contentType),
+      );
+      return await ref.getDownloadURL();
+    } catch (e) {
+      throw Exception('Error al subir imagen: $e');
     }
   }
 

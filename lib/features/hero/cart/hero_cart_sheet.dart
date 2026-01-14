@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import 'cart_item.dart';
 import 'cart_provider.dart';
 import 'cart_summary_provider.dart';
+import 'checkout_screen.dart';
 
 class HeroCartSheet extends ConsumerWidget {
   const HeroCartSheet({super.key});
@@ -117,7 +118,8 @@ class HeroCartSheet extends ConsumerWidget {
                           controller: scrollController,
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                           itemCount: cartItems.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final item = cartItems[index];
                             return _CartItemTile(item: item);
@@ -181,10 +183,7 @@ class HeroCartSheet extends ConsumerWidget {
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Container(
-                              height: 1,
-                              color: borderGray100,
-                            ),
+                            child: Container(height: 1, color: borderGray100),
                           ),
                           _buildSummaryRow(
                             'Total:',
@@ -208,8 +207,9 @@ class HeroCartSheet extends ConsumerWidget {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: primaryOrange,
                                 foregroundColor: backgroundWhite,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
                                 elevation: 4,
                                 shadowColor: primaryOrange.withOpacity(0.4),
                                 shape: RoundedRectangleBorder(
@@ -217,11 +217,12 @@ class HeroCartSheet extends ConsumerWidget {
                                 ),
                               ),
                               onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content:
-                                        Text('Flujo de pago aún no implementado'),
-                                    duration: Duration(milliseconds: 1800),
+                                Navigator.of(
+                                  context,
+                                ).pop(); // Close sheet first
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const CheckoutScreen(),
                                   ),
                                 );
                               },
@@ -297,7 +298,10 @@ class _CartItemTile extends ConsumerWidget {
         ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         leading: Container(
           width: 56,
           height: 56,
@@ -305,11 +309,7 @@ class _CartItemTile extends ConsumerWidget {
             color: borderGray100,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
-            Icons.image,
-            color: textGray600,
-            size: 28,
-          ),
+          child: const Icon(Icons.image, color: textGray600, size: 28),
         ),
         title: Text(
           item.name,
@@ -321,10 +321,7 @@ class _CartItemTile extends ConsumerWidget {
         ),
         subtitle: Text(
           item.condition,
-          style: const TextStyle(
-            fontSize: 14,
-            color: textGray600,
-          ),
+          style: const TextStyle(fontSize: 14, color: textGray600),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -348,11 +345,15 @@ class _CartItemTile extends ConsumerWidget {
               icon: const Icon(Icons.add_circle_outline, size: 24),
               color: primaryOrange,
               onPressed: () {
-                ref.read(cartProvider.notifier).addItem(
+                ref
+                    .read(cartProvider.notifier)
+                    .addItem(
+                      offerId: item.offerId,
                       name: item.name,
                       condition: item.condition,
                       price: item.price,
                       weight: item.weight,
+                      imageUrl: item.imageUrl,
                     );
               },
             ),

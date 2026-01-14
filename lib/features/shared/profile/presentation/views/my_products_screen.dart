@@ -8,6 +8,7 @@ import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 import 'offer_form_screen.dart';
+import 'seller_offer_detail_screen.dart';
 
 class MyProductsScreen extends ConsumerStatefulWidget {
   const MyProductsScreen({super.key});
@@ -23,9 +24,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
 
   Future<void> _openOfferForm({Offer? offer}) async {
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => OfferFormScreen(initialOffer: offer),
-      ),
+      MaterialPageRoute(builder: (_) => OfferFormScreen(initialOffer: offer)),
     );
     if (result == true && mounted) {
       final user = ref.read(profileProvider).value;
@@ -74,7 +73,8 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
   List<Offer> _applyFilters(List<Offer> offers) {
     final query = _searchController.text.trim().toLowerCase();
     final filtered = offers.where((offer) {
-      final matchesStatus = _statusFilter == null || offer.status == _statusFilter;
+      final matchesStatus =
+          _statusFilter == null || offer.status == _statusFilter;
       if (!matchesStatus) return false;
 
       if (query.isEmpty) return true;
@@ -104,10 +104,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 8),
           Text(
@@ -230,7 +227,10 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
         onChanged: (_) => setState(() {}),
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 14,
+          ),
           border: InputBorder.none,
           hintText: 'Buscar por nombre o categoría',
           hintStyle: TextStyle(
@@ -254,11 +254,21 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
   }
 
   Widget _buildFilterChips(BuildContext context, List<Offer> offers) {
-    final activeCount = offers.where((o) => o.status == OfferStatus.active).length;
-    final draftCount = offers.where((o) => o.status == OfferStatus.draft).length;
-    final pausedCount = offers.where((o) => o.status == OfferStatus.paused).length;
-    final soldOutCount = offers.where((o) => o.status == OfferStatus.soldOut).length;
-    final archivedCount = offers.where((o) => o.status == OfferStatus.archived).length;
+    final activeCount = offers
+        .where((o) => o.status == OfferStatus.active)
+        .length;
+    final draftCount = offers
+        .where((o) => o.status == OfferStatus.draft)
+        .length;
+    final pausedCount = offers
+        .where((o) => o.status == OfferStatus.paused)
+        .length;
+    final soldOutCount = offers
+        .where((o) => o.status == OfferStatus.soldOut)
+        .length;
+    final archivedCount = offers
+        .where((o) => o.status == OfferStatus.archived)
+        .length;
 
     Widget chip({
       required String label,
@@ -299,7 +309,8 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           chip(
             label: 'Activos ($activeCount)',
             selected: _statusFilter == OfferStatus.active,
-            onSelected: () => setState(() => _statusFilter = OfferStatus.active),
+            onSelected: () =>
+                setState(() => _statusFilter = OfferStatus.active),
           ),
           const SizedBox(width: 8),
           chip(
@@ -311,19 +322,22 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           chip(
             label: 'Pausados ($pausedCount)',
             selected: _statusFilter == OfferStatus.paused,
-            onSelected: () => setState(() => _statusFilter = OfferStatus.paused),
+            onSelected: () =>
+                setState(() => _statusFilter = OfferStatus.paused),
           ),
           const SizedBox(width: 8),
           chip(
             label: 'Agotados ($soldOutCount)',
             selected: _statusFilter == OfferStatus.soldOut,
-            onSelected: () => setState(() => _statusFilter = OfferStatus.soldOut),
+            onSelected: () =>
+                setState(() => _statusFilter = OfferStatus.soldOut),
           ),
           const SizedBox(width: 8),
           chip(
             label: 'Archivados ($archivedCount)',
             selected: _statusFilter == OfferStatus.archived,
-            onSelected: () => setState(() => _statusFilter = OfferStatus.archived),
+            onSelected: () =>
+                setState(() => _statusFilter = OfferStatus.archived),
           ),
           const SizedBox(width: 16),
         ],
@@ -340,14 +354,23 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     final cover = offer.coverImageUrl.trim();
     final hasImage = cover.isNotEmpty;
     final isAsset = cover.startsWith('assets/');
-    final currency = offer.currency.trim().isEmpty ? 'CLP' : offer.currency.trim();
+    final currency = offer.currency.trim().isEmpty
+        ? 'CLP'
+        : offer.currency.trim();
 
     return Material(
       color: backgroundWhite,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: () => _showComingSoon(context, 'Detalle del producto próximamente'),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SellerOfferDetailScreen(offer: offer),
+            ),
+          );
+        },
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
@@ -372,26 +395,27 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                   color: borderGray100,
                   child: hasImage
                       ? isAsset
-                          ? Image.asset(
-                              cover,
-                              fit: BoxFit.cover,
-                            )
-                          : Image.network(
-                              cover,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Center(
-                                  child: Icon(
-                                    Icons.image_not_supported_outlined,
-                                    color: textGray600,
-                                  ),
-                                );
-                              },
-                            )
+                            ? Image.asset(cover, fit: BoxFit.cover)
+                            : Image.network(
+                                cover,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Center(
+                                    child: Icon(
+                                      Icons.image_not_supported_outlined,
+                                      color: textGray600,
+                                    ),
+                                  );
+                                },
+                              )
                       : const Center(
-                          child: Icon(
-                            Icons.image_outlined,
-                            color: textGray600,
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: primaryOrange,
+                            ),
                           ),
                         ),
                 ),
@@ -484,34 +508,50 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                       confirmText: 'Eliminar',
                                     );
                                     if (!confirmed) break;
-                                    if (_busyOfferIds.contains(offer.offerId)) break;
-                                    setState(() => _busyOfferIds.add(offer.offerId));
+                                    if (_busyOfferIds.contains(offer.offerId))
+                                      break;
+                                    setState(
+                                      () => _busyOfferIds.add(offer.offerId),
+                                    );
                                     try {
                                       await ref
                                           .read(offersRepositoryProvider)
                                           .deleteOffer(offer.offerId);
-                                      ref.invalidate(myOffersProvider(offer.heroId));
+                                      ref.invalidate(
+                                        myOffersProvider(offer.heroId),
+                                      );
                                       if (!mounted) break;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('Oferta eliminada'),
-                                          duration: Duration(milliseconds: 1500),
+                                          duration: Duration(
+                                            milliseconds: 1500,
+                                          ),
                                         ),
                                       );
                                     } catch (e) {
                                       if (!mounted) break;
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                          content:
-                                              Text('No se pudo eliminar: $e'),
-                                          duration:
-                                              const Duration(milliseconds: 2200),
+                                          content: Text(
+                                            'No se pudo eliminar: $e',
+                                          ),
+                                          duration: const Duration(
+                                            milliseconds: 2200,
+                                          ),
                                         ),
                                       );
                                     } finally {
                                       if (mounted) {
-                                        setState(() => _busyOfferIds
-                                            .remove(offer.offerId));
+                                        setState(
+                                          () => _busyOfferIds.remove(
+                                            offer.offerId,
+                                          ),
+                                        );
                                       }
                                     }
                                   }
@@ -720,7 +760,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           },
         ),
         title: const Text(
-          'Mis productos',
+          'Mis ofertas',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
@@ -733,7 +773,11 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline, color: primaryOrange, size: 46),
+                  const Icon(
+                    Icons.error_outline,
+                    color: primaryOrange,
+                    size: 46,
+                  ),
                   const SizedBox(height: 12),
                   const Text(
                     'No pudimos cargar tu perfil',
@@ -887,8 +931,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                         child: LayoutBuilder(
                           builder: (context, constraints) {
                             final maxWidth = constraints.maxWidth;
-                            final scale =
-                                (maxWidth / 390.0).clamp(0.78, 1.20).toDouble();
+                            final scale = (maxWidth / 390.0)
+                                .clamp(0.78, 1.20)
+                                .toDouble();
                             final cardHeight = (maxWidth * 0.52)
                                 .clamp(170.0, 210.0)
                                 .toDouble();
@@ -902,8 +947,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                             final cardPadding = (24.0 * scale)
                                 .clamp(14.0, 24.0)
                                 .toDouble();
-                            final titleSize =
-                                (18.0 * scale).clamp(16.0, 22.0).toDouble();
+                            final titleSize = (18.0 * scale)
+                                .clamp(16.0, 22.0)
+                                .toDouble();
                             final subtitleSize = (14.0 * scale)
                                 .clamp(12.0, 18.0)
                                 .toDouble();
@@ -913,10 +959,12 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                             final buttonIconSize = (20.0 * scale)
                                 .clamp(18.0, 22.0)
                                 .toDouble();
-                            final gapSmall =
-                                (8.0 * scale).clamp(6.0, 10.0).toDouble();
-                            final gapNormal =
-                                (16.0 * scale).clamp(10.0, 16.0).toDouble();
+                            final gapSmall = (8.0 * scale)
+                                .clamp(6.0, 10.0)
+                                .toDouble();
+                            final gapNormal = (16.0 * scale)
+                                .clamp(10.0, 16.0)
+                                .toDouble();
                             final buttonHPadding = (20.0 * scale)
                                 .clamp(14.0, 20.0)
                                 .toDouble();
@@ -924,11 +972,12 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                 .clamp(10.0, 14.0)
                                 .toDouble();
 
-                            final contentAvailableWidth = (maxWidth -
-                                    (cardPadding * 2) -
-                                    contentRightPadding)
-                                .clamp(120.0, 520.0)
-                                .toDouble();
+                            final contentAvailableWidth =
+                                (maxWidth -
+                                        (cardPadding * 2) -
+                                        contentRightPadding)
+                                    .clamp(120.0, 520.0)
+                                    .toDouble();
 
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -978,73 +1027,105 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                             ),
                                           ),
                                           Padding(
-                                            padding: EdgeInsets.all(cardPadding),
+                                            padding: EdgeInsets.all(
+                                              cardPadding,
+                                            ),
                                             child: Row(
                                               children: [
                                                 Expanded(
                                                   child: Padding(
                                                     padding: EdgeInsets.only(
-                                                      right: contentRightPadding,
+                                                      right:
+                                                          contentRightPadding,
                                                     ),
                                                     child: FittedBox(
                                                       fit: BoxFit.scaleDown,
-                                                      alignment: Alignment.centerLeft,
+                                                      alignment:
+                                                          Alignment.centerLeft,
                                                       child: SizedBox(
-                                                        width: contentAvailableWidth,
+                                                        width:
+                                                            contentAvailableWidth,
                                                         child: Column(
-                                                          mainAxisSize: MainAxisSize.min,
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
                                                           crossAxisAlignment:
-                                                              CrossAxisAlignment.start,
+                                                              CrossAxisAlignment
+                                                                  .start,
                                                           children: [
                                                             Text(
                                                               'Tu vitrina',
                                                               maxLines: 1,
-                                                              overflow: TextOverflow.ellipsis,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
                                                               style: TextStyle(
-                                                                color: backgroundWhite,
-                                                                fontSize: titleSize,
-                                                                fontWeight: FontWeight.bold,
+                                                                color:
+                                                                    backgroundWhite,
+                                                                fontSize:
+                                                                    titleSize,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
                                                               ),
                                                             ),
-                                                            SizedBox(height: gapSmall),
+                                                            SizedBox(
+                                                              height: gapSmall,
+                                                            ),
                                                             Text(
                                                               'Administra stock, precios y visibilidad',
                                                               maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
                                                               style: TextStyle(
                                                                 color: backgroundWhite
-                                                                    .withOpacity(0.92),
-                                                                fontSize: subtitleSize,
+                                                                    .withOpacity(
+                                                                      0.92,
+                                                                    ),
+                                                                fontSize:
+                                                                    subtitleSize,
                                                               ),
                                                             ),
-                                                            SizedBox(height: gapNormal),
+                                                            SizedBox(
+                                                              height: gapNormal,
+                                                            ),
                                                             ElevatedButton.icon(
-                                                              onPressed: () => _openOfferForm(),
+                                                              onPressed: () =>
+                                                                  _openOfferForm(),
                                                               icon: Icon(
-                                                                Icons.add_circle_outline,
-                                                                color: primaryOrange,
-                                                                size: buttonIconSize,
+                                                                Icons
+                                                                    .add_circle_outline,
+                                                                color:
+                                                                    primaryOrange,
+                                                                size:
+                                                                    buttonIconSize,
                                                               ),
                                                               label: Text(
                                                                 'Publicar producto',
                                                                 style: TextStyle(
-                                                                  color: primaryOrange,
-                                                                  fontSize: buttonFontSize,
-                                                                  fontWeight: FontWeight.w700,
+                                                                  color:
+                                                                      primaryOrange,
+                                                                  fontSize:
+                                                                      buttonFontSize,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w700,
                                                                 ),
                                                               ),
-                                                              style:
-                                                                  ElevatedButton.styleFrom(
-                                                                backgroundColor: backgroundWhite,
-                                                                padding:
-                                                                    EdgeInsets.symmetric(
-                                                                  horizontal: buttonHPadding,
-                                                                  vertical: buttonVPadding,
+                                                              style: ElevatedButton.styleFrom(
+                                                                backgroundColor:
+                                                                    backgroundWhite,
+                                                                padding: EdgeInsets.symmetric(
+                                                                  horizontal:
+                                                                      buttonHPadding,
+                                                                  vertical:
+                                                                      buttonVPadding,
                                                                 ),
-                                                                shape:
-                                                                    RoundedRectangleBorder(
+                                                                shape: RoundedRectangleBorder(
                                                                   borderRadius:
-                                                                      BorderRadius.circular(12),
+                                                                      BorderRadius.circular(
+                                                                        12,
+                                                                      ),
                                                                 ),
                                                               ),
                                                             ),
@@ -1200,7 +1281,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                   },
                                   child: const Text(
                                     'Limpiar filtros',
-                                    style: TextStyle(fontWeight: FontWeight.w800),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1212,18 +1295,18 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
                         sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final offer = filtered[index];
-                              return Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: index == filtered.length - 1 ? 0 : 12,
-                                ),
-                                child: _buildOfferCard(context, offer),
-                              );
-                            },
-                            childCount: filtered.length,
-                          ),
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final offer = filtered[index];
+                            return Padding(
+                              padding: EdgeInsets.only(
+                                bottom: index == filtered.length - 1 ? 0 : 12,
+                              ),
+                              child: _buildOfferCard(context, offer),
+                            );
+                          }, childCount: filtered.length),
                         ),
                       ),
                     ],

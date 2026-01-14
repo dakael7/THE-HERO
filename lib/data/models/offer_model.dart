@@ -14,6 +14,7 @@ class OfferModel {
   final String currency;
   final int stock;
   final int availableQty;
+  final double weight;
   final String coverImageUrl;
   final List<String> imageUrls;
   final String status;
@@ -23,6 +24,8 @@ class OfferModel {
   final Timestamp? publishedAt;
   final int viewCount;
   final int orderCount;
+  final double avgRating;
+  final int ratingCount;
 
   OfferModel({
     required this.offerId,
@@ -35,6 +38,7 @@ class OfferModel {
     required this.currency,
     required this.stock,
     required this.availableQty,
+    required this.weight,
     required this.coverImageUrl,
     required this.imageUrls,
     required this.status,
@@ -44,6 +48,8 @@ class OfferModel {
     this.publishedAt,
     this.viewCount = 0,
     this.orderCount = 0,
+    this.avgRating = 0.0,
+    this.ratingCount = 0,
   });
 
   factory OfferModel.fromJson(Map<String, dynamic> json) {
@@ -58,15 +64,26 @@ class OfferModel {
       currency: json['currency'] as String? ?? 'CLP',
       stock: json['stock'] as int? ?? 0,
       availableQty: json['availableQty'] as int? ?? 0,
+      weight: (json['weight'] as num?)?.toDouble() ?? 0.5,
       coverImageUrl: json['coverImageUrl'] as String? ?? '',
-      imageUrls: (json['imageUrls'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+      imageUrls:
+          (json['imageUrls'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
       status: json['status'] as String? ?? 'draft',
-      searchKeywords: (json['searchKeywords'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+      searchKeywords:
+          (json['searchKeywords'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
       createdAt: json['createdAt'] as Timestamp? ?? Timestamp.now(),
       updatedAt: json['updatedAt'] as Timestamp? ?? Timestamp.now(),
       publishedAt: json['publishedAt'] as Timestamp?,
       viewCount: json['viewCount'] as int? ?? 0,
       orderCount: json['orderCount'] as int? ?? 0,
+      avgRating: (json['avgRating'] as num?)?.toDouble() ?? 0.0,
+      ratingCount: json['ratingCount'] as int? ?? 0,
     );
   }
 
@@ -82,6 +99,7 @@ class OfferModel {
       'currency': currency,
       'stock': stock,
       'availableQty': availableQty,
+      'weight': weight,
       'coverImageUrl': coverImageUrl,
       'imageUrls': imageUrls,
       'status': status,
@@ -91,6 +109,8 @@ class OfferModel {
       'publishedAt': publishedAt,
       'viewCount': viewCount,
       'orderCount': orderCount,
+      'avgRating': avgRating,
+      'ratingCount': ratingCount,
     };
   }
 
@@ -106,6 +126,7 @@ class OfferModel {
       currency: currency,
       stock: stock,
       availableQty: availableQty,
+      weight: weight,
       coverImageUrl: coverImageUrl,
       imageUrls: imageUrls,
       status: _stringToOfferStatus(status),
@@ -115,6 +136,8 @@ class OfferModel {
       publishedAt: publishedAt?.toDate(),
       viewCount: viewCount,
       orderCount: orderCount,
+      avgRating: avgRating,
+      ratingCount: ratingCount,
     );
   }
 
@@ -130,15 +153,20 @@ class OfferModel {
       currency: entity.currency,
       stock: entity.stock,
       availableQty: entity.availableQty,
+      weight: entity.weight,
       coverImageUrl: entity.coverImageUrl,
       imageUrls: entity.imageUrls,
       status: _offerStatusToString(entity.status),
       searchKeywords: entity.searchKeywords,
       createdAt: Timestamp.fromDate(entity.createdAt),
       updatedAt: Timestamp.fromDate(entity.updatedAt),
-      publishedAt: entity.publishedAt != null ? Timestamp.fromDate(entity.publishedAt!) : null,
+      publishedAt: entity.publishedAt != null
+          ? Timestamp.fromDate(entity.publishedAt!)
+          : null,
       viewCount: entity.viewCount,
       orderCount: entity.orderCount,
+      avgRating: entity.avgRating,
+      ratingCount: entity.ratingCount,
     );
   }
 

@@ -30,6 +30,8 @@ abstract class AuthRepository {
   /// Obtiene el usuario actual
   Future<User?> getCurrentUser();
 
+  Future<User?> getUserById(String userId);
+
   /// Verifica si hay una sesión activa
   Future<bool> isSignedIn();
 

@@ -108,6 +108,7 @@ class HeroFeaturedProductsSection extends StatelessWidget {
                             vertical: 0,
                           ),
                           child: ProductCard(
+                            offerId: 'demo_${product['name']}',
                             name: product['name'],
                             condition: product['condition'],
                             colorCondition: product['colorCondition'],

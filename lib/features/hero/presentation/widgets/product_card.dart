@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
+import '../../../offers/presentation/widgets/star_rating_widget.dart';
 import '../../cart/cart_provider.dart';
 
 const double paddingNormal = 16.0;
 
 class ProductCard extends ConsumerWidget {
+  final String offerId;
   final String name;
   final String condition;
   final Color colorCondition;
@@ -14,9 +16,13 @@ class ProductCard extends ConsumerWidget {
   final double weight;
   final bool showShadow;
   final String? sellerName;
+  final String? imageUrl;
+  final double avgRating;
+  final int ratingCount;
 
   const ProductCard({
     super.key,
+    required this.offerId,
     required this.name,
     required this.condition,
     required this.colorCondition,
@@ -24,6 +30,9 @@ class ProductCard extends ConsumerWidget {
     this.weight = 0.5,
     this.showShadow = true,
     this.sellerName,
+    this.imageUrl,
+    this.avgRating = 0.0,
+    this.ratingCount = 0,
   });
 
   @override
@@ -104,8 +113,50 @@ class ProductCard extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  child: const Center(
-                    child: Icon(Icons.image, color: textGray600, size: 48),
+                  child: Builder(
+                    builder: (context) {
+                      if (imageUrl == null) {
+                        return const Center(
+                          child: Icon(
+                            Icons.image,
+                            color: textGray600,
+                            size: 48,
+                          ),
+                        );
+                      }
+
+                      final resolved = imageUrl!.trim();
+                      if (resolved.isEmpty) {
+                        return const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              color: primaryOrange,
+                            ),
+                          ),
+                        );
+                      }
+
+                      if (resolved.startsWith('assets/')) {
+                        return Image.asset(resolved, fit: BoxFit.cover);
+                      }
+
+                      return Image.network(
+                        resolved,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) {
+                          return const Center(
+                            child: Icon(
+                              Icons.image_not_supported_outlined,
+                              color: textGray600,
+                              size: 42,
+                            ),
+                          );
+                        },
+                      );
+                    },
                   ),
                 ),
                 SizedBox(width: padding),
@@ -154,61 +205,41 @@ class ProductCard extends ConsumerWidget {
                           color: primaryOrange,
                         ),
                       ),
-                      SizedBox(height: padding * 0.5),
+                      if (ratingCount > 0) ...[
+                        SizedBox(height: padding * 0.3),
+                        Row(
+                          children: [
+                            StarRatingWidget(rating: avgRating, size: 14.0),
+                            const SizedBox(width: 4),
+                            Text(
+                              '(${ratingCount})',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: textGray600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      SizedBox(height: padding * 0.6),
                       Row(
                         children: [
-                          Expanded(
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.star,
-                                  size: 16,
-                                  color: Color(0xFFFFB800),
-                                ),
-                                const SizedBox(width: 3),
-                                const Text(
-                                  '4.8',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: textGray900,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    '(234 vendidos)',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: textGray600,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
                           Container(
                             padding: EdgeInsets.symmetric(
                               horizontal: conditionPadding,
                               vertical: conditionPadding * 0.5,
                             ),
                             decoration: BoxDecoration(
-                              color: colorCondition.withOpacity(0.15),
+                              color: colorCondition.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               condition,
                               style: TextStyle(
                                 fontSize: conditionFontSize,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                                 color: colorCondition,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -221,10 +252,12 @@ class ProductCard extends ConsumerWidget {
                             ref
                                 .read(cartProvider.notifier)
                                 .addItem(
+                                  offerId: offerId,
                                   name: name,
                                   condition: condition,
                                   price: price,
                                   weight: weight,
+                                  imageUrl: imageUrl ?? '',
                                 );
                           },
                           child: Container(

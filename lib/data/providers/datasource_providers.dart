@@ -33,7 +33,11 @@ final notificationRemoteDataSourceProvider =
 
 final offersRemoteDataSourceProvider = Provider<OffersRemoteDataSource>((ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
-  return OffersRemoteDataSourceImpl(firestore: firestore);
+  final storage = ref.read(firebaseStorageProvider);
+  return OffersRemoteDataSourceImpl(
+    firestore: firestore,
+    storage: storage,
+  );
 });
 
 final ordersRemoteDataSourceProvider = Provider<OrdersRemoteDataSource>((ref) {

@@ -1,5 +1,6 @@
 import '../../domain/entities/offer.dart';
 import '../../domain/repositories/offers_repository.dart';
+import 'dart:typed_data';
 import '../datasources/offers_remote_data_source.dart';
 import '../mappers/offer_mapper.dart';
 
@@ -87,6 +88,25 @@ class OffersRepositoryImpl implements OffersRepository {
       await _remoteDataSource.decrementStock(offerId, qty);
     } catch (e) {
       throw Exception('Error al decrementar stock: $e');
+    }
+  }
+
+  @override
+  Future<String> uploadOfferImage({
+    required String heroId,
+    required String offerId,
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    try {
+      return await _remoteDataSource.uploadOfferImage(
+        heroId: heroId,
+        offerId: offerId,
+        bytes: bytes,
+        fileName: fileName,
+      );
+    } catch (e) {
+      throw Exception('Error al subir imagen: $e');
     }
   }
 }

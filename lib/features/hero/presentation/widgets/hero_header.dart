@@ -5,6 +5,13 @@ import '../../../../core/utils/responsive_utils.dart';
 import '../viewmodels/search_viewmodel.dart';
 import '../../../shared/notifications/presentation/providers/notifications_provider.dart';
 import '../../../shared/notifications/presentation/views/notifications_screen.dart';
+import '../providers/catalog_filters_provider.dart';
+import '../widgets/product_card.dart';
+import '../widgets/catalog_filter_widgets.dart';
+import '../../../../domain/entities/offer_condition.dart';
+import '../../../../domain/entities/user.dart';
+import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../views/buyer_catalog_screen.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -192,7 +199,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   @override
   void dispose() {
     _searchController.dispose();
-    _searchFocusNode.dispose();
+    _searchFocusNode.unfocus();
     _animationController.dispose();
     super.dispose();
   }
@@ -219,6 +226,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
       _searchController.clear();
       _searchFocusNode.unfocus();
       ref.read(searchViewModelProvider.notifier).clearSearch();
+      ref.read(catalogFiltersProvider.notifier).clearSearch();
     }
   }
 
@@ -366,8 +374,6 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   }
 
   Widget _buildSearchBar(BuildContext context) {
-    // Barra de búsqueda activa con TextField funcional
-    // Barra de búsqueda inactiva (placeholder)
     return AnimatedContainer(
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
@@ -484,6 +490,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
             onChanged: (value) {
               if (_isSearchExpanded) {
                 ref.read(searchViewModelProvider.notifier).search(value);
+                ref.read(catalogFiltersProvider.notifier).setSearchQuery(value);
               }
             },
             onSubmitted: (value) {
@@ -513,6 +520,26 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
   late final Animation<double> _panelOpacity;
   late final Animation<Offset> _panelOffset;
 
+  Color _conditionColor(OfferCondition condition) {
+    switch (condition) {
+      case OfferCondition.newProduct:
+        return const Color(0xFF0EA5E9);
+      case OfferCondition.excellent:
+        return const Color(0xFF10B981);
+      case OfferCondition.good:
+        return const Color(0xFFF59E0B);
+      case OfferCondition.used:
+        return const Color(0xFFDC2626);
+    }
+  }
+
+  String _sellerNameFor(AsyncValue<User?> sellerAsync) {
+    return sellerAsync.maybeWhen(
+      data: (user) => user?.fullName ?? 'Vendedor',
+      orElse: () => 'Vendedor',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -524,15 +551,10 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
       parent: _panelController,
       curve: Curves.easeOut,
     );
-    _panelOffset = Tween<Offset>(
-      begin: const Offset(0, 0.03),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _panelController,
-        curve: Curves.easeOutCubic,
-      ),
-    );
+    _panelOffset = Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _panelController, curve: Curves.easeOutCubic),
+        );
   }
 
   @override
@@ -544,6 +566,7 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
   @override
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchViewModelProvider);
+    final offersAsync = ref.watch(filteredOffersProvider);
     final showRecent = searchState.query.trim().isEmpty;
 
     if (showRecent) {
@@ -552,223 +575,238 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
       _panelController.reverse();
     }
 
+    final statusBarHeight = MediaQuery.of(context).padding.top;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isMobile = ResponsiveUtils.isMobile(context);
+
+    final basePadding = isMobile ? 10.0 : 12.0;
+    final topPadding = statusBarHeight + basePadding;
+
     return Container(
       color: backgroundGray50,
-      padding: const EdgeInsets.all(16),
-      child: searchState.isSearching
-          ? const Center(child: CircularProgressIndicator(color: primaryOrange))
-          : AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
-              transitionBuilder: (child, animation) {
-                final slide = Tween<Offset>(
-                  begin: const Offset(0, 0.02),
-                  end: Offset.zero,
-                ).animate(animation);
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(position: slide, child: child),
-                );
-              },
-              child: searchState.results.isEmpty && searchState.query.isNotEmpty
-                  ? Center(
-                      key: const ValueKey('empty'),
-                      child: Text(
-                        'No se encontraron resultados',
-                        style: TextStyle(fontSize: 14, color: textGray600),
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: topPadding,
+        bottom: 16,
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        transitionBuilder: (child, animation) {
+          final slide = Tween<Offset>(
+            begin: const Offset(0, 0.02),
+            end: Offset.zero,
+          ).animate(animation);
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(position: slide, child: child),
+          );
+        },
+        child: showRecent
+            ? FadeTransition(
+                key: const ValueKey('recent'),
+                opacity: _panelOpacity,
+                child: SlideTransition(
+                  position: _panelOffset,
+                  child: searchState.recentQueries.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'Busca productos por nombre, categoría o descripción',
+                            style: TextStyle(fontSize: 14, color: textGray600),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Búsquedas recientes',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: textGray900,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Expanded(
+                              child: ListView.separated(
+                                itemCount: searchState.recentQueries.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 8),
+                                itemBuilder: (context, index) {
+                                  final query =
+                                      searchState.recentQueries[index];
+                                  return Material(
+                                    color: backgroundWhite,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: () {
+                                        ref
+                                            .read(
+                                              searchViewModelProvider.notifier,
+                                            )
+                                            .selectRecentQuery(query);
+                                        ref
+                                            .read(
+                                              catalogFiltersProvider.notifier,
+                                            )
+                                            .setSearchQuery(query);
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.history,
+                                              color: textGray600,
+                                              size: 18,
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                query,
+                                                style: const TextStyle(
+                                                  color: textGray900,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(
+                                                Icons.close,
+                                                size: 18,
+                                                color: textGray600,
+                                              ),
+                                              onPressed: () {
+                                                ref
+                                                    .read(
+                                                      searchViewModelProvider
+                                                          .notifier,
+                                                    )
+                                                    .removeRecentQuery(query);
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              )
+            : Column(
+                key: const ValueKey('results-with-filters'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Filters section
+                  const CategoryFilterChips(),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      SortOptionsButton(),
+                      SizedBox(width: 8),
+                      PriceRangeFilter(),
+                    ],
+                  ),
+                  const ActiveFiltersIndicator(),
+                  const SizedBox(height: 12),
+
+                  // Results section
+                  Expanded(
+                    child: offersAsync.when(
+                      loading: () => const Center(
+                        key: ValueKey('loading'),
+                        child: CircularProgressIndicator(color: primaryOrange),
                       ),
-                    )
-                  : searchState.results.isNotEmpty
-                      ? ListView.separated(
+                      error: (error, _) => const Center(
+                        key: ValueKey('error'),
+                        child: Text(
+                          'Error al cargar productos',
+                          style: TextStyle(fontSize: 14, color: textGray600),
+                        ),
+                      ),
+                      data: (offers) {
+                        if (offers.isEmpty) {
+                          return const Center(
+                            key: ValueKey('empty'),
+                            child: Text(
+                              'No se encontraron productos',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: textGray600,
+                              ),
+                            ),
+                          );
+                        }
+
+                        return ListView.separated(
                           key: const ValueKey('results'),
-                          itemCount: searchState.results.length,
+                          itemCount: offers.length,
                           separatorBuilder: (_, __) =>
                               const SizedBox(height: 12),
                           itemBuilder: (context, index) {
-                            final product = searchState.results[index];
-                            return InkWell(
+                            final offer = offers[index];
+                            return GestureDetector(
                               onTap: () {
-                                ref
-                                    .read(searchViewModelProvider.notifier)
-                                    .addRecentQuery(searchState.query);
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        OfferDetailScreen(offer: offer),
+                                  ),
+                                );
                               },
-                              borderRadius: BorderRadius.circular(12),
                               child: Container(
-                                padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   color: backgroundWhite,
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
                                       color: textGray900.withOpacity(0.05),
-                                      blurRadius: 4,
+                                      blurRadius: 8,
                                       offset: const Offset(0, 2),
                                     ),
                                   ],
                                 ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color: backgroundGray50,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(
-                                        Icons.image_not_supported_outlined,
-                                        color: textGray600,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            product['name'],
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14,
-                                              color: textGray900,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            product['condition'],
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: textGray600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Text(
-                                      '\$${product['price']}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
-                                        color: primaryOrange,
-                                      ),
-                                    ),
-                                  ],
+                                child: ProductCard(
+                                  offerId: offer.offerId,
+                                  name: offer.title,
+                                  condition: offer.condition.displayName,
+                                  colorCondition: _conditionColor(
+                                    offer.condition,
+                                  ),
+                                  price: offer.price,
+                                  weight: offer.weight,
+                                  showShadow: false,
+                                  imageUrl: offer.coverImageUrl,
+                                  avgRating: offer.avgRating,
+                                  ratingCount: offer.ratingCount,
+                                  sellerName: _sellerNameFor(
+                                    ref.watch(userByIdProvider(offer.heroId)),
+                                  ),
                                 ),
                               ),
                             );
                           },
-                        )
-                      : FadeTransition(
-                          key: const ValueKey('recent'),
-                          opacity: _panelOpacity,
-                          child: SlideTransition(
-                            position: _panelOffset,
-                            child: searchState.recentQueries.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      'Búsquedas recientes',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: textGray600,
-                                      ),
-                                    ),
-                                  )
-                                : Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Búsquedas recientes',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: textGray600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Expanded(
-                                        child: ListView.separated(
-                                          itemCount:
-                                              searchState.recentQueries.length,
-                                          separatorBuilder: (_, __) =>
-                                              const SizedBox(height: 8),
-                                          itemBuilder: (context, index) {
-                                            final query =
-                                                searchState.recentQueries[index];
-                                            return Material(
-                                              color: backgroundWhite,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              child: InkWell(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                onTap: () {
-                                                  ref
-                                                      .read(
-                                                        searchViewModelProvider
-                                                            .notifier,
-                                                      )
-                                                      .selectRecentQuery(query);
-                                                },
-                                                child: Padding(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 10,
-                                                  ),
-                                                  child: Row(
-                                                    children: [
-                                                      const Icon(
-                                                        Icons.history,
-                                                        color: textGray600,
-                                                        size: 18,
-                                                      ),
-                                                      const SizedBox(width: 10),
-                                                      Expanded(
-                                                        child: Text(
-                                                          query,
-                                                          style: const TextStyle(
-                                                            color: textGray900,
-                                                            fontSize: 14,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                          ),
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                        ),
-                                                      ),
-                                                      IconButton(
-                                                        icon: const Icon(
-                                                          Icons.close,
-                                                          size: 18,
-                                                          color: textGray600,
-                                                        ),
-                                                        onPressed: () {
-                                                          ref
-                                                              .read(
-                                                                searchViewModelProvider
-                                                                    .notifier,
-                                                              )
-                                                              .removeRecentQuery(
-                                                                query,
-                                                              );
-                                                        },
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-            ),
-    );
+                        );
+                      },
+                    ), // closes offersAsync.when
+                  ), // closes Expanded child
+                ], // closes Column children
+              ), // closes Column
+      ), // closes AnimatedSwitcher child
+    ); // closes Container
   }
 }

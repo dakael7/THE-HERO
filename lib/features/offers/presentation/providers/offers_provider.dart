@@ -40,25 +40,29 @@ class OfferNotifier extends Notifier<AsyncValue<Offer?>> {
     return const AsyncValue.data(null);
   }
 
-  Future<void> createOffer(Offer offer) async {
+  Future<Offer> createOffer(Offer offer) async {
     state = const AsyncValue.loading();
     try {
       final useCase = ref.read(createOfferUseCaseProvider);
       final createdOffer = await useCase.execute(offer);
       state = AsyncValue.data(createdOffer);
+      return createdOffer;
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
+      rethrow;
     }
   }
 
-  Future<void> updateOffer(Offer offer) async {
+  Future<Offer> updateOffer(Offer offer) async {
     state = const AsyncValue.loading();
     try {
       final useCase = ref.read(updateOfferUseCaseProvider);
       final updatedOffer = await useCase.execute(offer);
       state = AsyncValue.data(updatedOffer);
+      return updatedOffer;
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
+      rethrow;
     }
   }
 

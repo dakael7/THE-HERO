@@ -38,9 +38,7 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
         elevation: 0,
         title: const Text(
           'Buscar donaciones',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -97,11 +95,7 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.search_off,
-                          size: 64,
-                          color: textGray600,
-                        ),
+                        Icon(Icons.search_off, size: 64, color: textGray600),
                         const SizedBox(height: 16),
                         Text(
                           'No se encontraron resultados',
@@ -114,100 +108,94 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
                         const SizedBox(height: 8),
                         Text(
                           'Intenta con otros términos de búsqueda',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: textGray600,
-                          ),
+                          style: TextStyle(fontSize: 14, color: textGray600),
                         ),
                       ],
                     ),
                   )
                 : searchState.query.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search,
-                              size: 64,
-                              color: textGray600,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Comienza a buscar',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: textGray900,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Busca productos por nombre o categoría',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: textGray600,
-                              ),
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search, size: 64, color: textGray600),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Comienza a buscar',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: textGray900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Busca productos por nombre o categoría',
+                          style: TextStyle(fontSize: 14, color: textGray600),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: backgroundWhite,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: borderGray100),
+                          boxShadow: [
+                            BoxShadow(
+                              color: textGray900.withOpacity(0.05),
+                              blurRadius: 12,
+                              offset: const Offset(0, 8),
                             ),
                           ],
                         ),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              color: backgroundWhite,
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(color: borderGray100),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: textGray900.withOpacity(0.05),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              children: [
-                                ...searchState.results.asMap().entries.map((entry) {
-                                  final index = entry.key;
-                                  final product = entry.value;
-                                  final isLast = index == searchState.results.length - 1;
-                                  final price = (product['price'] as double?) ?? 45990.0;
-                                  final weight = (product['weight'] as double?) ?? 0.5;
-                                  return Column(
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 0,
-                                        ),
-                                        child: ProductCard(
-                                          name: product['name'],
-                                          condition: product['condition'],
-                                          colorCondition: product['colorCondition'],
-                                          price: price,
-                                          weight: weight,
-                                          showShadow: false,
-                                        ),
-                                      ),
-                                      if (!isLast)
-                                        const Divider(
-                                          height: 1,
-                                          thickness: 1,
-                                          color: borderGray100,
-                                          indent: 16,
-                                          endIndent: 16,
-                                        ),
-                                    ],
-                                  );
-                                }),
-                              ],
-                            ),
-                          ),
-                        ],
+                        child: Column(
+                          children: [
+                            ...searchState.results.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final product = entry.value;
+                              final isLast =
+                                  index == searchState.results.length - 1;
+                              final price =
+                                  (product['price'] as double?) ?? 45990.0;
+                              final weight =
+                                  (product['weight'] as double?) ?? 0.5;
+                              return Column(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 0,
+                                    ),
+                                    child: ProductCard(
+                                      offerId: 'demo_${product['name']}',
+                                      name: product['name'],
+                                      condition: product['condition'],
+                                      colorCondition: product['colorCondition'],
+                                      price: price,
+                                      weight: weight,
+                                      showShadow: false,
+                                    ),
+                                  ),
+                                  if (!isLast)
+                                    const Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      color: borderGray100,
+                                      indent: 16,
+                                      endIndent: 16,
+                                    ),
+                                ],
+                              );
+                            }),
+                          ],
+                        ),
                       ),
+                    ],
+                  ),
           ),
         ],
       ),

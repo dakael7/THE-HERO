@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:the_hero/data/providers/repository_providers.dart';
 import 'package:the_hero/domain/entities/user.dart';
 import 'package:the_hero/features/auth/domain/providers/get_user_profile_usecase_provider.dart';
 import '../../../../auth/presentation/providers/auth_provider.dart';
@@ -22,6 +23,16 @@ final profileProvider = FutureProvider<User?>((ref) async {
     return user;
   } catch (e) {
     print('Error al cargar perfil: $e');
+    return null;
+  }
+});
+
+final userByIdProvider = FutureProvider.family<User?, String>((ref, userId) async {
+  try {
+    final authRepository = ref.read(authRepositoryProvider);
+    return await authRepository.getUserById(userId);
+  } catch (e) {
+    print('Error al cargar usuario por id: $e');
     return null;
   }
 });

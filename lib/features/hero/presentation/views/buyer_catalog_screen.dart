@@ -8,6 +8,9 @@ import '../../../../domain/entities/user.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../cart/cart_provider.dart';
 import '../../../offers/presentation/providers/offers_provider.dart';
+import '../../../offers/presentation/providers/offer_comments_provider.dart';
+import '../providers/catalog_filters_provider.dart';
+import '../widgets/catalog_filter_widgets.dart';
 import '../widgets/product_card.dart';
 
 class BuyerCatalogScreen extends ConsumerWidget {
@@ -28,10 +31,7 @@ class BuyerCatalogScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sellerAsync = ref.watch(profileProvider);
-    final offersAsync = ref.watch(
-      activeOffersProvider(OffersFilter(limit: 40)),
-    );
+    final offersAsync = ref.watch(filteredOffersProvider);
 
     return Scaffold(
       backgroundColor: backgroundWhite,
@@ -49,73 +49,132 @@ class BuyerCatalogScreen extends ConsumerWidget {
         ),
         error: (error, _) => _ErrorState(
           message: 'No se pudo cargar el catálogo',
-          onRetry: () => ref.invalidate(
-            activeOffersProvider(OffersFilter(limit: 40)),
-          ),
+          onRetry: () => ref.invalidate(activeOffersProvider(OffersFilter())),
         ),
         data: (offers) {
           if (offers.isEmpty) {
             return const _EmptyState();
           }
-          return ListView(
-            padding: const EdgeInsets.all(16),
+          return Column(
             children: [
+              // Search bar
               Container(
-                decoration: BoxDecoration(
-                  color: backgroundWhite,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: borderGray100),
-                  boxShadow: [
-                    BoxShadow(
-                      color: textGray900.withOpacity(0.05),
-                      blurRadius: 12,
-                      offset: const Offset(0, 8),
-                    ),
+                padding: const EdgeInsets.all(16),
+                color: backgroundWhite,
+                child: const CatalogSearchBar(),
+              ),
+
+              // Category chips
+              const SizedBox(height: 12),
+              const CategoryFilterChips(),
+              const SizedBox(height: 12),
+
+              // Sort and price filter
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: const [
+                    SortOptionsButton(),
+                    SizedBox(width: 8),
+                    PriceRangeFilter(),
                   ],
                 ),
-                child: Column(
+              ),
+
+              // Active filters indicator
+              const ActiveFiltersIndicator(),
+
+              // Results count
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Text(
+                  '${offers.length} producto${offers.length != 1 ? 's' : ''} encontrado${offers.length != 1 ? 's' : ''}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: textGray600,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              // Products list
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
                   children: [
-                    ...offers.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final offer = entry.value;
-                      final isLast = index == offers.length - 1;
-                      return Column(
-                        children: [
-                          GestureDetector(
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => OfferDetailScreen(offer: offer),
-                                ),
-                              );
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 0,
-                              ),
-                              child: ProductCard(
-                                name: offer.title,
-                                condition: offer.condition.displayName,
-                                colorCondition: _conditionColor(offer.condition),
-                                price: offer.price,
-                                weight: 0.5,
-                                showShadow: false,
-                                sellerName: _sellerNameFor(offer, sellerAsync),
-                              ),
-                            ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: backgroundWhite,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: borderGray100),
+                        boxShadow: [
+                          BoxShadow(
+                            color: textGray900.withOpacity(0.05),
+                            blurRadius: 12,
+                            offset: const Offset(0, 8),
                           ),
-                          if (!isLast)
-                            const Divider(
-                              height: 1,
-                              thickness: 1,
-                              color: borderGray100,
-                              indent: 16,
-                              endIndent: 16,
-                            ),
                         ],
-                      );
-                    }),
+                      ),
+                      child: Column(
+                        children: [
+                          ...offers.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final offer = entry.value;
+                            final isLast = index == offers.length - 1;
+                            return Column(
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            OfferDetailScreen(offer: offer),
+                                      ),
+                                    );
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 0,
+                                    ),
+                                    child: ProductCard(
+                                      offerId: offer.offerId,
+                                      name: offer.title,
+                                      condition: offer.condition.displayName,
+                                      colorCondition: _conditionColor(
+                                        offer.condition,
+                                      ),
+                                      price: offer.price,
+                                      weight: offer.weight,
+                                      showShadow: false,
+                                      imageUrl: offer.coverImageUrl,
+                                      avgRating: offer.avgRating,
+                                      ratingCount: offer.ratingCount,
+                                      sellerName: _sellerNameFor(
+                                        ref.watch(
+                                          userByIdProvider(offer.heroId),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (!isLast)
+                                  const Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: borderGray100,
+                                    indent: 16,
+                                    endIndent: 16,
+                                  ),
+                              ],
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -126,14 +185,9 @@ class BuyerCatalogScreen extends ConsumerWidget {
     );
   }
 
-  String _sellerNameFor(Offer offer, AsyncValue<User?> sellerAsync) {
+  String _sellerNameFor(AsyncValue<User?> sellerAsync) {
     return sellerAsync.maybeWhen(
-      data: (user) {
-        if (user != null && user.id == offer.heroId) {
-          return user.fullName;
-        }
-        return 'Vendedor';
-      },
+      data: (user) => user?.fullName ?? 'Vendedor',
       orElse: () => 'Vendedor',
     );
   }
@@ -196,10 +250,7 @@ class _EmptyState extends StatelessWidget {
             Text(
               'Cuando se publiquen ofertas activas aparecerán aquí.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: textGray700,
-              ),
+              style: TextStyle(fontSize: 13, color: textGray700),
             ),
           ],
         ),
@@ -209,10 +260,7 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({
-    required this.message,
-    required this.onRetry,
-  });
+  const _ErrorState({required this.message, required this.onRetry});
 
   final String message;
   final VoidCallback onRetry;
@@ -225,7 +273,11 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.warning_amber_rounded, size: 56, color: primaryOrange),
+            const Icon(
+              Icons.warning_amber_rounded,
+              size: 56,
+              color: primaryOrange,
+            ),
             const SizedBox(height: 12),
             Text(
               message,
@@ -242,7 +294,10 @@ class _ErrorState extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryOrange,
                 foregroundColor: backgroundWhite,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -282,22 +337,21 @@ class OfferDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final badgeColor = _conditionColor(offer.condition);
     final priceText = '\$${offer.price.toStringAsFixed(0)} CLP';
-    final isAsset = offer.coverImageUrl.startsWith('assets/');
+    final coverUrl = offer.coverImageUrl.trim();
+    final hasCover = coverUrl.isNotEmpty;
+    final isAsset = hasCover && coverUrl.startsWith('assets/');
     final galleryImages = <String>{
-      if (offer.coverImageUrl.isNotEmpty) offer.coverImageUrl,
+      if (coverUrl.isNotEmpty) coverUrl,
       ...offer.imageUrls,
     }.toList();
     final soldCount = offer.orderCount;
     final viewsCount = offer.viewCount;
     const weight = 0.5;
-    final sellerAsync = ref.watch(profileProvider);
-
-    String sellerName = 'Vendedor';
-    sellerAsync.whenData((user) {
-      if (user != null && user.id == offer.heroId) {
-        sellerName = user.fullName;
-      }
-    });
+    final sellerProfileAsync = ref.watch(userByIdProvider(offer.heroId));
+    final sellerName = sellerProfileAsync.maybeWhen(
+      data: (user) => user?.fullName ?? 'Vendedor',
+      orElse: () => 'Vendedor',
+    );
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -317,13 +371,35 @@ class OfferDetailScreen extends ConsumerWidget {
             child: Container(
               color: borderGray100,
               height: 220,
-              child: isAsset
-                  ? Image.asset(
-                      offer.coverImageUrl,
-                      fit: BoxFit.cover,
+              child: !hasCover
+                  ? const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              color: primaryOrange,
+                            ),
+                          ),
+                          SizedBox(height: 10),
+                          Text(
+                            'Procesando imagen...',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: textGray700,
+                            ),
+                          ),
+                        ],
+                      ),
                     )
+                  : isAsset
+                  ? Image.asset(coverUrl, fit: BoxFit.cover)
                   : Image.network(
-                      offer.coverImageUrl,
+                      coverUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) {
                         return Image.asset(
@@ -360,10 +436,7 @@ class OfferDetailScreen extends ConsumerWidget {
                       width: 140,
                       color: borderGray100,
                       child: isAssetThumb
-                          ? Image.asset(
-                              imageUrl,
-                              fit: BoxFit.cover,
-                            )
+                          ? Image.asset(imageUrl, fit: BoxFit.cover)
                           : Image.network(
                               imageUrl,
                               fit: BoxFit.cover,
@@ -394,7 +467,10 @@ class OfferDetailScreen extends ConsumerWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: badgeColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(14),
@@ -413,19 +489,12 @@ class OfferDetailScreen extends ConsumerWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(
-                Icons.person_outline,
-                size: 18,
-                color: textGray600,
-              ),
+              const Icon(Icons.person_outline, size: 18, color: textGray600),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   'Publicado por: $sellerName',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: textGray600,
-                  ),
+                  style: const TextStyle(fontSize: 13, color: textGray600),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -443,30 +512,25 @@ class OfferDetailScreen extends ConsumerWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(
-                Icons.star,
-                size: 18,
-                color: Color(0xFFFFB800),
-              ),
-              const SizedBox(width: 6),
-              const Text(
-                '4.8',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: textGray900,
+              if (offer.ratingCount > 0) ...[
+                const Icon(Icons.star, size: 18, color: Color(0xFFFFB800)),
+                const SizedBox(width: 6),
+                Text(
+                  offer.avgRating.toStringAsFixed(1),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: textGray900,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
+                const SizedBox(width: 10),
+              ],
               Text(
                 '(${soldCount > 0 ? '$soldCount vendidos' : 'Sin ventas aún'})',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: textGray600,
-                ),
+                style: const TextStyle(fontSize: 13, color: textGray600),
               ),
               const SizedBox(width: 10),
-              Icon(
+              const Icon(
                 Icons.remove_red_eye_outlined,
                 size: 16,
                 color: textGray600,
@@ -474,10 +538,7 @@ class OfferDetailScreen extends ConsumerWidget {
               const SizedBox(width: 4),
               Text(
                 '${viewsCount > 0 ? viewsCount : 0} vistas',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: textGray600,
-                ),
+                style: const TextStyle(fontSize: 13, color: textGray600),
               ),
             ],
           ),
@@ -517,34 +578,236 @@ class OfferDetailScreen extends ConsumerWidget {
               color: textGray700,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           Row(
-            children: const [
-              Icon(
+            children: [
+              const Icon(
                 Icons.local_shipping_outlined,
                 size: 18,
                 color: textGray600,
               ),
-              SizedBox(width: 6),
+              const SizedBox(width: 6),
               Text(
-                'Peso estimado: 0.5 kg',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: textGray600,
-                ),
+                'Peso: ${offer.weight} kg',
+                style: const TextStyle(fontSize: 13, color: textGray600),
               ),
             ],
           ),
           const SizedBox(height: 20),
+          // Questions Section
+          const SizedBox(height: 24),
+          const Text(
+            'Preguntas y respuestas',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: textGray900,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Questions List
+          Consumer(
+            builder: (context, ref, _) {
+              final commentsAsync = ref.watch(
+                offerCommentsProvider(offer.offerId),
+              );
+              final currentUser = ref.watch(profileProvider).value;
+              final isOwner = currentUser?.id == offer.heroId;
+
+              return commentsAsync.when(
+                data: (comments) {
+                  if (comments.isEmpty) {
+                    return Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: backgroundWhite,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: borderGray100),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'No hay preguntas aún. ¡Sé el primero en preguntar!',
+                          style: TextStyle(color: textGray600, fontSize: 14),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: comments.map((comment) {
+                      final hasReply =
+                          comment.reply != null && comment.reply!.isNotEmpty;
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: backgroundWhite,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: borderGray100),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Question
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.help_outline,
+                                  size: 20,
+                                  color: primaryOrange,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        comment.userName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                          color: textGray900,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        comment.text,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          color: textGray700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _formatDate(comment.createdAt),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: textGray600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // Reply
+                            if (hasReply) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: backgroundGray50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(
+                                      Icons.reply,
+                                      size: 18,
+                                      color: textGray600,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            comment.replyBy ?? 'Vendedor',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13,
+                                              color: textGray900,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            comment.reply!,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              color: textGray700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+
+                            // Reply button (only for owner)
+                            if (isOwner && !hasReply) ...[
+                              const SizedBox(height: 12),
+                              TextButton.icon(
+                                onPressed: () => _showReplyDialog(
+                                  context,
+                                  ref,
+                                  comment.commentId,
+                                  offer.offerId,
+                                ),
+                                icon: const Icon(Icons.reply, size: 18),
+                                label: const Text('Responder'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: primaryOrange,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Text('Error: $e'),
+              );
+            },
+          ),
+
+          // Add Question Button
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () =>
+                  _showAddQuestionDialog(context, ref, offer.offerId),
+              icon: const Icon(Icons.question_answer),
+              label: const Text('Hacer una pregunta'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: primaryOrange,
+                side: const BorderSide(color: primaryOrange),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Add to Cart Button
           SizedBox(
             width: double.infinity,
             child: GestureDetector(
               onTap: () {
-                ref.read(cartProvider.notifier).addItem(
+                ref
+                    .read(cartProvider.notifier)
+                    .addItem(
+                      offerId: offer.offerId,
                       name: offer.title,
                       condition: offer.condition.displayName,
                       price: offer.price,
                       weight: weight,
+                      imageUrl: offer.coverImageUrl,
                     );
               },
               child: Container(
@@ -574,6 +837,139 @@ class OfferDetailScreen extends ConsumerWidget {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays > 7) {
+      return '${date.day}/${date.month}/${date.year}';
+    } else if (difference.inDays > 0) {
+      return 'Hace ${difference.inDays} día${difference.inDays > 1 ? 's' : ''}';
+    } else if (difference.inHours > 0) {
+      return 'Hace ${difference.inHours} hora${difference.inHours > 1 ? 's' : ''}';
+    } else if (difference.inMinutes > 0) {
+      return 'Hace ${difference.inMinutes} minuto${difference.inMinutes > 1 ? 's' : ''}';
+    } else {
+      return 'Ahora';
+    }
+  }
+
+  void _showAddQuestionDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String offerId,
+  ) {
+    final textController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hacer una pregunta'),
+        content: TextField(
+          controller: textController,
+          decoration: const InputDecoration(
+            hintText: '¿Cuál es tu pregunta?',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final text = textController.text.trim();
+              if (text.isEmpty) return;
+
+              final user = ref.read(profileProvider).value;
+              if (user == null) return;
+
+              await ref
+                  .read(addCommentProvider.notifier)
+                  .addComment(
+                    offerId: offerId,
+                    userId: user.id,
+                    userName: user.fullName,
+                    userAvatarUrl: null,
+                    text: text,
+                  );
+
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Pregunta enviada')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: primaryOrange),
+            child: const Text('Enviar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReplyDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String commentId,
+    String offerId,
+  ) {
+    final textController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Responder pregunta'),
+        content: TextField(
+          controller: textController,
+          decoration: const InputDecoration(
+            hintText: 'Escribe tu respuesta',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final text = textController.text.trim();
+              if (text.isEmpty) return;
+
+              final user = ref.read(profileProvider).value;
+              if (user == null) return;
+
+              await ref
+                  .read(addCommentProvider.notifier)
+                  .replyToComment(
+                    offerId: offerId,
+                    commentId: commentId,
+                    reply: text,
+                    replyBy: user.fullName,
+                  );
+
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Respuesta enviada')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: primaryOrange),
+            child: const Text('Enviar'),
           ),
         ],
       ),

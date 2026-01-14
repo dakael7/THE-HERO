@@ -99,6 +99,13 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<User?> getUserById(String userId) async {
+    final remoteUser = await _remoteDataSource.getUserById(userId);
+    if (remoteUser == null) return null;
+    return UserMapper.toEntity(remoteUser);
+  }
+
+  @override
   Future<bool> isSignedIn() async {
     return await _remoteDataSource.isSignedIn();
   }

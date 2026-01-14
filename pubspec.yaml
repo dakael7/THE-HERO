@@ -50,6 +50,9 @@ dependencies:
   firebase_auth: ^6.1.2
   cloud_firestore: ^6.1.0
   google_sign_in: ^7.2.0
+  cloud_functions: 6.0.4
+  firebase_storage: ^13.0.0
+  image_picker: ^1.1.2
 
   flutter_svg: ^2.0.10+1
   form_field_validator: ^1.1.0

@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import 'cart_provider.dart';
 import 'cart_item.dart';
 import 'cart_summary_provider.dart';
+import 'checkout_screen.dart';
 
 class HeroCartScreen extends ConsumerWidget {
   const HeroCartScreen({super.key});
@@ -26,9 +27,7 @@ class HeroCartScreen extends ConsumerWidget {
         elevation: 0,
         title: const Text(
           'Mi carrito',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
           Padding(
@@ -64,93 +63,109 @@ class HeroCartScreen extends ConsumerWidget {
                 SafeArea(
                   top: false,
                   child: Container(
-                    padding: const EdgeInsets.only(left: 16, right: 16, top: 4, bottom: 12),
-                  decoration: const BoxDecoration(
-                    color: backgroundWhite,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0x14000000),
-                        blurRadius: 12,
-                        offset: Offset(0, -4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Resumen de pago',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: textGray900,
+                    padding: const EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      top: 4,
+                      bottom: 12,
+                    ),
+                    decoration: const BoxDecoration(
+                      color: backgroundWhite,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 12,
+                          offset: Offset(0, -4),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      _buildSummaryRow('Subtotal (Donación):', '\$${summary.subtotal.toStringAsFixed(0)}', fontSize: 13),
-                      const SizedBox(height: 10),
-                      _buildSummaryRow('Envío (Bicicleta):', '\$${summary.shippingCost.toStringAsFixed(0)}', fontSize: 13),
-                      const SizedBox(height: 10),
-                      _buildSummaryRow('Comisión de servicio:', '\$${summary.serviceFee.toStringAsFixed(0)}', fontSize: 13),
-                      const SizedBox(height: 10),
-                      _buildSummaryRow('Impuestos (IVA 19%):', '\$${summary.tax.toStringAsFixed(0)}', fontSize: 13),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Container(
-                          height: 1,
-                          color: borderGray100,
-                        ),
-                      ),
-                      _buildSummaryRow(
-                        'Total:',
-                        '\$${summary.total.toStringAsFixed(0)}',
-                        isBold: true,
-                        fontSize: 17,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        '* Peso total: ${summary.totalWeight.toStringAsFixed(2)} kg',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: textGray600,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: primaryOrange,
-                            foregroundColor: backgroundWhite,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            elevation: 4,
-                            shadowColor: primaryOrange.withOpacity(0.4),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Resumen de pago',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: textGray900,
                           ),
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content:
-                                    Text('Flujo de pago aún no implementado'),
-                                duration: Duration(milliseconds: 1800),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildSummaryRow(
+                          'Subtotal (Donación):',
+                          '\$${summary.subtotal.toStringAsFixed(0)}',
+                          fontSize: 13,
+                        ),
+                        const SizedBox(height: 10),
+                        _buildSummaryRow(
+                          'Envío (Bicicleta):',
+                          '\$${summary.shippingCost.toStringAsFixed(0)}',
+                          fontSize: 13,
+                        ),
+                        const SizedBox(height: 10),
+                        _buildSummaryRow(
+                          'Comisión de servicio:',
+                          '\$${summary.serviceFee.toStringAsFixed(0)}',
+                          fontSize: 13,
+                        ),
+                        const SizedBox(height: 10),
+                        _buildSummaryRow(
+                          'Impuestos (IVA 19%):',
+                          '\$${summary.tax.toStringAsFixed(0)}',
+                          fontSize: 13,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Container(height: 1, color: borderGray100),
+                        ),
+                        _buildSummaryRow(
+                          'Total:',
+                          '\$${summary.total.toStringAsFixed(0)}',
+                          isBold: true,
+                          fontSize: 17,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          '* Peso total: ${summary.totalWeight.toStringAsFixed(2)} kg',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: textGray600,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryOrange,
+                              foregroundColor: backgroundWhite,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              elevation: 4,
+                              shadowColor: primaryOrange.withOpacity(0.4),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
-                            );
-                          },
-                          child: const Text(
-                            'Proceder al pago',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 17,
-                              letterSpacing: 0.3,
+                            ),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const CheckoutScreen(),
+                                ),
+                              );
+                            },
+                            child: const Text(
+                              'Proceder al pago',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 17,
+                                letterSpacing: 0.3,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -158,8 +173,12 @@ class HeroCartScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSummaryRow(String label, String value,
-      {bool isBold = false, double fontSize = 14}) {
+  Widget _buildSummaryRow(
+    String label,
+    String value, {
+    bool isBold = false,
+    double fontSize = 14,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -190,11 +209,7 @@ class HeroCartScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: const [
-            Icon(
-              Icons.shopping_cart_outlined,
-              size: 72,
-              color: textGray600,
-            ),
+            Icon(Icons.shopping_cart_outlined, size: 72, color: textGray600),
             SizedBox(height: 16),
             Text(
               'Tu carrito está vacío',
@@ -208,10 +223,7 @@ class HeroCartScreen extends ConsumerWidget {
             SizedBox(height: 8),
             Text(
               'Agrega productos desde la pantalla principal para verlos aquí.',
-              style: TextStyle(
-                fontSize: 14,
-                color: textGray600,
-              ),
+              style: TextStyle(fontSize: 14, color: textGray600),
               textAlign: TextAlign.center,
             ),
           ],
@@ -241,7 +253,10 @@ class _CartItemTile extends ConsumerWidget {
         ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         leading: Container(
           width: 56,
           height: 56,
@@ -249,11 +264,7 @@ class _CartItemTile extends ConsumerWidget {
             color: borderGray100,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
-            Icons.image,
-            color: textGray600,
-            size: 28,
-          ),
+          child: const Icon(Icons.image, color: textGray600, size: 28),
         ),
         title: Text(
           item.name,
@@ -265,10 +276,7 @@ class _CartItemTile extends ConsumerWidget {
         ),
         subtitle: Text(
           item.condition,
-          style: const TextStyle(
-            fontSize: 14,
-            color: textGray600,
-          ),
+          style: const TextStyle(fontSize: 14, color: textGray600),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -292,12 +300,16 @@ class _CartItemTile extends ConsumerWidget {
               icon: const Icon(Icons.add_circle_outline, size: 24),
               color: primaryOrange,
               onPressed: () {
-                ref.read(cartProvider.notifier).addItem(
-                  name: item.name,
-                  condition: item.condition,
-                  price: item.price,
-                  weight: item.weight,
-                );
+                ref
+                    .read(cartProvider.notifier)
+                    .addItem(
+                      offerId: item.offerId,
+                      name: item.name,
+                      condition: item.condition,
+                      price: item.price,
+                      weight: item.weight,
+                      imageUrl: item.imageUrl,
+                    );
               },
             ),
             IconButton(

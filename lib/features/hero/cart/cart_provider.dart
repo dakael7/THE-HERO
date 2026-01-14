@@ -10,24 +10,26 @@ class CartNotifier extends Notifier<List<CartItem>> {
   }
 
   void addItem({
+    required String offerId,
     required String name,
     required String condition,
     required double price,
+    required String imageUrl,
     double weight = 0.5,
   }) {
-    final index = state.indexWhere(
-      (item) => item.name == name && item.condition == condition,
-    );
+    final index = state.indexWhere((item) => item.offerId == offerId);
 
     if (index == -1) {
       state = [
         ...state,
         CartItem(
+          offerId: offerId,
           name: name,
           condition: condition,
           quantity: 1,
           price: price,
           weight: weight,
+          imageUrl: imageUrl,
         ),
       ];
     } else {
@@ -40,9 +42,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
   }
 
   void removeOne(CartItem item) {
-    final index = state.indexWhere(
-      (e) => e.name == item.name && e.condition == item.condition,
-    );
+    final index = state.indexWhere((e) => e.offerId == item.offerId);
     if (index == -1) return;
 
     final current = state[index];
@@ -60,9 +60,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
   }
 
   void removeItem(CartItem item) {
-    state = state
-        .where((e) => e.name != item.name || e.condition != item.condition)
-        .toList();
+    state = state.where((e) => e.offerId != item.offerId).toList();
   }
 
   void clear() {
@@ -70,7 +68,6 @@ class CartNotifier extends Notifier<List<CartItem>> {
   }
 }
 
-final cartProvider =
-    NotifierProvider<CartNotifier, List<CartItem>>(() {
+final cartProvider = NotifierProvider<CartNotifier, List<CartItem>>(() {
   return CartNotifier();
 });

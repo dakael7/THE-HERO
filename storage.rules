@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Version procesada, solo lectura pública (ajusta a auth si prefieres)
+    match /processed/{allPaths=**} {
+      allow read: if true; // o request.auth != null si quieres proteger
+      allow write: if false; // bloquea escrituras de clientes; Cloud Functions usa credenciales de servicio y no pasa por reglas
+    }
+
+    // Banners/promo
+    match /ads/{allPaths=**} {
+      allow read: if true; // público
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Ofertas (originales subidas por usuarios)
+    match /offers/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Resto de paths
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.token.admin == true;
+    }
+  }
+}

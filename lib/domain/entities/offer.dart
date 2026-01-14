@@ -12,6 +12,7 @@ class Offer {
   final String currency;
   final int stock;
   final int availableQty;
+  final double weight; // Weight in kg
   final String coverImageUrl;
   final List<String> imageUrls;
   final OfferStatus status;
@@ -21,6 +22,8 @@ class Offer {
   final DateTime? publishedAt;
   final int viewCount;
   final int orderCount;
+  final double avgRating;
+  final int ratingCount;
 
   Offer({
     required this.offerId,
@@ -33,6 +36,7 @@ class Offer {
     required this.currency,
     required this.stock,
     required this.availableQty,
+    this.weight = 0.5,
     required this.coverImageUrl,
     required this.imageUrls,
     required this.status,
@@ -42,6 +46,8 @@ class Offer {
     this.publishedAt,
     this.viewCount = 0,
     this.orderCount = 0,
+    this.avgRating = 0.0,
+    this.ratingCount = 0,
   });
 
   bool get isPublished => status.isPublished;
@@ -61,6 +67,7 @@ class Offer {
     String? currency,
     int? stock,
     int? availableQty,
+    double? weight,
     String? coverImageUrl,
     List<String>? imageUrls,
     OfferStatus? status,
@@ -70,6 +77,8 @@ class Offer {
     DateTime? publishedAt,
     int? viewCount,
     int? orderCount,
+    double? avgRating,
+    int? ratingCount,
   }) {
     return Offer(
       offerId: offerId ?? this.offerId,
@@ -82,6 +91,7 @@ class Offer {
       currency: currency ?? this.currency,
       stock: stock ?? this.stock,
       availableQty: availableQty ?? this.availableQty,
+      weight: weight ?? this.weight,
       coverImageUrl: coverImageUrl ?? this.coverImageUrl,
       imageUrls: imageUrls ?? this.imageUrls,
       status: status ?? this.status,
@@ -91,6 +101,8 @@ class Offer {
       publishedAt: publishedAt ?? this.publishedAt,
       viewCount: viewCount ?? this.viewCount,
       orderCount: orderCount ?? this.orderCount,
+      avgRating: avgRating ?? this.avgRating,
+      ratingCount: ratingCount ?? this.ratingCount,
     );
   }
 }

@@ -25,6 +25,7 @@ abstract class AuthRemoteDataSource {
   });
   Future<void> signOut();
   Future<UserModel?> getCurrentUser();
+  Future<UserModel?> getUserById(String userId);
   Future<bool> isSignedIn();
   Future<bool> checkEmailExists(String email);
   Future<UserModel> registerGoogleUser({
@@ -321,6 +322,23 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       return UserModel.fromJson({'id': user.uid, ...userData});
     } catch (e) {
       throw Exception('Error al obtener usuario actual: $e');
+    }
+  }
+
+  @override
+  Future<UserModel?> getUserById(String userId) async {
+    try {
+      if (userId.isEmpty) return null;
+
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (!userDoc.exists) return null;
+
+      final userData = userDoc.data();
+      if (userData == null) return null;
+
+      return UserModel.fromJson({'id': userId, ...userData});
+    } catch (e) {
+      throw Exception('Error al obtener usuario por id: $e');
     }
   }
 

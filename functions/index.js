@@ -1,6 +1,14 @@
-const functions = require('firebase-functions');
+const {onCall, HttpsError} = require('firebase-functions/v2/https');
+const {onObjectFinalized} = require('firebase-functions/v2/storage');
+const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const sharp = require('sharp');
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
 admin.initializeApp();
+
+const STORAGE_REGION = 'southamerica-west1';
 
 /**
  * Asigna un pedido a un rider de forma segura
@@ -10,22 +18,22 @@ admin.initializeApp();
  * @param {Object} context - Firebase auth context
  * @returns {Promise<Object>} - { success: boolean, orderId: string, message: string }
  */
-exports.claimOrder = functions.https.onCall(async (data, context) => {
+exports.claimOrder = onCall(async (request) => {
   // ==========================================
   // 1. VALIDAR AUTENTICACIÓN
   // ==========================================
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
+  if (!request.auth) {
+    throw new HttpsError(
       'unauthenticated',
       'Usuario no autenticado'
     );
   }
 
-  const riderId = context.auth.uid;
-  const orderId = data.orderId;
+  const riderId = request.auth.uid;
+  const orderId = request.data.orderId;
 
   if (!orderId) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'invalid-argument',
       'orderId es requerido'
     );
@@ -42,7 +50,7 @@ exports.claimOrder = functions.https.onCall(async (data, context) => {
     .get();
 
   if (!riderDoc.exists) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'not-found',
       'Rider no encontrado'
     );
@@ -53,7 +61,7 @@ exports.claimOrder = functions.https.onCall(async (data, context) => {
 
   // Validar que el usuario tenga rol de rider
   if (!riderData.roles || !riderData.roles.includes('rider')) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       'No tienes permisos de rider'
     );
@@ -63,14 +71,14 @@ exports.claimOrder = functions.https.onCall(async (data, context) => {
   // 3. VALIDAR RIDER VERIFICADO (CRÍTICO)
   // ==========================================
   if (!riderProfile || !riderProfile.isVerified) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'failed-precondition',
       'Tu cuenta debe estar verificada para tomar pedidos'
     );
   }
 
   if (!riderProfile.isActive) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'failed-precondition',
       'Tu cuenta no está activa'
     );
@@ -87,7 +95,7 @@ exports.claimOrder = functions.https.onCall(async (data, context) => {
     const orderDoc = await transaction.get(orderRef);
 
     if (!orderDoc.exists) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'not-found',
         'Pedido no encontrado'
       );
@@ -97,14 +105,14 @@ exports.claimOrder = functions.https.onCall(async (data, context) => {
 
     // Validar estado
     if (order.status !== 'queued') {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'failed-precondition',
         `Pedido ya no está disponible (estado: ${order.status})`
       );
     }
 
     if (order.rider && order.rider.assignedRiderId) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'failed-precondition',
         'Pedido ya tiene rider asignado'
       );
@@ -120,7 +128,7 @@ exports.claimOrder = functions.https.onCall(async (data, context) => {
     console.log(`[claimOrder] Vehículo rider: ${riderVehicle}, Requerido: ${requiredVehicle}`);
 
     if (!compatibleVehicles.includes(requiredVehicle)) {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'failed-precondition',
         `Tu vehículo (${riderVehicle}) no es compatible con este pedido (requiere ${requiredVehicle})`
       );
@@ -129,7 +137,7 @@ exports.claimOrder = functions.https.onCall(async (data, context) => {
     // Validar peso (si existe límite en el perfil)
     if (riderProfile.limits && riderProfile.limits.maxWeightKg) {
       if (order.requirements.weightKg > riderProfile.limits.maxWeightKg) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'failed-precondition',
           `El peso del pedido (${order.requirements.weightKg}kg) excede tu capacidad (${riderProfile.limits.maxWeightKg}kg)`
         );
@@ -139,7 +147,7 @@ exports.claimOrder = functions.https.onCall(async (data, context) => {
     // Validar distancia (si existe límite en el perfil)
     if (riderProfile.limits && riderProfile.limits.maxDistanceKm) {
       if (order.requirements.estimatedDistanceKm > riderProfile.limits.maxDistanceKm) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'failed-precondition',
           `La distancia del pedido (${order.requirements.estimatedDistanceKm}km) excede tu rango (${riderProfile.limits.maxDistanceKm}km)`
         );
@@ -207,22 +215,22 @@ function getCompatibleVehicles(riderVehicleType) {
  * @param {Object} data - { orderId: string, newStatus: string }
  * @param {Object} context - Firebase auth context
  */
-exports.updateOrderStatus = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Usuario no autenticado');
+exports.updateOrderStatus = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Usuario no autenticado');
   }
 
-  const { orderId, newStatus } = data;
-  const riderId = context.auth.uid;
+  const { orderId, newStatus } = request.data;
+  const riderId = request.auth.uid;
 
   if (!orderId || !newStatus) {
-    throw new functions.https.HttpsError('invalid-argument', 'orderId y newStatus son requeridos');
+    throw new HttpsError('invalid-argument', 'orderId y newStatus son requeridos');
   }
 
   // Estados válidos para actualización por rider
   const validStatuses = ['picked_up', 'in_transit', 'delivered'];
   if (!validStatuses.includes(newStatus)) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'invalid-argument',
       `Estado inválido. Debe ser uno de: ${validStatuses.join(', ')}`
     );
@@ -232,14 +240,14 @@ exports.updateOrderStatus = functions.https.onCall(async (data, context) => {
   const orderDoc = await orderRef.get();
 
   if (!orderDoc.exists) {
-    throw new functions.https.HttpsError('not-found', 'Pedido no encontrado');
+    throw new HttpsError('not-found', 'Pedido no encontrado');
   }
 
   const order = orderDoc.data();
 
   // Validar que el rider sea el asignado
   if (!order.rider || order.rider.assignedRiderId !== riderId) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'permission-denied',
       'No tienes permiso para actualizar este pedido'
     );
@@ -253,7 +261,7 @@ exports.updateOrderStatus = functions.https.onCall(async (data, context) => {
   };
 
   if (!validTransitions[order.status] || !validTransitions[order.status].includes(newStatus)) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'failed-precondition',
       `No se puede cambiar de ${order.status} a ${newStatus}`
     );
@@ -286,3 +294,141 @@ exports.updateOrderStatus = functions.https.onCall(async (data, context) => {
     message: `Pedido actualizado a ${newStatus}`
   };
 });
+
+/**
+ * Procesa imágenes subidas a Storage:
+ * - Solo archivos de imagen
+ * - Evita re-procesar imágenes ya convertidas o en carpeta processed/
+ * - Genera versión 1200x1200 en WebP y la guarda en processed/<ruta>/*_1200.webp
+ */
+exports.processImage1200Webp = onObjectFinalized(
+  {region: STORAGE_REGION},
+  async (event) => {
+  const object = event.data;
+  const filePath = object.name;
+  const contentType = object.contentType || '';
+
+  if (!filePath) return null;
+  if (!contentType.startsWith('image/')) return null;
+  if (filePath.endsWith('_1200.webp')) return null;
+  if (filePath.startsWith('processed/')) return null;
+
+  const bucket = admin.storage().bucket(object.bucket);
+  const fileName = path.basename(filePath);
+  const dirName = path.dirname(filePath);
+  const tempLocalFile = path.join(os.tmpdir(), fileName);
+
+  const isAd = filePath.startsWith('ads/');
+  const isOffer = filePath.startsWith('offers/');
+  const metadata = object.metadata || {};
+
+  const baseName = fileName.replace(/\.[^.]+$/, '');
+  const processedFileName = isAd ? `${baseName}.webp` : `${baseName}_1200.webp`;
+  const processedDir = path.join('processed', dirName === '.' ? '' : dirName);
+  const processedPath = path.join(processedDir, processedFileName);
+  const tempProcessedFile = path.join(os.tmpdir(), processedFileName);
+
+  try {
+    // Descargar original
+    await bucket.file(filePath).download({ destination: tempLocalFile });
+
+    const transformer = sharp(tempLocalFile).rotate();
+
+    if (isAd) {
+      // Banners: sin resize, solo convertir a WebP
+      await transformer
+        .toFormat('webp', { quality: 85 })
+        .toFile(tempProcessedFile);
+    } else {
+      // Productos y resto: estandarizar a 1200x1200 WebP (recorte centrado)
+      await transformer
+        .resize(1200, 1200, { fit: 'cover', position: 'centre' })
+        .toFormat('webp', { quality: 80 })
+        .toFile(tempProcessedFile);
+    }
+
+    // Subir procesado
+    await bucket.upload(tempProcessedFile, {
+      destination: processedPath,
+      contentType: 'image/webp',
+      metadata: {
+        metadata: {
+          processed: 'true',
+          original: filePath,
+        },
+      },
+    });
+
+    if (isAd) {
+      // Crear/actualizar documento en colección de lectura
+      const downloadUrl = buildDownloadUrl(bucket.name, processedPath);
+      const docId = processedPath
+        .replace(/^processed\//, '')
+        .replace(/[^\w\-\/.]/g, '_')
+        .replace(/\//g, '__');
+
+      const rawOrder = metadata.order;
+      const rawActive = metadata.active;
+      const order = typeof rawOrder === 'string' ? parseInt(rawOrder, 10) || 0 : 0;
+      const active = typeof rawActive === 'string'
+        ? ['true', '1', 'yes'].includes(rawActive.toLowerCase())
+        : true;
+
+      await admin.firestore().collection('promo_banners').doc(docId).set(
+        {
+          imageUrl: downloadUrl,
+          order,
+          active,
+          cacheBuster: admin.firestore.FieldValue.serverTimestamp(),
+          storagePath: processedPath,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    if (isOffer) {
+      // Crear/actualizar documento de oferta usando el ID del path: offers/{userId}/{offerId}/file
+      const segments = filePath.split('/').filter(Boolean);
+      const offerId = segments.length >= 3 ? segments[2] : null;
+      if (offerId) {
+        const downloadUrl = buildDownloadUrl(bucket.name, processedPath);
+        const offersCol = admin.firestore().collection('offers');
+        await offersCol.doc(offerId).set(
+          {
+            coverImageUrl: downloadUrl,
+            imageUrls: admin.firestore.FieldValue.arrayUnion(downloadUrl),
+            storagePath: processedPath,
+            cacheBuster: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    }
+
+    logger.info('Imagen procesada', {
+      original: filePath,
+      processed: processedPath,
+    });
+  } catch (error) {
+    logger.error('Error procesando imagen', { filePath, error });
+    throw error;
+  } finally {
+    // Limpieza local
+    if (fs.existsSync(tempLocalFile)) {
+      fs.unlinkSync(tempLocalFile);
+    }
+    if (fs.existsSync(tempProcessedFile)) {
+      fs.unlinkSync(tempProcessedFile);
+    }
+  }
+
+  return null;
+});
+
+function buildDownloadUrl(bucketName, filePath) {
+  const encodedPath = encodeURIComponent(filePath);
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media`;
+}

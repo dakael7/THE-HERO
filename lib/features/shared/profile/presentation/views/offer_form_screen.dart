@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:typed_data';
 
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../data/providers/repository_providers.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../../domain/entities/offer_condition.dart';
@@ -23,10 +26,14 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
   final _stockController = TextEditingController();
+  final _weightController = TextEditingController();
+  final ImagePicker _imagePicker = ImagePicker();
 
   static const _currency = 'CLP';
   String _category = 'Electrónicos';
   String _coverAsset = 'assets/logo_hero.png';
+  Uint8List? _coverImageBytes;
+  String? _coverImageFileName;
   OfferCondition _condition = OfferCondition.newProduct;
   bool _isSaving = false;
   bool _publishNow = false;
@@ -45,13 +52,6 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     'Juguetes',
   ];
 
-  static const _coverAssets = <String>[
-    'assets/logo_hero.png',
-    'assets/logo_1.png',
-    'assets/the.png',
-    'assets/PAQUETE CAJA THE HERO.png',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -61,6 +61,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       _descriptionController.text = offer.description;
       _priceController.text = offer.price.toStringAsFixed(0);
       _stockController.text = offer.stock.toString();
+      _weightController.text = offer.weight.toStringAsFixed(2);
       _category = offer.category;
       _condition = offer.condition;
       if (offer.coverImageUrl.isNotEmpty) {
@@ -70,20 +71,71 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     }
   }
 
+  Widget _buildCoverPreview() {
+    if (_coverImageBytes != null) {
+      return Image.memory(_coverImageBytes!, fit: BoxFit.cover);
+    }
+
+    final cover = _coverAsset.trim();
+    if (cover.isEmpty) {
+      return const Center(
+        child: Icon(Icons.image, color: textGray600, size: 44),
+      );
+    }
+
+    final isAsset = cover.startsWith('assets/');
+    if (isAsset) {
+      return Image.asset(cover, fit: BoxFit.cover);
+    }
+
+    return Image.network(
+      cover,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) {
+        return Image.asset('assets/logo_hero.png', fit: BoxFit.contain);
+      },
+    );
+  }
+
+  Future<void> _pickCoverImage() async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1600,
+      );
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+
+      setState(() {
+        _coverImageBytes = bytes;
+        _coverImageFileName = picked.name;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo seleccionar la imagen: $e'),
+          duration: const Duration(milliseconds: 2200),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
     _stockController.dispose();
+    _weightController.dispose();
     super.dispose();
   }
 
   String _buildKeywords(String title, String category) {
-    final parts = <String>[
-      title.toLowerCase(),
-      category.toLowerCase(),
-    ];
+    final parts = <String>[title.toLowerCase(), category.toLowerCase()];
     return parts.join('|');
   }
 
@@ -99,12 +151,34 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     }
     final user = userAsync.value!;
 
+    // Validar imagen de portada si se intenta publicar
+    if (_publishNow) {
+      final hasCoverImage =
+          _coverImageBytes != null ||
+          (_coverAsset.trim().isNotEmpty &&
+              _coverAsset != 'assets/logo_hero.png');
+
+      if (!hasCoverImage) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Debes agregar una imagen de portada para publicar la oferta',
+            ),
+            backgroundColor: Color(0xFFDC2626),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
     final isEdit = widget.initialOffer != null;
     final now = DateTime.now();
     final price = double.tryParse(_priceController.text.trim()) ?? 0;
     final stock = int.tryParse(_stockController.text.trim()) ?? 0;
+    final weight = double.tryParse(_weightController.text.trim()) ?? 0.5;
 
     // Mantener cantidad vendida al editar: reserved = stockInicial - disponible
     int availableQty = stock;
@@ -123,38 +197,76 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         ? (widget.initialOffer?.publishedAt ?? now)
         : widget.initialOffer?.publishedAt;
 
-    final offer = Offer(
-      offerId: widget.initialOffer?.offerId ?? '',
-      heroId: user.id,
-      title: _titleController.text.trim(),
-      description: _descriptionController.text.trim(),
-      category: _category,
-      condition: _condition,
-      price: price,
-      currency: _currency,
-      stock: stock,
-      availableQty: availableQty,
-      coverImageUrl: _coverAsset,
-      imageUrls: [_coverAsset],
-      status: selectedStatus,
-      searchKeywords: _buildKeywords(
-        _titleController.text.trim(),
-        _category,
-      ).split('|'),
-      createdAt: widget.initialOffer?.createdAt ?? now,
-      updatedAt: now,
-      publishedAt: publishedAt,
-      viewCount: widget.initialOffer?.viewCount ?? 0,
-      orderCount: widget.initialOffer?.orderCount ?? 0,
-    );
-
     setState(() => _isSaving = true);
     try {
       final notifier = ref.read(offerNotifierProvider.notifier);
+
+      final hasNewCover = _coverImageBytes != null;
+      final coverImageUrl = (!isEdit && hasNewCover) ? '' : _coverAsset;
+
+      final existingImageUrls =
+          widget.initialOffer?.imageUrls ?? const <String>[];
+      final mergedExistingImageUrls = <String>{
+        ...existingImageUrls,
+        if (_coverAsset.trim().isNotEmpty) _coverAsset,
+      }.toList();
+
+      final imageUrls = isEdit
+          ? mergedExistingImageUrls
+          : (hasNewCover
+                ? const <String>[]
+                : (coverImageUrl.isNotEmpty
+                      ? <String>[coverImageUrl]
+                      : const <String>[]));
+
+      final offer = Offer(
+        offerId: widget.initialOffer?.offerId ?? '',
+        heroId: user.id,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        category: _category,
+        condition: _condition,
+        price: price,
+        currency: _currency,
+        stock: stock,
+        availableQty: availableQty,
+        weight: weight,
+        coverImageUrl: coverImageUrl,
+        imageUrls: imageUrls,
+        status: selectedStatus,
+        searchKeywords: _buildKeywords(
+          _titleController.text.trim(),
+          _category,
+        ).split('|'),
+        createdAt: widget.initialOffer?.createdAt ?? now,
+        updatedAt: now,
+        publishedAt: publishedAt,
+        viewCount: widget.initialOffer?.viewCount ?? 0,
+        orderCount: widget.initialOffer?.orderCount ?? 0,
+      );
+
       if (isEdit) {
-        await notifier.updateOffer(offer);
+        final updated = await notifier.updateOffer(offer);
+        if (hasNewCover) {
+          final repo = ref.read(offersRepositoryProvider);
+          await repo.uploadOfferImage(
+            heroId: user.id,
+            offerId: updated.offerId,
+            bytes: _coverImageBytes!,
+            fileName: _coverImageFileName ?? 'cover.jpg',
+          );
+        }
       } else {
-        await notifier.createOffer(offer);
+        final created = await notifier.createOffer(offer);
+        if (hasNewCover) {
+          final repo = ref.read(offersRepositoryProvider);
+          await repo.uploadOfferImage(
+            heroId: user.id,
+            offerId: created.offerId,
+            bytes: _coverImageBytes!,
+            fileName: _coverImageFileName ?? 'cover.jpg',
+          );
+        }
       }
 
       if (!mounted) return;
@@ -190,258 +302,344 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         title: Text(isEdit ? 'Editar oferta' : 'Crear oferta'),
       ),
       body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _FormFieldWrapper(
-                label: 'Título',
-                child: TextFormField(
-                  controller: _titleController,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    hintText: 'Ej: iPhone 13 Pro',
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _SectionTitle(title: 'Información básica'),
+                _FormFieldWrapper(
+                  label: 'Título',
+                  child: TextFormField(
+                    controller: _titleController,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      hintText: 'Ej: iPhone 13 Pro',
+                      helperText: 'Sé claro y específico (mín. 4 caracteres)',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'El título es obligatorio';
+                      }
+                      if (value.trim().length < 4) {
+                        return 'Usa al menos 4 caracteres';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'El título es obligatorio';
-                    }
-                    if (value.trim().length < 4) {
-                      return 'Usa al menos 4 caracteres';
-                    }
-                    return null;
-                  },
                 ),
-              ),
-              _FormFieldWrapper(
-                label: 'Descripción',
-                child: TextFormField(
-                  controller: _descriptionController,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    hintText: 'Cuenta el estado y detalles relevantes',
+                _FormFieldWrapper(
+                  label: 'Descripción',
+                  child: TextFormField(
+                    controller: _descriptionController,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'Cuenta el estado y detalles relevantes',
+                      helperText:
+                          'Incluye accesorios, fallas o uso (mín. 10 caracteres)',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'La descripción es obligatoria';
+                      }
+                      if (value.trim().length < 10) {
+                        return 'Usa al menos 10 caracteres';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'La descripción es obligatoria';
-                    }
-                    if (value.trim().length < 10) {
-                      return 'Usa al menos 10 caracteres';
-                    }
-                    return null;
-                  },
                 ),
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: _FormFieldWrapper(
-                      label: 'Precio (CLP)',
-                      child: TextFormField(
-                        controller: _priceController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          prefixText: '\$',
-                          hintText: '0',
+                const SizedBox(height: 4),
+                const _SectionTitle(title: 'Inventario y estado'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FormFieldWrapper(
+                        label: 'Precio (CLP)',
+                        child: TextFormField(
+                          controller: _priceController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            prefixText: '\$',
+                            hintText: '0',
+                            helperText: 'Solo números, usa CLP',
+                          ),
+                          validator: (value) {
+                            final parsed = double.tryParse(value ?? '');
+                            if (parsed == null || parsed <= 0) {
+                              return 'El precio debe ser mayor a 0';
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (value) {
-                          final parsed = double.tryParse(value ?? '');
-                          if (parsed == null || parsed <= 0) {
-                            return 'Ingresa un precio válido';
-                          }
-                          return null;
-                        },
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _FormFieldWrapper(
-                      label: 'Stock',
-                      child: TextFormField(
-                        controller: _stockController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: false),
-                        decoration: const InputDecoration(
-                          hintText: '0',
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _FormFieldWrapper(
+                        label: 'Stock',
+                        child: TextFormField(
+                          controller: _stockController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: false,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: '0',
+                            helperText: 'Disponibles para la venta',
+                          ),
+                          validator: (value) {
+                            final parsed = int.tryParse(value ?? '');
+                            if (parsed == null || parsed < 0) {
+                              return 'El stock debe ser 0 o mayor';
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (value) {
-                          final parsed = int.tryParse(value ?? '');
-                          if (parsed == null || parsed < 0) {
-                            return 'Stock inválido';
-                          }
-                          return null;
-                        },
                       ),
                     ),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: _FormFieldWrapper(
-                      label: 'Categoría',
-                      child: DropdownButtonFormField<String>(
-                        value: _category,
-                        isExpanded: true,
-                        items: _categories
-                            .map((c) => DropdownMenuItem(
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FormFieldWrapper(
+                        label: 'Peso (kg)',
+                        child: TextFormField(
+                          controller: _weightController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: '0.5',
+                            helperText: 'Peso del producto en kilogramos',
+                          ),
+                          validator: (value) {
+                            final parsed = double.tryParse(value ?? '');
+                            if (parsed == null || parsed <= 0) {
+                              return 'Ingresa un peso válido';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(child: SizedBox()),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FormFieldWrapper(
+                        label: 'Categoría',
+                        child: DropdownButtonFormField<String>(
+                          value: _category,
+                          isExpanded: true,
+                          items: _categories
+                              .map(
+                                (c) => DropdownMenuItem(
                                   value: c,
-                                  child: Text(c),
-                                ))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) setState(() => _category = val);
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _FormFieldWrapper(
-                      label: 'Estado del producto',
-                      child: DropdownButtonFormField<OfferCondition>(
-                        value: _condition,
-                        isExpanded: true,
-                        items: const [
-                          DropdownMenuItem(
-                            value: OfferCondition.newProduct,
-                            child: Text('Nuevo'),
-                          ),
-                          DropdownMenuItem(
-                            value: OfferCondition.excellent,
-                            child: Text('Excelente estado'),
-                          ),
-                          DropdownMenuItem(
-                            value: OfferCondition.good,
-                            child: Text('Buen estado'),
-                          ),
-                          DropdownMenuItem(
-                            value: OfferCondition.used,
-                            child: Text('Usado'),
-                          ),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) setState(() => _condition = val);
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: _FormFieldWrapper(
-                      label: 'Moneda',
-                      child: Text('CLP'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _FormFieldWrapper(
-                      label: 'Imagen (placeholder)',
-                      child: DropdownButtonFormField<String>(
-                        value: _coverAsset,
-                        isExpanded: true,
-                        items: _coverAssets
-                            .map(
-                              (asset) => DropdownMenuItem(
-                                value: asset,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 36,
-                                      height: 36,
-                                      margin: const EdgeInsets.only(right: 10),
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        color: borderGray100,
-                                      ),
-                                      child: Image.asset(asset, fit: BoxFit.contain),
-                                    ),
-                                    Text(
-                                      asset.split('/').last,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
+                                  child: Text(
+                                    c,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) setState(() => _coverAsset = val);
-                        },
+                              )
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _category = val);
+                          },
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              SwitchListTile.adaptive(
-                value: _publishNow,
-                onChanged: (val) {
-                  setState(() => _publishNow = val);
-                },
-                title: const Text(
-                  'Publicar al guardar',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: textGray900,
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _FormFieldWrapper(
+                        label: 'Estado del producto',
+                        child: DropdownButtonFormField<OfferCondition>(
+                          value: _condition,
+                          isExpanded: true,
+                          items: const [
+                            DropdownMenuItem(
+                              value: OfferCondition.newProduct,
+                              child: Text('Nuevo'),
+                            ),
+                            DropdownMenuItem(
+                              value: OfferCondition.excellent,
+                              child: Text('Excelente estado'),
+                            ),
+                            DropdownMenuItem(
+                              value: OfferCondition.good,
+                              child: Text('Buen estado'),
+                            ),
+                            DropdownMenuItem(
+                              value: OfferCondition.used,
+                              child: Text('Usado'),
+                            ),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) setState(() => _condition = val);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                subtitle: const Text(
-                  'Si está activado, la oferta quedará visible (estado activo).',
-                  style: TextStyle(color: textGray700, fontSize: 12),
+                const SizedBox(height: 4),
+                const _SectionTitle(title: 'Imagen y publicación'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FormFieldWrapper(
+                        label: 'Moneda',
+                        child: const Text('CLP'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _FormFieldWrapper(
+                        label: 'Imagen',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                height: 110,
+                                width: double.infinity,
+                                color: borderGray100,
+                                child: _buildCoverPreview(),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _isSaving
+                                        ? null
+                                        : _pickCoverImage,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: primaryOrange,
+                                      foregroundColor: backgroundWhite,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Elegir',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (_coverImageBytes != null) ...[
+                                  const SizedBox(width: 10),
+                                  TextButton(
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () {
+                                            setState(() {
+                                              _coverImageBytes = null;
+                                              _coverImageFileName = null;
+                                            });
+                                          },
+                                    child: const Text('Quitar'),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                activeColor: primaryOrange,
-                contentPadding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryOrange,
-                    foregroundColor: backgroundWhite,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                SwitchListTile.adaptive(
+                  value: _publishNow,
+                  onChanged: (val) {
+                    setState(() => _publishNow = val);
+                  },
+                  title: const Text(
+                    'Publicar al guardar',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: textGray900,
                     ),
                   ),
-                  child: _isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            color: backgroundWhite,
-                          ),
-                        )
-                      : Text(
-                          isEdit ? 'Guardar cambios' : 'Crear oferta',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
+                  subtitle: const Text(
+                    'Si está activado, la oferta quedará visible (estado activo).',
+                    style: TextStyle(color: textGray700, fontSize: 12),
+                  ),
+                  activeColor: primaryOrange,
+                  contentPadding: EdgeInsets.zero,
                 ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Las imágenes reales se habilitarán cuando Storage esté disponible (plan Blaze).',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: textGray600,
-                  fontStyle: FontStyle.italic,
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryOrange,
+                      foregroundColor: backgroundWhite,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: backgroundWhite,
+                            ),
+                          )
+                        : Text(
+                            isEdit ? 'Guardar cambios' : 'Crear oferta',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                const SizedBox(height: 0),
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+
+  const _SectionTitle({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          color: textGray900,
+          letterSpacing: -0.1,
         ),
       ),
     );
@@ -452,10 +650,7 @@ class _FormFieldWrapper extends StatelessWidget {
   final String label;
   final Widget child;
 
-  const _FormFieldWrapper({
-    required this.label,
-    required this.child,
-  });
+  const _FormFieldWrapper({required this.label, required this.child});
 
   @override
   Widget build(BuildContext context) {

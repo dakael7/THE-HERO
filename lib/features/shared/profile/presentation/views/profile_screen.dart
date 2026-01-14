@@ -387,7 +387,7 @@ class ProfileScreen extends ConsumerWidget {
           if (!isRiderProfile) ...[
             ProfileMenuTile(
               icon: Icons.shopping_bag_outlined,
-              title: 'Mis productos',
+              title: 'Mis ofertas',
               trailingText: '0',
               onTap: () {
                 Navigator.of(context).push(
