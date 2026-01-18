@@ -1,5 +1,6 @@
 import 'offer_status.dart';
 import 'offer_condition.dart';
+import 'address.dart';
 
 class Offer {
   final String offerId;
@@ -24,6 +25,10 @@ class Offer {
   final int orderCount;
   final double avgRating;
   final int ratingCount;
+  /// Location from which the item will be picked up/shipped.
+  /// Optional id to a stored location (e.g., user address), plus a snapshot for history.
+  final String? itemLocationId;
+  final Address? itemLocationSnapshot;
 
   Offer({
     required this.offerId,
@@ -48,6 +53,8 @@ class Offer {
     this.orderCount = 0,
     this.avgRating = 0.0,
     this.ratingCount = 0,
+    this.itemLocationId,
+    this.itemLocationSnapshot,
   });
 
   bool get isPublished => status.isPublished;
@@ -79,6 +86,8 @@ class Offer {
     int? orderCount,
     double? avgRating,
     int? ratingCount,
+    String? itemLocationId,
+    Address? itemLocationSnapshot,
   }) {
     return Offer(
       offerId: offerId ?? this.offerId,
@@ -103,6 +112,8 @@ class Offer {
       orderCount: orderCount ?? this.orderCount,
       avgRating: avgRating ?? this.avgRating,
       ratingCount: ratingCount ?? this.ratingCount,
+      itemLocationId: itemLocationId ?? this.itemLocationId,
+      itemLocationSnapshot: itemLocationSnapshot ?? this.itemLocationSnapshot,
     );
   }
 }

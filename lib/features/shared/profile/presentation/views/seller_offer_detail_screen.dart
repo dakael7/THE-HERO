@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_condition.dart';
@@ -72,6 +73,79 @@ class SellerOfferDetailScreen extends ConsumerWidget {
 
     // Calcular ingresos (precio * cantidad vendida)
     final revenue = offer.price * offer.orderCount;
+    final location = offer.itemLocationSnapshot;
+    final Widget? locationWidget = location == null
+        ? null
+        : Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.place_outlined,
+                    size: 18,
+                    color: textGray600,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Ubicación del producto',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: textGray900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          location.fullAddress,
+                          style:
+                              const TextStyle(fontSize: 13, color: textGray600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Lat: ${location.latitude.toStringAsFixed(5)}, Lng: ${location.longitude.toStringAsFixed(5)}',
+                          style:
+                              const TextStyle(fontSize: 12, color: textGray600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  height: 180,
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: LatLng(location.latitude, location.longitude),
+                      zoom: 15,
+                    ),
+                    markers: {
+                      Marker(
+                        markerId: const MarkerId('offer_location'),
+                        position: LatLng(location.latitude, location.longitude),
+                      ),
+                    },
+                    zoomControlsEnabled: false,
+                    myLocationButtonEnabled: false,
+                    myLocationEnabled: false,
+                    rotateGesturesEnabled: false,
+                    tiltGesturesEnabled: false,
+                    zoomGesturesEnabled: false,
+                    scrollGesturesEnabled: false,
+                    liteModeEnabled: true,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          );
 
     // Obtener preguntas sin responder
     final commentsAsync = ref.watch(offerCommentsProvider(offer.offerId));
@@ -314,6 +388,8 @@ class SellerOfferDetailScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
+
+          if (locationWidget != null) locationWidget,
 
           // Detalles adicionales
           Row(

@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../domain/entities/offer.dart';
 import '../../domain/entities/offer_status.dart';
 import '../../domain/entities/offer_condition.dart';
+import 'address_model.dart';
 
 class OfferModel {
   final String offerId;
@@ -26,6 +28,8 @@ class OfferModel {
   final int orderCount;
   final double avgRating;
   final int ratingCount;
+  final String? itemLocationId;
+  final AddressModel? itemLocationSnapshot;
 
   OfferModel({
     required this.offerId,
@@ -50,6 +54,8 @@ class OfferModel {
     this.orderCount = 0,
     this.avgRating = 0.0,
     this.ratingCount = 0,
+    this.itemLocationId,
+    this.itemLocationSnapshot,
   });
 
   factory OfferModel.fromJson(Map<String, dynamic> json) {
@@ -84,6 +90,12 @@ class OfferModel {
       orderCount: json['orderCount'] as int? ?? 0,
       avgRating: (json['avgRating'] as num?)?.toDouble() ?? 0.0,
       ratingCount: json['ratingCount'] as int? ?? 0,
+      itemLocationId: json['itemLocationId'] as String?,
+      itemLocationSnapshot: json['itemLocationSnapshot'] != null
+          ? AddressModel.fromJson(
+              json['itemLocationSnapshot'] as Map<String, dynamic>,
+            )
+          : null,
     );
   }
 
@@ -111,6 +123,8 @@ class OfferModel {
       'orderCount': orderCount,
       'avgRating': avgRating,
       'ratingCount': ratingCount,
+      'itemLocationId': itemLocationId,
+      'itemLocationSnapshot': itemLocationSnapshot?.toJson(),
     };
   }
 
@@ -138,6 +152,8 @@ class OfferModel {
       orderCount: orderCount,
       avgRating: avgRating,
       ratingCount: ratingCount,
+      itemLocationId: itemLocationId,
+      itemLocationSnapshot: itemLocationSnapshot?.toEntity(),
     );
   }
 
@@ -167,6 +183,10 @@ class OfferModel {
       orderCount: entity.orderCount,
       avgRating: entity.avgRating,
       ratingCount: entity.ratingCount,
+      itemLocationId: entity.itemLocationId,
+      itemLocationSnapshot: entity.itemLocationSnapshot != null
+          ? AddressModel.fromEntity(entity.itemLocationSnapshot!)
+          : null,
     );
   }
 

@@ -117,29 +117,78 @@ class SearchViewModel extends Notifier<SearchState> {
   void search(String query) {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
 
-    state = state.copyWith(query: query);
+    final trimmedQuery = query.trim();
+    state = state.copyWith(query: trimmedQuery);
 
-    if (query.trim().isEmpty) {
+    // Evitar falsos positivos: no buscar con queries muy cortas
+    if (trimmedQuery.isEmpty || trimmedQuery.length < 2) {
+      state = state.copyWith(results: const [], isSearching: false);
+      return;
+    }
+
+    final tokens = trimmedQuery
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((t) => t.length >= 2)
+        .toList();
+
+    if (tokens.isEmpty) {
       state = state.copyWith(results: const [], isSearching: false);
       return;
     }
 
     state = state.copyWith(isSearching: true);
 
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      final lowerQuery = query.toLowerCase();
-      final filtered = _allProducts
-          .where(
-            (product) =>
-                product['name'].toString().toLowerCase().contains(lowerQuery) ||
-                product['category'].toString().toLowerCase().contains(
-                  lowerQuery,
-                ) ||
-                product['condition'].toString().toLowerCase().contains(
-                  lowerQuery,
-                ),
-          )
-          .toList();
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+      final scored = _allProducts.map((product) {
+        final name = product['name']?.toString().toLowerCase() ?? '';
+        final category = product['category']?.toString().toLowerCase() ?? '';
+        final condition = product['condition']?.toString().toLowerCase() ?? '';
+
+        double score = 0;
+        var matchesAll = true;
+
+        for (final token in tokens) {
+          final nameIdx = name.indexOf(token);
+          final categoryIdx = category.indexOf(token);
+          final conditionIdx = condition.indexOf(token);
+
+          final hasMatch = nameIdx >= 0 || categoryIdx >= 0 || conditionIdx >= 0;
+          if (!hasMatch) {
+            matchesAll = false;
+            break;
+          }
+
+          if (nameIdx == 0) {
+            score += 3;
+          } else if (nameIdx > 0) {
+            score += 2;
+          }
+
+          if (categoryIdx == 0) {
+            score += 1.5;
+          } else if (categoryIdx > 0) {
+            score += 1;
+          }
+
+          if (conditionIdx == 0) {
+            score += 0.5;
+          } else if (conditionIdx > 0) {
+            score += 0.25;
+          }
+        }
+
+        if (!matchesAll) return null;
+        return {'product': product, 'score': score};
+      }).whereType<Map<String, dynamic>>().toList();
+
+      scored.sort(
+        (a, b) => (b['score'] as double).compareTo(a['score'] as double),
+      );
+
+      final filtered = scored
+          .map((entry) => entry['product'] as Map<String, dynamic>)
+          .toList(growable: false);
 
       state = state.copyWith(results: filtered, isSearching: false);
     });

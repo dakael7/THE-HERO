@@ -1,14 +1,11 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
 import 'package:latlong2/latlong.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../providers/map_providers.dart';
 import '../widgets/map_controls.dart';
 import '../widgets/product_list_sheet.dart';
-import '../widgets/custom_markers.dart';
 
 class MapLocationScreen extends ConsumerStatefulWidget {
   const MapLocationScreen({super.key});
@@ -18,14 +15,12 @@ class MapLocationScreen extends ConsumerStatefulWidget {
 }
 
 class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
-  final MapController _mapController = MapController();
-  late final http.BaseClient _tileHttpClient;
+  gmap.GoogleMapController? _mapController;
+  double _currentZoom = 14;
 
   @override
   void initState() {
     super.initState();
-    _tileHttpClient = _OsmSafeHttpClient(http.Client());
-    // Initialize map on first load
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(mapViewModelProvider.notifier).initialize();
     });
@@ -33,8 +28,7 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
 
   @override
   void dispose() {
-    _tileHttpClient.close();
-    _mapController.dispose();
+    _mapController?.dispose();
     super.dispose();
   }
 
@@ -46,142 +40,164 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
       backgroundColor: backgroundGray50,
       appBar: AppBar(
         title: const Text(
-          'Mapa de Productos',
-          style: TextStyle(color: textGray900, fontWeight: FontWeight.w600),
+          'Mapa de productos cercanos',
+          style: TextStyle(color: textGray900, fontWeight: FontWeight.w800),
         ),
-        backgroundColor: primaryYellow,
-        elevation: 0,
+        backgroundColor: Colors.white,
+        elevation: 0.5,
+        foregroundColor: textGray900,
       ),
       body: mapState.isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(color: primaryOrange),
+            )
           : mapState.error != null
-          ? _buildErrorState(mapState.error!)
-          : Column(
-              children: [
-                // Map Section (60%)
-                Expanded(flex: 6, child: _buildMapSection(mapState)),
+              ? _buildErrorState(mapState.error!)
+              : Column(
+                  children: [
+                    // Map Section (65%)
+                    Expanded(flex: 6, child: _buildMapSection(mapState)),
 
-                // Product List Section (40%)
-                Expanded(
-                  flex: 4,
-                  child: RepaintBoundary(
-                    child: ProductListSheet(
-                      products: mapState.nearbyProducts,
-                      selectedProduct: mapState.selectedProduct,
-                      onProductTap: (product) {
-                        ref
-                            .read(mapViewModelProvider.notifier)
-                            .selectProduct(product);
-                        // Animate map to product location
-                        _mapController.move(
-                          product.location,
-                          _mapController.zoom,
-                        );
-                      },
+                    // Radius slider + label
+                    Container(
+                      width: double.infinity,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: const BoxDecoration(color: Colors.white),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.radar, size: 18, color: textGray600),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Radio de búsqueda: ${(mapState.searchRadius / 1000).toStringAsFixed(1)} km',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: textGray900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Slider(
+                            value: mapState.searchRadius.clamp(1000, 15000),
+                            min: 1000,
+                            max: 15000,
+                            divisions: 8,
+                            activeColor: primaryOrange,
+                            onChanged: (value) {
+                              ref
+                                  .read(mapViewModelProvider.notifier)
+                                  .updateSearchRadius(value);
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+
+                    // Product List Section (35%)
+                    Expanded(
+                      flex: 4,
+                      child: RepaintBoundary(
+                        child: ProductListSheet(
+                          products: mapState.nearbyProducts,
+                          selectedProduct: mapState.selectedProduct,
+                          onProductTap: (product) {
+                            ref
+                                .read(mapViewModelProvider.notifier)
+                                .selectProduct(product);
+                            _mapController?.animateCamera(
+                              gmap.CameraUpdate.newLatLngZoom(
+                                _toGmap(product.location),
+                                _currentZoom,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
     );
   }
 
   Widget _buildMapSection(mapState) {
+    final selected = mapState.selectedProduct;
+    final userLoc = mapState.userLocation;
+
+    final initialTarget = mapState.mapCenter != null
+        ? _toGmap(mapState.mapCenter!)
+        : (userLoc != null
+            ? gmap.LatLng(userLoc.latitude, userLoc.longitude)
+            : const gmap.LatLng(-33.4489, -70.6693));
+
+    final productMarkers = mapState.nearbyProducts.map<gmap.Marker>((product) {
+      final isSelected = selected?.id == product.id;
+      return gmap.Marker(
+        markerId: gmap.MarkerId(product.id),
+        position: gmap.LatLng(product.location.latitude, product.location.longitude),
+        onTap: () {
+          ref.read(mapViewModelProvider.notifier).selectProduct(product);
+          _mapController?.animateCamera(
+            gmap.CameraUpdate.newLatLngZoom(
+              gmap.LatLng(product.location.latitude, product.location.longitude),
+              _currentZoom,
+            ),
+          );
+        },
+        icon: isSelected
+            ? gmap.BitmapDescriptor.defaultMarkerWithHue(gmap.BitmapDescriptor.hueOrange)
+            : gmap.BitmapDescriptor.defaultMarker,
+      );
+    }).toSet();
+
+    final userMarker = userLoc == null
+        ? <gmap.Marker>{}
+        : {
+            gmap.Marker(
+              markerId: const gmap.MarkerId('user'),
+              position: gmap.LatLng(userLoc.latitude, userLoc.longitude),
+              icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                gmap.BitmapDescriptor.hueAzure,
+              ),
+            ),
+          };
+
+    final circles = userLoc == null
+        ? <gmap.Circle>{}
+        : {
+            gmap.Circle(
+              circleId: const gmap.CircleId('search-radius'),
+              center: gmap.LatLng(userLoc.latitude, userLoc.longitude),
+              radius: mapState.searchRadius,
+              fillColor: primaryOrange.withOpacity(0.12),
+              strokeColor: primaryOrange.withOpacity(0.32),
+              strokeWidth: 2,
+            ),
+          };
+
     return Stack(
       children: [
-        // Optimización: RepaintBoundary para aislar repaints del mapa
-        RepaintBoundary(
-          child: FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: mapState.mapCenter ??
-                  (mapState.userLocation != null
-                      ? LatLng(
-                          mapState.userLocation!.latitude,
-                          mapState.userLocation!.longitude,
-                        )
-                      : const LatLng(-33.4489, -70.6693)), // Santiago default
-              initialZoom: mapState.currentZoom,
-              minZoom: 5.0,
-              maxZoom: 18.0,
-            ),
-            children: [
-              // OpenStreetMap Tiles
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.the_hero',
-                tileProvider: NetworkTileProvider(httpClient: _tileHttpClient),
-                tileUpdateTransformer: TileUpdateTransformers.throttle(
-                  const Duration(milliseconds: 200),
-                ),
-                maxZoom: 19,
-              ),
-
-              // User Location Marker
-              if (mapState.userLocation != null)
-                MarkerLayer(
-                  markers: <Marker>[
-                    Marker(
-                      point: LatLng(
-                        mapState.userLocation!.latitude,
-                        mapState.userLocation!.longitude,
-                      ),
-                      width: 60,
-                      height: 60,
-                      child: RepaintBoundary(child: buildUserMarker()),
-                    ),
-                  ],
-                ),
-
-              // Product Markers
-              MarkerLayer(
-                markers: mapState.nearbyProducts.map<Marker>((product) {
-                  final isSelected = mapState.selectedProduct?.id == product.id;
-                  return Marker(
-                    point: product.location,
-                    width: isSelected ? 70 : 50,
-                    height: isSelected ? 70 : 50,
-                    child: RepaintBoundary(
-                      child: GestureDetector(
-                        onTap: () {
-                          ref
-                              .read(mapViewModelProvider.notifier)
-                              .selectProduct(product);
-                          _mapController.move(
-                            product.location,
-                            _mapController.zoom,
-                          );
-                        },
-                        child: buildProductMarker(
-                          product: product,
-                          isSelected: isSelected,
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-
-              // Search Radius Circle
-              if (mapState.userLocation != null)
-                CircleLayer(
-                  circles: [
-                    CircleMarker(
-                      point: LatLng(
-                        mapState.userLocation!.latitude,
-                        mapState.userLocation!.longitude,
-                      ),
-                      radius: mapState.searchRadius,
-                      useRadiusInMeter: true,
-                      color: primaryOrange.withOpacity(0.1),
-                      borderColor: primaryOrange.withOpacity(0.3),
-                      borderStrokeWidth: 2,
-                    ),
-                  ],
-                ),
-            ],
+        gmap.GoogleMap(
+          initialCameraPosition: gmap.CameraPosition(
+            target: initialTarget,
+            zoom: mapState.currentZoom,
           ),
-        ), // Close RepaintBoundary
+          onMapCreated: (controller) {
+            _mapController = controller;
+          },
+          onCameraMove: (pos) {
+            _currentZoom = pos.zoom;
+          },
+          onTap: (_) => ref.read(mapViewModelProvider.notifier).selectProduct(null),
+          markers: {...productMarkers, ...userMarker},
+          circles: circles,
+          zoomControlsEnabled: false,
+          myLocationEnabled: false,
+          myLocationButtonEnabled: false,
+          mapToolbarEnabled: false,
+        ),
         // Map Controls Overlay
         Positioned(
           right: 16,
@@ -190,32 +206,35 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
             onMyLocationTap: () {
               ref.read(mapViewModelProvider.notifier).centerOnUser();
               if (mapState.userLocation != null) {
-                _mapController.move(
-                  LatLng(
-                    mapState.userLocation!.latitude,
-                    mapState.userLocation!.longitude,
+                _mapController?.animateCamera(
+                  gmap.CameraUpdate.newLatLngZoom(
+                    gmap.LatLng(
+                      mapState.userLocation!.latitude,
+                      mapState.userLocation!.longitude,
+                    ),
+                    15,
                   ),
-                  15.0,
                 );
               }
             },
             onZoomIn: () {
-              _mapController.move(
-                _mapController.center,
-                _mapController.zoom + 1,
+              _mapController?.animateCamera(
+                gmap.CameraUpdate.zoomIn(),
               );
             },
             onZoomOut: () {
-              _mapController.move(
-                _mapController.center,
-                _mapController.zoom - 1,
+              _mapController?.animateCamera(
+                gmap.CameraUpdate.zoomOut(),
               );
             },
           ),
         ),
+
       ],
     );
   }
+
+  gmap.LatLng _toGmap(LatLng latLng) => gmap.LatLng(latLng.latitude, latLng.longitude);
 
   Widget _buildErrorState(String error) {
     return Center(
@@ -247,110 +266,5 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
         ),
       ),
     );
-  }
-}
-
-class _OsmSafeHttpClient extends http.BaseClient {
-  _OsmSafeHttpClient(this._inner);
-
-  final http.Client _inner;
-
-  static final Uint8List _transparentPng = Uint8List.fromList(<int>[
-    0x89,
-    0x50,
-    0x4E,
-    0x47,
-    0x0D,
-    0x0A,
-    0x1A,
-    0x0A,
-    0x00,
-    0x00,
-    0x00,
-    0x0D,
-    0x49,
-    0x48,
-    0x44,
-    0x52,
-    0x00,
-    0x00,
-    0x00,
-    0x01,
-    0x00,
-    0x00,
-    0x00,
-    0x01,
-    0x08,
-    0x06,
-    0x00,
-    0x00,
-    0x00,
-    0x1F,
-    0x15,
-    0xC4,
-    0x89,
-    0x00,
-    0x00,
-    0x00,
-    0x0A,
-    0x49,
-    0x44,
-    0x41,
-    0x54,
-    0x78,
-    0x9C,
-    0x63,
-    0x00,
-    0x01,
-    0x00,
-    0x00,
-    0x05,
-    0x00,
-    0x01,
-    0x0D,
-    0x0A,
-    0x2D,
-    0xB4,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x49,
-    0x45,
-    0x4E,
-    0x44,
-    0xAE,
-    0x42,
-    0x60,
-    0x82,
-  ]);
-
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    try {
-      final response = await _inner.send(request);
-      if (response.statusCode == 200) return response;
-      await response.stream.drain();
-      return _transparentPngResponse(request);
-    } on http.ClientException {
-      return _transparentPngResponse(request);
-    } catch (_) {
-      return _transparentPngResponse(request);
-    }
-  }
-
-  http.StreamedResponse _transparentPngResponse(http.BaseRequest request) {
-    return http.StreamedResponse(
-      Stream<List<int>>.value(_transparentPng),
-      200,
-      contentLength: _transparentPng.length,
-      request: request,
-      headers: const {'content-type': 'image/png'},
-    );
-  }
-
-  @override
-  void close() {
-    _inner.close();
   }
 }

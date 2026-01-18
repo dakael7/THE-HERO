@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
@@ -346,7 +347,83 @@ class OfferDetailScreen extends ConsumerWidget {
     }.toList();
     final soldCount = offer.orderCount;
     final viewsCount = offer.viewCount;
-    const weight = 0.5;
+    final location = offer.itemLocationSnapshot;
+    final Widget? locationWidget = location == null
+        ? null
+        : Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.place_outlined,
+                    size: 18,
+                    color: textGray600,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Ubicación del producto',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: textGray900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          location.fullAddress,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: textGray600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Lat: ${location.latitude.toStringAsFixed(5)}, Lng: ${location.longitude.toStringAsFixed(5)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: textGray600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  height: 180,
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: LatLng(location.latitude, location.longitude),
+                      zoom: 15,
+                    ),
+                    markers: {
+                      Marker(
+                        markerId: const MarkerId('offer_location'),
+                        position: LatLng(location.latitude, location.longitude),
+                      ),
+                    },
+                    zoomControlsEnabled: false,
+                    myLocationButtonEnabled: false,
+                    myLocationEnabled: false,
+                    rotateGesturesEnabled: false,
+                    tiltGesturesEnabled: false,
+                    zoomGesturesEnabled: false,
+                    scrollGesturesEnabled: false,
+                    liteModeEnabled: true,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          );
     final sellerProfileAsync = ref.watch(userByIdProvider(offer.heroId));
     final sellerName = sellerProfileAsync.maybeWhen(
       data: (user) => user?.fullName ?? 'Vendedor',
@@ -579,6 +656,7 @@ class OfferDetailScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
+          if (locationWidget != null) ...[locationWidget],
           Row(
             children: [
               const Icon(
@@ -806,7 +884,7 @@ class OfferDetailScreen extends ConsumerWidget {
                       name: offer.title,
                       condition: offer.condition.displayName,
                       price: offer.price,
-                      weight: weight,
+                      weight: offer.weight,
                       imageUrl: offer.coverImageUrl,
                     );
               },

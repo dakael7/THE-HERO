@@ -16,7 +16,6 @@ import '../views/buyer_catalog_screen.dart';
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
 
-/// Delegate para el header colapsable con logo, notificación y barra de búsqueda
 class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
   final double expandedHeight;
   final double collapsedHeight;
@@ -138,7 +137,6 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
             ),
           ),
 
-          // Barra de búsqueda fija en la parte inferior del header
           Positioned(
             left: paddingNormal,
             right: paddingNormal,
@@ -157,7 +155,6 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-/// Widget del header con logo, notificación y buscador
 class HeroHeader extends ConsumerStatefulWidget {
   final VoidCallback? onSearchChanged;
   final VoidCallback? onSearchTap;
@@ -575,12 +572,9 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
       _panelController.reverse();
     }
 
-    final statusBarHeight = MediaQuery.of(context).padding.top;
-    final screenHeight = MediaQuery.of(context).size.height;
     final isMobile = ResponsiveUtils.isMobile(context);
 
-    final basePadding = isMobile ? 10.0 : 12.0;
-    final topPadding = statusBarHeight + basePadding;
+    final topPadding = isMobile ? 8.0 : 12.0;
 
     return Container(
       color: backgroundGray50,

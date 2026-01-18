@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -5,11 +6,14 @@ import 'dart:typed_data';
 
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../data/providers/repository_providers.dart';
+import '../../../../../domain/entities/address.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../../domain/entities/offer_condition.dart';
 import '../../../../../features/offers/presentation/providers/offers_provider.dart';
 import '../../../../../features/shared/profile/presentation/providers/profile_provider.dart';
+import '../../../../../core/config/env.dart';
+import 'location_picker_screen.dart';
 
 class OfferFormScreen extends ConsumerStatefulWidget {
   final Offer? initialOffer;
@@ -27,6 +31,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   final _priceController = TextEditingController();
   final _stockController = TextEditingController();
   final _weightController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _latController = TextEditingController();
+  final _lngController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
 
   static const _currency = 'CLP';
@@ -37,6 +44,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   OfferCondition _condition = OfferCondition.newProduct;
   bool _isSaving = false;
   bool _publishNow = false;
+  String _weightUnit = 'kg';
+  final String _placesApiKey = Env.placesApiKey;
 
   static const _categories = <String>[
     'Electrónicos',
@@ -68,6 +77,14 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         _coverAsset = offer.coverImageUrl;
       }
       _publishNow = offer.status == OfferStatus.active;
+
+      // Prefill ubicación desde la oferta si existe snapshot
+      final snapshot = offer.itemLocationSnapshot;
+      if (snapshot != null) {
+        _addressController.text = snapshot.fullAddress;
+        _latController.text = snapshot.geopoint.latitude.toStringAsFixed(6);
+        _lngController.text = snapshot.geopoint.longitude.toStringAsFixed(6);
+      }
     }
   }
 
@@ -131,7 +148,44 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     _priceController.dispose();
     _stockController.dispose();
     _weightController.dispose();
+    _addressController.dispose();
+    _latController.dispose();
+    _lngController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openMapPicker() async {
+    if (_placesApiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Falta configurar PLACES_API_KEY'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      return;
+    }
+    final currentLat = double.tryParse(_latController.text.trim());
+    final currentLng = double.tryParse(_lngController.text.trim());
+    final result = await Navigator.of(context).push<MapLocationResult>(
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          apiKey: _placesApiKey,
+          initialLatitude: currentLat,
+          initialLongitude: currentLng,
+          initialAddress: _addressController.text.trim().isNotEmpty
+              ? _addressController.text.trim()
+              : null,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _addressController.text = result.address;
+        _latController.text = result.latitude.toStringAsFixed(6);
+        _lngController.text = result.longitude.toStringAsFixed(6);
+      });
+    }
   }
 
   String _buildKeywords(String title, String category) {
@@ -150,6 +204,44 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       return;
     }
     final user = userAsync.value!;
+
+    Address? _buildLocationSnapshot() {
+      final addressText = _addressController.text.trim();
+      if (addressText.isNotEmpty) {
+        final lat = double.tryParse(_latController.text.trim());
+        final lng = double.tryParse(_lngController.text.trim());
+
+        if (_publishNow && (lat == null || lng == null)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content:
+                  Text('Ingresa latitud y longitud válidas para publicar'),
+              backgroundColor: Color(0xFFDC2626),
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return null;
+        }
+
+        if (lat != null && lng != null) {
+          return Address(
+            fullAddress: addressText,
+            geopoint: GeoPoint(lat, lng),
+            locationCheck: true,
+          );
+        }
+
+        // Permitir guardar en borrador con geos vacíos (0,0)
+        return Address(
+          fullAddress: addressText,
+          geopoint: const GeoPoint(0, 0),
+          locationCheck: false,
+        );
+      }
+
+      // fallback: dirección del usuario
+      return user.address;
+    }
 
     // Validar imagen de portada si se intenta publicar
     if (_publishNow) {
@@ -178,7 +270,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     final now = DateTime.now();
     final price = double.tryParse(_priceController.text.trim()) ?? 0;
     final stock = int.tryParse(_stockController.text.trim()) ?? 0;
-    final weight = double.tryParse(_weightController.text.trim()) ?? 0.5;
+    final weightInput = double.tryParse(_weightController.text.trim()) ?? 0.5;
+    final weight = _weightUnit == 'g' ? (weightInput / 1000) : weightInput;
 
     // Mantener cantidad vendida al editar: reserved = stockInicial - disponible
     int availableQty = stock;
@@ -219,6 +312,19 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                       ? <String>[coverImageUrl]
                       : const <String>[]));
 
+      final locationSnapshot = _buildLocationSnapshot();
+      if (_publishNow && locationSnapshot == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Agrega una ubicación válida para publicar'),
+            backgroundColor: Color(0xFFDC2626),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        setState(() => _isSaving = false);
+        return;
+      }
+
       final offer = Offer(
         offerId: widget.initialOffer?.offerId ?? '',
         heroId: user.id,
@@ -243,6 +349,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         publishedAt: publishedAt,
         viewCount: widget.initialOffer?.viewCount ?? 0,
         orderCount: widget.initialOffer?.orderCount ?? 0,
+        itemLocationId: widget.initialOffer?.itemLocationId,
+        itemLocationSnapshot: locationSnapshot,
       );
 
       if (isEdit) {
@@ -316,7 +424,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                     controller: _titleController,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
-                      hintText: 'Ej: iPhone 13 Pro',
+                      hintText: 'Título del producto',
                       helperText: 'Sé claro y específico (mín. 4 caracteres)',
                     ),
                     validator: (value) {
@@ -415,7 +523,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                           ),
                           decoration: const InputDecoration(
                             hintText: '0.5',
-                            helperText: 'Peso del producto en kilogramos',
+                            helperText: 'Peso del producto',
                           ),
                           validator: (value) {
                             final parsed = double.tryParse(value ?? '');
@@ -428,8 +536,121 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(child: SizedBox()),
+                    SizedBox(
+                      width: 90,
+                      child: _FormFieldWrapper(
+                        label: 'Unidad',
+                        child: DropdownButtonFormField<String>(
+                          value: _weightUnit,
+                          items: const [
+                            DropdownMenuItem(value: 'kg', child: Text('kg')),
+                            DropdownMenuItem(value: 'g', child: Text('g')),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setState(() => _weightUnit = v);
+                          },
+                        ),
+                      ),
+                    ),
                   ],
+                ),
+
+                const _SectionTitle(title: 'Ubicación del producto'),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: backgroundGray50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: borderGray100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Usaremos esta ubicación para calcular la tarifa y el retiro/envío.',
+                        style: TextStyle(color: textGray700, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _isSaving ? null : _openMapPicker,
+                            icon: const Icon(Icons.map_outlined),
+                            label: const Text('Elegir en mapa'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryOrange,
+                              foregroundColor: backgroundWhite,
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _isSaving
+                                ? null
+                                : () {
+                                    final userAsync = ref.read(profileProvider);
+                                    final user = userAsync.value;
+                                    if (user?.address != null) {
+                                      final addr = user!.address!;
+                                      setState(() {
+                                        _addressController.text = addr.fullAddress;
+                                        _latController.text =
+                                            addr.geopoint.latitude.toStringAsFixed(6);
+                                        _lngController.text =
+                                            addr.geopoint.longitude.toStringAsFixed(6);
+                                      });
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'No tienes una dirección guardada en tu perfil',
+                                          ),
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  },
+                            icon: const Icon(Icons.home_outlined),
+                            label: const Text('Usar dirección del perfil'),
+                          ),
+                          TextButton.icon(
+                            onPressed: _isSaving
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _addressController.clear();
+                                      _latController.clear();
+                                      _lngController.clear();
+                                    });
+                                  },
+                            icon: const Icon(Icons.clear),
+                            label: const Text('Limpiar'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _FormFieldWrapper(
+                        label: 'Dirección de retiro/envío',
+                        child: TextFormField(
+                          controller: _addressController,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            hintText: 'Dirección de retiro/envío',
+                            helperText:
+                                'Elige en el mapa o usa tu dirección guardada',
+                          ),
+                          validator: (value) {
+                            if (_publishNow && (value == null || value.trim().isEmpty)) {
+                              return 'Requerido para publicar';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 Row(
                   children: [

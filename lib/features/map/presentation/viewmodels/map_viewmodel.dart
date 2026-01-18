@@ -1,15 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
+
+import '../../../../domain/entities/offer.dart';
 import '../../../../domain/usecases/get_current_location_usecase.dart';
-import '../state/map_state.dart';
+import '../../../../domain/providers/offers_usecase_providers.dart';
 import '../providers/map_providers.dart';
+import '../state/map_state.dart';
 
 class MapViewModel extends Notifier<MapState> {
-  late final GetCurrentLocationUseCase getCurrentLocation;
+  StreamSubscription<List<Offer>>? _offersSub;
+  List<Offer> _cachedOffers = [];
 
   @override
   MapState build() {
-    getCurrentLocation = ref.read(getCurrentLocationUseCaseProvider);
+    ref.onDispose(() => _offersSub?.cancel());
     return const MapState();
   }
 
@@ -18,6 +24,7 @@ class MapViewModel extends Notifier<MapState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
+      final getCurrentLocation = ref.read(getCurrentLocationUseCaseProvider);
       final location = await getCurrentLocation();
 
       state = state.copyWith(
@@ -27,8 +34,8 @@ class MapViewModel extends Notifier<MapState> {
         isLoading: false,
       );
 
-      // Load nearby products
-      await _loadNearbyProducts();
+      // Load nearby offers
+      await _subscribeToOffers();
     } on LocationServiceDisabledException {
       state = state.copyWith(
         isLoading: false,
@@ -49,32 +56,51 @@ class MapViewModel extends Notifier<MapState> {
   }
 
   /// Load products within search radius
-  Future<void> _loadNearbyProducts() async {
-    // TODO: Implement when product repository has location support
-    // For now, using mock data
-    final mockProducts = _getMockProducts();
+  Future<void> _subscribeToOffers() async {
+    await _offersSub?.cancel();
 
-    // Calculate distances
-    final productsWithDistance = mockProducts.map((product) {
-      if (state.userLocation != null) {
-        final distance = const Distance().as(
-          LengthUnit.Meter,
-          LatLng(state.userLocation!.latitude, state.userLocation!.longitude),
-          product.location,
-        );
-        return product.copyWith(distanceFromUser: distance);
-      }
-      return product;
-    }).toList();
+    final offersUseCase = ref.read(getActiveOffersUseCaseProvider);
 
-    // Sort by distance
-    productsWithDistance.sort((a, b) {
+    _offersSub = offersUseCase.execute(limit: 120).listen((offers) {
+      _cachedOffers = offers;
+      _recomputeNearby();
+    });
+  }
+
+  void _recomputeNearby() {
+    if (state.userLocation == null) return;
+    final userLatLng = LatLng(state.userLocation!.latitude, state.userLocation!.longitude);
+
+    final products = _cachedOffers
+        .where((offer) => offer.itemLocationSnapshot != null)
+        .map((offer) {
+          final snap = offer.itemLocationSnapshot!;
+          final loc = LatLng(snap.latitude, snap.longitude);
+          final distance = const Distance().as(
+            LengthUnit.Meter,
+            userLatLng,
+            loc,
+          );
+          return MapProduct(
+            id: offer.offerId,
+            name: offer.title,
+            category: offer.category,
+            price: offer.price,
+            location: loc,
+            distanceFromUser: distance,
+            imageUrl: offer.coverImageUrl,
+          );
+        })
+        .where((mp) => mp.distanceFromUser == null || mp.distanceFromUser! <= state.searchRadius)
+        .toList();
+
+    products.sort((a, b) {
       if (a.distanceFromUser == null) return 1;
       if (b.distanceFromUser == null) return -1;
       return a.distanceFromUser!.compareTo(b.distanceFromUser!);
     });
 
-    state = state.copyWith(nearbyProducts: productsWithDistance);
+    state = state.copyWith(nearbyProducts: products);
   }
 
   /// Select a product on the map
@@ -90,7 +116,7 @@ class MapViewModel extends Notifier<MapState> {
   /// Update search radius and reload products
   void updateSearchRadius(double radius) {
     state = state.copyWith(searchRadius: radius);
-    _loadNearbyProducts();
+    _recomputeNearby();
   }
 
   /// Update map center when user pans
@@ -117,50 +143,4 @@ class MapViewModel extends Notifier<MapState> {
     }
   }
 
-  /// Mock products for testing
-  /// TODO: Replace with actual product repository
-  List<MapProduct> _getMockProducts() {
-    if (state.userLocation == null) return [];
-
-    final userLat = state.userLocation!.latitude;
-    final userLng = state.userLocation!.longitude;
-
-    return [
-      MapProduct(
-        id: '1',
-        name: 'Bicicleta de montaña',
-        category: 'Deportes',
-        price: 150000,
-        location: LatLng(userLat + 0.01, userLng + 0.01),
-      ),
-      MapProduct(
-        id: '2',
-        name: 'Laptop HP',
-        category: 'Electrónica',
-        price: 350000,
-        location: LatLng(userLat - 0.005, userLng + 0.008),
-      ),
-      MapProduct(
-        id: '3',
-        name: 'Sofá 3 puestos',
-        category: 'Muebles',
-        price: 200000,
-        location: LatLng(userLat + 0.008, userLng - 0.005),
-      ),
-      MapProduct(
-        id: '4',
-        name: 'iPhone 12',
-        category: 'Electrónica',
-        price: 400000,
-        location: LatLng(userLat - 0.01, userLng - 0.01),
-      ),
-      MapProduct(
-        id: '5',
-        name: 'Mesa de comedor',
-        category: 'Muebles',
-        price: 120000,
-        location: LatLng(userLat + 0.015, userLng),
-      ),
-    ];
-  }
 }
