@@ -42,13 +42,13 @@ class ProductCard extends ConsumerWidget {
         builder: (context, constraints) {
           final isMobile = ResponsiveUtils.isMobile(context);
           final maxWidth = constraints.maxWidth;
-          final rawImageSize = isMobile ? maxWidth * 0.28 : maxWidth * 0.22;
-          final imageSize = rawImageSize.clamp(100.0, 200.0);
+          final rawImageSize = isMobile ? maxWidth * 0.34 : maxWidth * 0.26;
+          final imageSize = rawImageSize.clamp(120.0, 220.0);
           final padding = ResponsiveUtils.responsivePadding(
             context,
-            mobilePadding: paddingNormal,
-            tabletPadding: 20.0,
-            desktopPadding: 24.0,
+            mobilePadding: paddingNormal - 2,
+            tabletPadding: 18.0,
+            desktopPadding: 22.0,
           );
           final nameFontSize = ResponsiveUtils.responsiveFontSize(
             context,
@@ -113,48 +113,53 @@ class ProductCard extends ConsumerWidget {
                       ),
                     ],
                   ),
+                  clipBehavior: Clip.antiAlias,
                   child: Builder(
                     builder: (context) {
-                      if (imageUrl == null) {
+                      final resolved = imageUrl?.trim() ?? '';
+
+                      if (resolved.isEmpty) {
                         return const Center(
                           child: Icon(
                             Icons.image,
                             color: textGray600,
-                            size: 48,
+                            size: 40,
                           ),
                         );
                       }
 
-                      final resolved = imageUrl!.trim();
-                      if (resolved.isEmpty) {
-                        return const Center(
+                      final isAsset = resolved.startsWith('assets/');
+
+                      Widget imageWidget;
+                      if (isAsset) {
+                        imageWidget = Image.asset(resolved, fit: BoxFit.cover);
+                      } else {
+                        imageWidget = Image.network(
+                          resolved,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) {
+                            return const Center(
+                              child: Icon(
+                                Icons.image_not_supported_outlined,
+                                color: textGray600,
+                                size: 42,
+                              ),
+                            );
+                          },
+                        );
+                      }
+
+                      return AspectRatio(
+                        aspectRatio: 1,
+                        child: FittedBox(
+                          fit: BoxFit.cover,
+                          clipBehavior: Clip.hardEdge,
                           child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.4,
-                              color: primaryOrange,
-                            ),
+                            width: imageSize,
+                            height: imageSize,
+                            child: imageWidget,
                           ),
-                        );
-                      }
-
-                      if (resolved.startsWith('assets/')) {
-                        return Image.asset(resolved, fit: BoxFit.cover);
-                      }
-
-                      return Image.network(
-                        resolved,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) {
-                          return const Center(
-                            child: Icon(
-                              Icons.image_not_supported_outlined,
-                              color: textGray600,
-                              size: 42,
-                            ),
-                          );
-                        },
+                        ),
                       );
                     },
                   ),
@@ -185,7 +190,9 @@ class ProductCard extends ConsumerWidget {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              'Publicado por: ${sellerName ?? 'Juan Pérez'}',
+                              sellerName != null && sellerName!.trim().isNotEmpty
+                                  ? 'Publicado por: ${sellerName!}'
+                                  : 'Publicado por: vendedor',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: textGray600,

@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/config/env.dart';
 import '../../../features/shared/profile/presentation/providers/profile_provider.dart';
+import '../../../features/shared/profile/presentation/views/location_picker_screen.dart';
+import '../../../domain/entities/user.dart';
 import 'cart_provider.dart';
 import 'cart_summary_provider.dart';
 import 'order_builder.dart';
@@ -20,14 +23,76 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _instructionsController = TextEditingController();
+  static const _defaultCountryCode = '+56 ';
+  bool _prefilled = false;
+  ProviderSubscription<AsyncValue<User?>>? _profileSub;
 
   @override
   void dispose() {
+    _profileSub?.close();
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
     _instructionsController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prefillFromProfile());
+    _profileSub = ref.listenManual<AsyncValue<User?>>(profileProvider, (previous, next) {
+      if (next.hasValue && !_prefilled) {
+        _prefillFromProfile(next.value);
+      }
+    });
+  }
+
+  void _prefillFromProfile([User? provided]) {
+    final user = provided ?? ref.read(profileProvider).value;
+    if (user == null) return;
+
+    if (_nameController.text.trim().isEmpty) {
+      _nameController.text = user.fullName;
+    }
+    if (_phoneController.text.trim().isEmpty) {
+      final phone = user.phoneNumber;
+      _phoneController.text = phone.isNotEmpty ? phone : _defaultCountryCode;
+    }
+    if (_addressController.text.trim().isEmpty && user.address != null) {
+      _addressController.text = user.address!.fullAddress;
+    }
+    _prefilled = true;
+  }
+
+  Future<void> _openMapPicker() async {
+    final apiKey = Env.placesApiKey;
+    if (apiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Falta configurar PLACES_API_KEY'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final result = await Navigator.of(context).push<MapLocationResult>(
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          apiKey: apiKey,
+          initialAddress: _addressController.text.trim().isNotEmpty
+              ? _addressController.text.trim()
+              : null,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _addressController.text = result.address;
+      });
+    }
   }
 
   void _proceedToPayment() {
@@ -161,7 +226,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     controller: _nameController,
                     decoration: const InputDecoration(
                       labelText: 'Nombre completo',
-                      hintText: 'Juan Pérez',
                       prefixIcon: Icon(Icons.person_outline),
                     ),
                     validator: (value) {
@@ -176,7 +240,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     controller: _phoneController,
                     decoration: const InputDecoration(
                       labelText: 'Teléfono',
-                      hintText: '+56 9 1234 5678',
+                      hintText: 'Incluye código país',
                       prefixIcon: Icon(Icons.phone_outlined),
                     ),
                     keyboardType: TextInputType.phone,
@@ -190,10 +254,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _addressController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Dirección',
-                      hintText: 'Calle 123, Depto 456, Comuna',
-                      prefixIcon: Icon(Icons.location_on_outlined),
+                      hintText: 'Escribe o elige en el mapa',
+                      prefixIcon: const Icon(Icons.location_on_outlined),
+                      suffixIcon: IconButton(
+                        onPressed: _openMapPicker,
+                        icon: const Icon(Icons.map_outlined),
+                        tooltip: 'Elegir en mapa',
+                      ),
                     ),
                     maxLines: 2,
                     validator: (value) {
@@ -206,7 +275,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _openMapPicker,
+                      icon: const Icon(Icons.place_outlined),
+                      label: const Text('Elegir dirección con Google Maps'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _instructionsController,
                     decoration: const InputDecoration(

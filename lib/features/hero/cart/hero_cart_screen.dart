@@ -25,25 +25,32 @@ class HeroCartScreen extends ConsumerWidget {
         backgroundColor: primaryYellow,
         foregroundColor: textGray900,
         elevation: 0,
-        title: const Text(
-          'Mi carrito',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
+        title: Row(
+          children: [
+            const Icon(Icons.shopping_bag_outlined, color: textGray900),
+            const SizedBox(width: 8),
+            const Text(
+              'Mi carrito',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: backgroundWhite,
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Text(
                 '$totalItems artículo${totalItems == 1 ? '' : 's'}',
                 style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
                   color: textGray900,
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       body: cartItems.isEmpty
           ? _buildEmptyState(context)
@@ -53,7 +60,7 @@ class HeroCartScreen extends ConsumerWidget {
                   child: ListView.separated(
                     padding: const EdgeInsets.all(16),
                     itemCount: cartItems.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    separatorBuilder: (_, __) => const SizedBox(height: 14),
                     itemBuilder: (context, index) {
                       final item = cartItems[index];
                       return _CartItemTile(item: item);
@@ -69,68 +76,94 @@ class HeroCartScreen extends ConsumerWidget {
                       top: 4,
                       bottom: 12,
                     ),
-                    decoration: const BoxDecoration(
+                    decoration: BoxDecoration(
                       color: backgroundWhite,
-                      boxShadow: [
+                      boxShadow: const [
                         BoxShadow(
                           color: Color(0x14000000),
-                          blurRadius: 12,
-                          offset: Offset(0, -4),
+                          blurRadius: 18,
+                          offset: Offset(0, -6),
                         ),
                       ],
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Resumen de pago',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: textGray900,
+                        Row(
+                          children: const [
+                            Icon(Icons.receipt_long, color: textGray700, size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              'Resumen de pago',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: textGray900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFFF2E5), Color(0xFFFFFFFF)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: borderGray100),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildSummaryRow(
-                          'Subtotal (Donación):',
-                          '\$${summary.subtotal.toStringAsFixed(0)}',
-                          fontSize: 13,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildSummaryRow(
-                          'Envío (Bicicleta):',
-                          '\$${summary.shippingCost.toStringAsFixed(0)}',
-                          fontSize: 13,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildSummaryRow(
-                          'Comisión de servicio:',
-                          '\$${summary.serviceFee.toStringAsFixed(0)}',
-                          fontSize: 13,
-                        ),
-                        const SizedBox(height: 10),
-                        _buildSummaryRow(
-                          'Impuestos (IVA 19%):',
-                          '\$${summary.tax.toStringAsFixed(0)}',
-                          fontSize: 13,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Container(height: 1, color: borderGray100),
-                        ),
-                        _buildSummaryRow(
-                          'Total:',
-                          '\$${summary.total.toStringAsFixed(0)}',
-                          isBold: true,
-                          fontSize: 17,
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          '* Peso total: ${summary.totalWeight.toStringAsFixed(2)} kg',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: textGray600,
-                            fontStyle: FontStyle.italic,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          child: Column(
+                            children: [
+                              _buildSummaryRow(
+                                'Subtotal (Donación):',
+                                _formatPrice(summary.subtotal),
+                                fontSize: 13,
+                              ),
+                              const SizedBox(height: 8),
+                              _buildSummaryRow(
+                                'Envío (Bicicleta):',
+                                _formatPrice(summary.shippingCost),
+                                fontSize: 13,
+                              ),
+                              const SizedBox(height: 8),
+                              _buildSummaryRow(
+                                'Comisión de servicio:',
+                                _formatPrice(summary.serviceFee),
+                                fontSize: 13,
+                              ),
+                              const SizedBox(height: 8),
+                              _buildSummaryRow(
+                                'Impuestos (IVA 19%):',
+                                _formatPrice(summary.tax),
+                                fontSize: 13,
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                child: Container(height: 1, color: borderGray100),
+                              ),
+                              _buildSummaryRow(
+                                'Total:',
+                                _formatPrice(summary.total),
+                                isBold: true,
+                                fontSize: 17,
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '* Peso total: ${summary.totalWeight.toStringAsFixed(2)} kg',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: textGray600,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -209,20 +242,24 @@ class HeroCartScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: const [
-            Icon(Icons.shopping_cart_outlined, size: 72, color: textGray600),
-            SizedBox(height: 16),
+            CircleAvatar(
+              radius: 42,
+              backgroundColor: Color(0xFFFFF2E5),
+              child: Icon(Icons.shopping_cart_outlined, size: 40, color: primaryOrange),
+            ),
+            SizedBox(height: 18),
             Text(
               'Tu carrito está vacío',
               style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
                 color: textGray900,
               ),
               textAlign: TextAlign.center,
             ),
             SizedBox(height: 8),
             Text(
-              'Agrega productos desde la pantalla principal para verlos aquí.',
+              'Explora productos y agrega los que te interesen para verlos aquí.',
               style: TextStyle(fontSize: 14, color: textGray600),
               textAlign: TextAlign.center,
             ),
@@ -240,6 +277,10 @@ class _CartItemTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final image = item.imageUrl.trim();
+    final isAsset = image.startsWith('assets/');
+    final hasImage = image.isNotEmpty;
+
     return Container(
       decoration: BoxDecoration(
         color: backgroundWhite,
@@ -247,81 +288,155 @@ class _CartItemTile extends ConsumerWidget {
         boxShadow: [
           BoxShadow(
             color: textGray900.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-        leading: Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: borderGray100,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
             borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(Icons.image, color: textGray600, size: 28),
-        ),
-        title: Text(
-          item.name,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-            color: textGray900,
-          ),
-        ),
-        subtitle: Text(
-          item.condition,
-          style: const TextStyle(fontSize: 14, color: textGray600),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline, size: 24),
-              color: textGray600,
-              onPressed: () {
-                ref.read(cartProvider.notifier).removeOne(item);
-              },
+            child: Container(
+              width: 66,
+              height: 66,
+              color: borderGray100,
+              child: !hasImage
+                  ? const Icon(Icons.image, color: textGray600)
+                  : isAsset
+                      ? Image.asset(image, fit: BoxFit.cover)
+                      : Image.network(
+                          image,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.image, color: textGray600),
+                        ),
             ),
-            Text(
-              '${item.quantity}',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-                color: textGray900,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: textGray900,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  item.condition,
+                  style: const TextStyle(fontSize: 13, color: textGray600),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: borderGray100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '\$${item.price.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          color: textGray900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '${item.weight.toStringAsFixed(2)} kg',
+                      style: const TextStyle(fontSize: 12, color: textGray600),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _QtyButton(
+                    icon: Icons.remove,
+                    color: textGray600,
+                    onTap: () => ref.read(cartProvider.notifier).removeOne(item),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      '${item.quantity}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: textGray900,
+                      ),
+                    ),
+                  ),
+                  _QtyButton(
+                    icon: Icons.add,
+                    color: primaryOrange,
+                    onTap: () => ref.read(cartProvider.notifier).addItem(
+                          offerId: item.offerId,
+                          name: item.name,
+                          condition: item.condition,
+                          price: item.price,
+                          weight: item.weight,
+                          imageUrl: item.imageUrl,
+                        ),
+                  ),
+                ],
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline, size: 24),
-              color: primaryOrange,
-              onPressed: () {
-                ref
-                    .read(cartProvider.notifier)
-                    .addItem(
-                      offerId: item.offerId,
-                      name: item.name,
-                      condition: item.condition,
-                      price: item.price,
-                      weight: item.weight,
-                      imageUrl: item.imageUrl,
-                    );
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 22),
-              color: textGray600,
-              onPressed: () {
-                ref.read(cartProvider.notifier).removeItem(item);
-              },
-            ),
-          ],
-        ),
+              const SizedBox(height: 6),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: textGray600,
+                onPressed: () => ref.read(cartProvider.notifier).removeItem(item),
+                tooltip: 'Eliminar',
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
+}
+
+class _QtyButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QtyButton({required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: color, size: 18),
+      ),
+    );
+  }
+}
+
+String _formatPrice(double value) {
+  return '\u001e${value.toStringAsFixed(0)}'.replaceFirst('\u001e', r'$');
 }

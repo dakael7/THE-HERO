@@ -128,14 +128,11 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
             return CustomScrollView(
               controller: _scrollController,
               slivers: [
-                // 1. Header colapsable
                 HeroHeader(onSearchExpandedChanged: _onSearchExpandedChanged),
 
-                // 2. Contenido condicional
                 if (_isSearchExpanded)
                   const SliverFillRemaining(child: HeroSearchContent())
                 else
-                  // Cuerpo desplazable normal
                   SliverList(
                     delegate: SliverChildListDelegate([
                       const SizedBox(height: paddingNormal),
