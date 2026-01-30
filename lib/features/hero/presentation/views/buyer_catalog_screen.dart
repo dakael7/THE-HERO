@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/weight_utils.dart';
 import '../../../../domain/entities/offer.dart';
 import '../../../../domain/entities/offer_condition.dart';
 import '../../../../domain/entities/user.dart';
@@ -666,7 +667,7 @@ class OfferDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                'Peso: ${offer.weight} kg',
+                'Peso: ${formatWeightKg(offer.weight)}',
                 style: const TextStyle(fontSize: 13, color: textGray600),
               ),
             ],

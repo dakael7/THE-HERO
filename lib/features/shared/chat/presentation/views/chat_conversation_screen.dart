@@ -73,14 +73,27 @@ class _ChatConversationScreenState
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.chat.type == ChatType.heroRider
-        ? 'Chat con Rider'
-        : 'Chat con Vendedor';
+    final contextLabel = (widget.chat.orderId != null && widget.chat.orderId!.isNotEmpty)
+        ? 'Orden ${widget.chat.orderId}'
+        : (widget.chat.offerId != null && widget.chat.offerId!.isNotEmpty)
+            ? 'Oferta ${widget.chat.offerId}'
+            : (widget.chat.type == ChatType.heroRider ? 'Chat con Rider' : 'Chat con Vendedor');
+    final typeLabel = widget.chat.type == ChatType.heroRider ? 'Rider' : 'Vendedor';
 
     return Scaffold(
       backgroundColor: backgroundGray50,
       appBar: AppBar(
-        title: Text(title),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(contextLabel),
+            const SizedBox(height: 2),
+            Text(
+              typeLabel,
+              style: const TextStyle(fontSize: 12, color: textGray600),
+            ),
+          ],
+        ),
         backgroundColor: primaryYellow,
         foregroundColor: textGray900,
       ),
@@ -160,12 +173,12 @@ class _ChatConversationScreenState
                             ),
                             decoration: BoxDecoration(
                               color: isMe
-                                  ? primaryOrange.withOpacity(0.12)
+                                  ? primaryOrange.withValues(alpha: 0.12)
                                   : backgroundWhite,
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: isMe
-                                    ? primaryOrange.withOpacity(0.18)
+                                    ? primaryOrange.withValues(alpha: 0.18)
                                     : borderGray100,
                               ),
                             ),

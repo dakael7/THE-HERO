@@ -42,7 +42,7 @@ class HelpCenterScreen extends ConsumerWidget {
               border: Border.all(color: borderGray100, width: 1),
               boxShadow: [
                 BoxShadow(
-                  color: textGray900.withOpacity(0.06),
+                  color: textGray900.withValues(alpha: 0.06),
                   blurRadius: 12,
                   offset: const Offset(0, 6),
                 ),
@@ -54,7 +54,7 @@ class HelpCenterScreen extends ConsumerWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: primaryOrange.withOpacity(0.12),
+                    color: primaryOrange.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: const Icon(Icons.support_agent, color: primaryOrange),
@@ -169,7 +169,7 @@ class _HelpTile extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: primaryOrange.withOpacity(0.12),
+                    color: primaryOrange.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(icon, color: primaryOrange),

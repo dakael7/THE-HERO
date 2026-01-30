@@ -10,10 +10,13 @@ import '../../../../../domain/entities/address.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../../domain/entities/offer_condition.dart';
+import '../../../../../domain/entities/pickup_schedule.dart';
+import '../../../../../domain/entities/concierge_info.dart';
 import '../../../../../features/offers/presentation/providers/offers_provider.dart';
 import '../../../../../features/shared/profile/presentation/providers/profile_provider.dart';
 import '../../../../../core/config/env.dart';
 import 'location_picker_screen.dart';
+import '../widgets/pickup_schedule_selector.dart';
 
 class OfferFormScreen extends ConsumerStatefulWidget {
   final Offer? initialOffer;
@@ -42,10 +45,15 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   Uint8List? _coverImageBytes;
   String? _coverImageFileName;
   OfferCondition _condition = OfferCondition.newProduct;
+  bool? _isInGoodState;
+  bool? _worksCorrectly;
   bool _isSaving = false;
   bool _publishNow = false;
   String _weightUnit = 'kg';
   final String _placesApiKey = Env.placesApiKey;
+  PickupSchedule? _pickupSchedule;
+  bool _useConcierge = false;
+  ConciergeInfo? _conciergeInfo;
 
   static const _categories = <String>[
     'Electrónicos',
@@ -73,6 +81,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       _weightController.text = offer.weight.toStringAsFixed(2);
       _category = offer.category;
       _condition = offer.condition;
+      _isInGoodState = offer.isInGoodState;
+      _worksCorrectly = offer.worksCorrectly;
       if (offer.coverImageUrl.isNotEmpty) {
         _coverAsset = offer.coverImageUrl;
       }
@@ -193,6 +203,45 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     return parts.join('|');
   }
 
+  Widget _buildYesNoOption({
+    required String label,
+    required bool selected,
+    required bool yes,
+    required VoidCallback onTap,
+  }) {
+    final borderColor = selected ? primaryOrange : borderGray100;
+    final icon = yes ? Icons.check_circle_outline : Icons.cancel_outlined;
+
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          decoration: BoxDecoration(
+            color: backgroundWhite,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: selected ? 2 : 1),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 34, color: textGray600),
+              const SizedBox(height: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: textGray900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _save() async {
     final userAsync = ref.read(profileProvider);
     if (!userAsync.hasValue || userAsync.value == null) {
@@ -214,8 +263,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         if (_publishNow && (lat == null || lng == null)) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content:
-                  Text('Ingresa latitud y longitud válidas para publicar'),
+              content: Text('Ingresa latitud y longitud válidas para publicar'),
               backgroundColor: Color(0xFFDC2626),
               duration: Duration(seconds: 3),
             ),
@@ -245,6 +293,19 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
 
     // Validar imagen de portada si se intenta publicar
     if (_publishNow) {
+      if (_isInGoodState == null || _worksCorrectly == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Responde si está en buen estado y si funciona correctamente',
+            ),
+            backgroundColor: Color(0xFFDC2626),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
       final hasCoverImage =
           _coverImageBytes != null ||
           (_coverAsset.trim().isNotEmpty &&
@@ -332,6 +393,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         description: _descriptionController.text.trim(),
         category: _category,
         condition: _condition,
+        isInGoodState: _isInGoodState,
+        worksCorrectly: _worksCorrectly,
         price: price,
         currency: _currency,
         stock: stock,
@@ -541,7 +604,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                       child: _FormFieldWrapper(
                         label: 'Unidad',
                         child: DropdownButtonFormField<String>(
-                          value: _weightUnit,
+                          initialValue: _weightUnit,
                           items: const [
                             DropdownMenuItem(value: 'kg', child: Text('kg')),
                             DropdownMenuItem(value: 'g', child: Text('g')),
@@ -595,14 +658,21 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                                     if (user?.address != null) {
                                       final addr = user!.address!;
                                       setState(() {
-                                        _addressController.text = addr.fullAddress;
-                                        _latController.text =
-                                            addr.geopoint.latitude.toStringAsFixed(6);
-                                        _lngController.text =
-                                            addr.geopoint.longitude.toStringAsFixed(6);
+                                        _addressController.text =
+                                            addr.fullAddress;
+                                        _latController.text = addr
+                                            .geopoint
+                                            .latitude
+                                            .toStringAsFixed(6);
+                                        _lngController.text = addr
+                                            .geopoint
+                                            .longitude
+                                            .toStringAsFixed(6);
                                       });
                                     } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text(
                                             'No tienes una dirección guardada en tu perfil',
@@ -642,7 +712,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                                 'Elige en el mapa o usa tu dirección guardada',
                           ),
                           validator: (value) {
-                            if (_publishNow && (value == null || value.trim().isEmpty)) {
+                            if (_publishNow &&
+                                (value == null || value.trim().isEmpty)) {
                               return 'Requerido para publicar';
                             }
                             return null;
@@ -652,65 +723,115 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                     ],
                   ),
                 ),
+                _FormFieldWrapper(
+                  label: 'Categoría',
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _category,
+                    isExpanded: true,
+                    items: _categories
+                        .map(
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(
+                              c,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => _category = val);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '¿Está en buen estado?',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: textGray900,
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Row(
                   children: [
-                    Expanded(
-                      child: _FormFieldWrapper(
-                        label: 'Categoría',
-                        child: DropdownButtonFormField<String>(
-                          value: _category,
-                          isExpanded: true,
-                          items: _categories
-                              .map(
-                                (c) => DropdownMenuItem(
-                                  value: c,
-                                  child: Text(
-                                    c,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) setState(() => _category = val);
-                          },
-                        ),
-                      ),
+                    _buildYesNoOption(
+                      label: 'Sí',
+                      selected: _isInGoodState == true,
+                      yes: true,
+                      onTap: _isSaving
+                          ? () {}
+                          : () {
+                              setState(() => _isInGoodState = true);
+                            },
                     ),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: _FormFieldWrapper(
-                        label: 'Estado del producto',
-                        child: DropdownButtonFormField<OfferCondition>(
-                          value: _condition,
-                          isExpanded: true,
-                          items: const [
-                            DropdownMenuItem(
-                              value: OfferCondition.newProduct,
-                              child: Text('Nuevo'),
-                            ),
-                            DropdownMenuItem(
-                              value: OfferCondition.excellent,
-                              child: Text('Excelente estado'),
-                            ),
-                            DropdownMenuItem(
-                              value: OfferCondition.good,
-                              child: Text('Buen estado'),
-                            ),
-                            DropdownMenuItem(
-                              value: OfferCondition.used,
-                              child: Text('Usado'),
-                            ),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) setState(() => _condition = val);
-                          },
-                        ),
-                      ),
+                    _buildYesNoOption(
+                      label: 'No',
+                      selected: _isInGoodState == false,
+                      yes: false,
+                      onTap: _isSaving
+                          ? () {}
+                          : () {
+                              setState(() => _isInGoodState = false);
+                            },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  '¿Funciona correctamente?',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: textGray900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    _buildYesNoOption(
+                      label: 'Sí',
+                      selected: _worksCorrectly == true,
+                      yes: true,
+                      onTap: _isSaving
+                          ? () {}
+                          : () {
+                              setState(() => _worksCorrectly = true);
+                            },
+                    ),
+                    const SizedBox(width: 12),
+                    _buildYesNoOption(
+                      label: 'No',
+                      selected: _worksCorrectly == false,
+                      yes: false,
+                      onTap: _isSaving
+                          ? () {}
+                          : () {
+                              setState(() => _worksCorrectly = false);
+                            },
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
+
+                // Pickup Schedule Section
+                const _SectionTitle(title: 'Horarios de retiro'),
+                PickupScheduleSelector(
+                  initialSchedule: _pickupSchedule,
+                  initialUseConcierge: _useConcierge,
+                  initialConciergeInfo: _conciergeInfo,
+                  onChanged: (schedule, useConcierge, conciergeInfo) {
+                    setState(() {
+                      _pickupSchedule = schedule;
+                      _useConcierge = useConcierge;
+                      _conciergeInfo = conciergeInfo;
+                    });
+                  },
+                ),
+                const SizedBox(height: 4),
+
                 const _SectionTitle(title: 'Imagen y publicación'),
                 Row(
                   children: [
@@ -800,7 +921,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                     'Si está activado, la oferta quedará visible (estado activo).',
                     style: TextStyle(color: textGray700, fontSize: 12),
                   ),
-                  activeColor: primaryOrange,
+                  activeThumbColor: primaryOrange,
+                  activeTrackColor: primaryOrange.withValues(alpha: 0.12),
                   contentPadding: EdgeInsets.zero,
                 ),
                 const SizedBox(height: 12),

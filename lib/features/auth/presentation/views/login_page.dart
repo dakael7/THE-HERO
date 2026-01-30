@@ -42,22 +42,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       final wasAuthenticated = previous?.isAuthenticated ?? false;
       if (!wasAuthenticated && next.isAuthenticated) {
         Future.microtask(() async {
-          final currentUser =
-              await ref.read(getCurrentUserUseCaseProvider).execute();
+          final currentUser = await ref
+              .read(getCurrentUserUseCaseProvider)
+              .execute();
           if (!mounted) return;
           if (currentUser?.isRider == true) {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(
-                builder: (context) => const RiderHomeScreen(),
-              ),
+              MaterialPageRoute(builder: (context) => const RiderHomeScreen()),
             );
           } else {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(
-                builder: (context) => const HeroHomeScreen(),
-              ),
+              MaterialPageRoute(builder: (context) => const HeroHomeScreen()),
             );
           }
         });
@@ -97,7 +94,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 _buildWelcomeSection(context),
                 SizedBox(height: spacingLarge),
 
-                // Botón de selección de rol: HERO (Consumidor)
                 AnimatedRoleButton(
                   contentWidget: Image.asset(
                     'assets/wheel.png',
@@ -108,7 +104,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   description: 'Buscar artículos que necesites',
                   color: primaryOrange,
                   textColor: Colors.white,
-                  descriptionColor: Colors.white.withOpacity(0.9),
+                  descriptionColor: Colors.white.withValues(alpha: 0.9),
                   onTap: () {
                     Navigator.push(
                       context,
@@ -122,7 +118,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 ),
                 SizedBox(height: spacingMedium),
 
-                // Botón de selección de rol: RIDER (Repartidor)
                 AnimatedRoleButton(
                   contentWidget: Icon(
                     Icons.local_shipping,

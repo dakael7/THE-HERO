@@ -94,9 +94,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -125,15 +125,6 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showComingSoon(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(milliseconds: 1600),
       ),
     );
   }
@@ -377,7 +368,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
             border: Border.all(color: borderGray100),
             boxShadow: [
               BoxShadow(
-                color: textGray900.withOpacity(0.05),
+                color: textGray900.withValues(alpha: 0.05),
                 blurRadius: 18,
                 offset: const Offset(0, 10),
               ),
@@ -987,7 +978,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                     gradient: LinearGradient(
                                       colors: [
                                         primaryOrange,
-                                        primaryYellow.withOpacity(0.95),
+                                        primaryYellow.withValues(alpha: 0.95),
                                       ],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
@@ -995,7 +986,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                     borderRadius: BorderRadius.circular(22),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: primaryOrange.withOpacity(0.22),
+                                        color: primaryOrange.withValues(alpha: 0.22),
                                         blurRadius: 18,
                                         offset: const Offset(0, 10),
                                       ),
@@ -1079,8 +1070,8 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                                       .ellipsis,
                                                               style: TextStyle(
                                                                 color: backgroundWhite
-                                                                    .withOpacity(
-                                                                      0.92,
+                                                                    .withValues(
+                                                                      alpha: 0.92,
                                                                     ),
                                                                 fontSize:
                                                                     subtitleSize,
@@ -1205,7 +1196,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                   width: 76,
                                   height: 76,
                                   decoration: BoxDecoration(
-                                    color: primaryOrange.withOpacity(0.12),
+                                    color: primaryOrange.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(22),
                                   ),
                                   child: const Icon(

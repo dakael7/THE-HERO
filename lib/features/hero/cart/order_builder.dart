@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import '../../../domain/entities/order.dart';
-import '../../../domain/entities/order_item.dart';
 import '../../../domain/entities/order_pickup.dart';
 import '../../../domain/entities/order_delivery.dart';
 import '../../../domain/entities/order_requirements.dart';
@@ -8,6 +7,8 @@ import '../../../domain/entities/order_rider.dart';
 import '../../../domain/entities/order_timestamps.dart';
 import '../../../domain/entities/order_status.dart';
 import '../../../domain/entities/vehicle.dart';
+import '../../../domain/entities/pickup_schedule.dart';
+import '../../../domain/entities/concierge_info.dart';
 import 'cart_item.dart';
 import 'cart_summary_provider.dart';
 
@@ -28,6 +29,9 @@ class OrderBuilder {
     String pickupContactName = '',
     String pickupContactPhone = '',
     String pickupInstructions = '',
+    PickupSchedule? pickupSchedule,
+    bool useConcierge = false,
+    ConciergeInfo? conciergeInfo,
   }) {
     if (cartItems.isEmpty) {
       throw Exception('Cannot create order from empty cart');
@@ -93,6 +97,9 @@ class OrderBuilder {
       timestamps: timestamps,
       updatedAt: now,
       version: 1,
+      pickupSchedule: pickupSchedule,
+      useConcierge: useConcierge,
+      conciergeInfo: conciergeInfo,
     );
   }
 
@@ -103,6 +110,7 @@ class OrderBuilder {
     required String recipientPhone,
     firestore.GeoPoint? geo,
     String instructions = '',
+    bool deliverToReception = false,
   }) {
     return OrderDelivery(
       geo:
@@ -115,6 +123,7 @@ class OrderBuilder {
       recipientName: recipientName,
       recipientPhone: recipientPhone,
       instructions: instructions,
+      deliverToReception: deliverToReception,
     );
   }
 

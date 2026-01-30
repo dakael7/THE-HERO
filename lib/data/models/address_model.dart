@@ -13,17 +13,39 @@ class AddressModel {
   });
 
   factory AddressModel.fromJson(Map<String, dynamic> json) {
+    GeoPoint geopoint;
+
+    // Check if we have the new format (latitude/longitude as separate fields)
+    if (json.containsKey('latitude') && json.containsKey('longitude')) {
+      final lat = json['latitude'];
+      final lng = json['longitude'];
+      geopoint = GeoPoint(
+        lat is double ? lat : (lat as num).toDouble(),
+        lng is double ? lng : (lng as num).toDouble(),
+      );
+    }
+    // Otherwise use the old format (geopoint field)
+    else if (json.containsKey('geopoint')) {
+      geopoint = json['geopoint'] as GeoPoint? ?? const GeoPoint(0, 0);
+    }
+    // Fallback to default
+    else {
+      geopoint = const GeoPoint(0, 0);
+    }
+
     return AddressModel(
       fullAddress: json['fullAddress'] as String? ?? '',
-      geopoint: json['geopoint'] as GeoPoint? ?? const GeoPoint(0, 0),
+      geopoint: geopoint,
       locationCheck: json['locationCheck'] as bool? ?? false,
     );
   }
 
   Map<String, dynamic> toJson() {
+    // Serialize GeoPoint as separate latitude/longitude for local storage
     return {
       'fullAddress': fullAddress,
-      'geopoint': geopoint,
+      'latitude': geopoint.latitude,
+      'longitude': geopoint.longitude,
       'locationCheck': locationCheck,
     };
   }

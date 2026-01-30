@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod/riverpod.dart';
 
+import '../../../core/utils/weight_utils.dart';
 import 'cart_item.dart';
 
 class CartNotifier extends Notifier<List<CartItem>> {
@@ -17,6 +18,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
     required String imageUrl,
     double weight = 0.5,
   }) {
+    final weightKg = parseWeightKg(weight, fallbackKg: 0.5);
     final index = state.indexWhere((item) => item.offerId == offerId);
 
     if (index == -1) {
@@ -28,7 +30,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
           condition: condition,
           quantity: 1,
           price: price,
-          weight: weight,
+          weight: weightKg,
           imageUrl: imageUrl,
         ),
       ];

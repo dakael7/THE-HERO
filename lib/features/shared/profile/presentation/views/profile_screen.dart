@@ -14,7 +14,9 @@ import 'help_center_screen.dart';
 import 'my_products_screen.dart';
 import 'payment_methods_screen.dart';
 import 'previous_orders_screen.dart';
+import '../../../../hero/orders/presentation/views/hero_orders_screen.dart';
 import 'settings_screen.dart';
+import 'address_screen.dart';
 import '../../../../rider/presentation/views/rider_earnings_screen.dart';
 import '../../../../rider/presentation/views/rider_vehicle_info_screen.dart';
 import '../../../../rider/presentation/views/rider_delivery_history_screen.dart';
@@ -81,7 +83,7 @@ class ProfileScreen extends ConsumerWidget {
                       gradient: LinearGradient(
                         colors: [
                           primaryOrange,
-                          primaryYellow.withOpacity(0.95),
+                          primaryYellow.withValues(alpha: 0.95),
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -92,7 +94,7 @@ class ProfileScreen extends ConsumerWidget {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: primaryOrange.withOpacity(0.18),
+                          color: primaryOrange.withValues(alpha: 0.18),
                           blurRadius: 18,
                           offset: const Offset(0, 10),
                         ),
@@ -126,7 +128,7 @@ class ProfileScreen extends ConsumerWidget {
                           fontSize: 18,
                           shadows: [
                             Shadow(
-                              color: backgroundWhite.withOpacity(0.45),
+                              color: backgroundWhite.withValues(alpha: 0.45),
                               blurRadius: 8,
                               offset: const Offset(0, 1),
                             ),
@@ -164,7 +166,7 @@ class ProfileScreen extends ConsumerWidget {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: textGray900.withOpacity(0.06),
+                                  color: textGray900.withValues(alpha: 0.06),
                                   blurRadius: 18,
                                   offset: const Offset(0, 10),
                                 ),
@@ -408,6 +410,17 @@ class ProfileScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
             ProfileMenuTile(
+              icon: Icons.receipt_long,
+              title: 'Mis pedidos',
+              trailingText: '0',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HeroOrdersScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            ProfileMenuTile(
               icon: Icons.history,
               title: 'Pedidos anteriores',
               trailingText: '0',
@@ -439,6 +452,20 @@ class ProfileScreen extends ConsumerWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const PersonalDataScreen()),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          ProfileMenuTile(
+            icon: Icons.location_on_outlined,
+            title: 'Mi dirección',
+            trailingText: user.address?.fullAddress ?? 'No configurada',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AddressScreen(currentAddress: user.address),
+                ),
               );
             },
           ),
@@ -561,7 +588,7 @@ class _QuickActionButton extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: primaryOrange.withOpacity(0.12),
+                  color: primaryOrange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(icon, color: primaryOrange),

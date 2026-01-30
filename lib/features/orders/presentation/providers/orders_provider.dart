@@ -2,22 +2,60 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/entities/vehicle.dart';
 import '../../../../domain/providers/orders_usecase_providers.dart';
+import '../../../../data/providers/network_providers.dart';
 
-final myOrdersProvider = StreamProvider.family<List<Order>, String>((ref, heroId) {
+final myOrdersProvider = StreamProvider.family<List<Order>, String>((
+  ref,
+  heroId,
+) {
+  final auth = ref.watch(firebaseAuthProvider);
+  final currentUid = auth.currentUser?.uid;
+  if (currentUid == null || currentUid != heroId) {
+    return Stream.value(const []);
+  }
+
   final useCase = ref.read(getOrdersByHeroUseCaseProvider);
   return useCase.execute(heroId);
 });
 
-final riderOrdersProvider = StreamProvider.family<List<Order>, String>((ref, riderId) {
+final riderOrdersProvider = StreamProvider.family<List<Order>, String>((
+  ref,
+  riderId,
+) {
+  final auth = ref.watch(firebaseAuthProvider);
+  final currentUid = auth.currentUser?.uid;
+  if (currentUid == null || currentUid != riderId) {
+    return Stream.value(const []);
+  }
+
   final useCase = ref.read(getOrdersByRiderUseCaseProvider);
   return useCase.execute(riderId);
 });
 
 final availableOrdersProvider = StreamProvider.autoDispose
     .family<List<Order>, VehicleType>((ref, riderVehicleType) {
-  final useCase = ref.read(getAvailableOrdersUseCaseProvider);
-  return useCase.execute(riderVehicleType: riderVehicleType);
-});
+      final auth = ref.watch(firebaseAuthProvider);
+      if (auth.currentUser == null) {
+        print('⚠️ [AvailableOrders] No authenticated user');
+        return Stream.value(const []);
+      }
+
+      print(
+        '🔍 [AvailableOrders] Fetching orders for vehicle type: ${riderVehicleType.name}',
+      );
+      final useCase = ref.read(getAvailableOrdersUseCaseProvider);
+      return useCase.execute(riderVehicleType: riderVehicleType).map((orders) {
+        print(
+          '📦 [AvailableOrders] Received ${orders.length} orders from stream',
+        );
+        for (var order in orders) {
+          print(
+            '   - Order ${order.orderId}: status=${order.status.name}, vehicle=${order.requirements.requiredVehicle.name}',
+          );
+        }
+        return orders;
+      });
+    });
 
 class OrderNotifier extends Notifier<AsyncValue<Order?>> {
   @override
@@ -79,5 +117,5 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
 
 final orderNotifierProvider =
     NotifierProvider<OrderNotifier, AsyncValue<Order?>>(() {
-  return OrderNotifier();
-});
+      return OrderNotifier();
+    });

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/weight_utils.dart';
 import 'cart_item.dart';
 import 'cart_provider.dart';
 import 'cart_summary_provider.dart';
@@ -118,7 +119,7 @@ class HeroCartSheet extends ConsumerWidget {
                           controller: scrollController,
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                           itemCount: cartItems.length,
-                          separatorBuilder: (_, __) =>
+                          separatorBuilder: (_, _) =>
                               const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final item = cartItems[index];
@@ -164,10 +165,26 @@ class HeroCartSheet extends ConsumerWidget {
                             fontSize: 13,
                           ),
                           const SizedBox(height: 10),
-                          _buildSummaryRow(
-                            'Envío (Bicicleta):',
-                            '\$${summary.shippingCost.toStringAsFixed(0)}',
-                            fontSize: 13,
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildSummaryRow(
+                                'Envío:',
+                                '\$${summary.shippingCost.toStringAsFixed(0)}',
+                                fontSize: 13,
+                              ),
+                              if (summary.shippingBreakdown != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  summary.shippingBreakdown!,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: textGray600,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           const SizedBox(height: 10),
                           _buildSummaryRow(
@@ -193,7 +210,7 @@ class HeroCartSheet extends ConsumerWidget {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '* Peso total: ${summary.totalWeight.toStringAsFixed(2)} kg',
+                            '* Peso total: ${formatWeightKg(summary.totalWeight)}',
                             style: TextStyle(
                               fontSize: 11,
                               color: textGray600,
@@ -211,7 +228,7 @@ class HeroCartSheet extends ConsumerWidget {
                                   vertical: 16,
                                 ),
                                 elevation: 4,
-                                shadowColor: primaryOrange.withOpacity(0.4),
+                                shadowColor: primaryOrange.withValues(alpha: 0.4),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
@@ -291,7 +308,7 @@ class _CartItemTile extends ConsumerWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: textGray900.withOpacity(0.06),
+            color: textGray900.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

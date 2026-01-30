@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/utils/weight_utils.dart';
 import '../../domain/entities/offer.dart';
 import '../../domain/entities/offer_status.dart';
 import '../../domain/entities/offer_condition.dart';
 import 'address_model.dart';
+import 'pickup_schedule_model.dart';
+import 'concierge_info_model.dart';
 
 class OfferModel {
   final String offerId;
@@ -12,6 +15,8 @@ class OfferModel {
   final String description;
   final String category;
   final OfferCondition condition;
+  final bool? isInGoodState;
+  final bool? worksCorrectly;
   final double price;
   final String currency;
   final int stock;
@@ -30,6 +35,9 @@ class OfferModel {
   final int ratingCount;
   final String? itemLocationId;
   final AddressModel? itemLocationSnapshot;
+  final PickupScheduleModel? pickupSchedule;
+  final bool useConcierge;
+  final ConciergeInfoModel? conciergeInfo;
 
   OfferModel({
     required this.offerId,
@@ -38,6 +46,8 @@ class OfferModel {
     required this.description,
     required this.category,
     required this.condition,
+    this.isInGoodState,
+    this.worksCorrectly,
     required this.price,
     required this.currency,
     required this.stock,
@@ -56,6 +66,9 @@ class OfferModel {
     this.ratingCount = 0,
     this.itemLocationId,
     this.itemLocationSnapshot,
+    this.pickupSchedule,
+    this.useConcierge = false,
+    this.conciergeInfo,
   });
 
   factory OfferModel.fromJson(Map<String, dynamic> json) {
@@ -66,11 +79,16 @@ class OfferModel {
       description: json['description'] as String? ?? '',
       category: json['category'] as String? ?? '',
       condition: _stringToCondition(json['condition'] as String? ?? 'new'),
+      isInGoodState: json['isInGoodState'] as bool?,
+      worksCorrectly: json['worksCorrectly'] as bool?,
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] as String? ?? 'CLP',
       stock: json['stock'] as int? ?? 0,
       availableQty: json['availableQty'] as int? ?? 0,
-      weight: (json['weight'] as num?)?.toDouble() ?? 0.5,
+      weight: parseWeightKg(
+        json['weight'] is num ? (json['weight'] as num) : null,
+        fallbackKg: 0.5,
+      ),
       coverImageUrl: json['coverImageUrl'] as String? ?? '',
       imageUrls:
           (json['imageUrls'] as List<dynamic>?)
@@ -96,6 +114,17 @@ class OfferModel {
               json['itemLocationSnapshot'] as Map<String, dynamic>,
             )
           : null,
+      pickupSchedule: json['pickupSchedule'] != null
+          ? PickupScheduleModel.fromJson(
+              json['pickupSchedule'] as Map<String, dynamic>,
+            )
+          : null,
+      useConcierge: json['useConcierge'] as bool? ?? false,
+      conciergeInfo: json['conciergeInfo'] != null
+          ? ConciergeInfoModel.fromJson(
+              json['conciergeInfo'] as Map<String, dynamic>,
+            )
+          : null,
     );
   }
 
@@ -107,6 +136,8 @@ class OfferModel {
       'description': description,
       'category': category,
       'condition': _conditionToString(condition),
+      'isInGoodState': isInGoodState,
+      'worksCorrectly': worksCorrectly,
       'price': price,
       'currency': currency,
       'stock': stock,
@@ -125,6 +156,9 @@ class OfferModel {
       'ratingCount': ratingCount,
       'itemLocationId': itemLocationId,
       'itemLocationSnapshot': itemLocationSnapshot?.toJson(),
+      'pickupSchedule': pickupSchedule?.toJson(),
+      'useConcierge': useConcierge,
+      'conciergeInfo': conciergeInfo?.toJson(),
     };
   }
 
@@ -136,6 +170,8 @@ class OfferModel {
       description: description,
       category: category,
       condition: condition,
+      isInGoodState: isInGoodState,
+      worksCorrectly: worksCorrectly,
       price: price,
       currency: currency,
       stock: stock,
@@ -154,6 +190,9 @@ class OfferModel {
       ratingCount: ratingCount,
       itemLocationId: itemLocationId,
       itemLocationSnapshot: itemLocationSnapshot?.toEntity(),
+      pickupSchedule: pickupSchedule?.toEntity(),
+      useConcierge: useConcierge,
+      conciergeInfo: conciergeInfo?.toEntity(),
     );
   }
 
@@ -165,6 +204,8 @@ class OfferModel {
       description: entity.description,
       category: entity.category,
       condition: entity.condition,
+      isInGoodState: entity.isInGoodState,
+      worksCorrectly: entity.worksCorrectly,
       price: entity.price,
       currency: entity.currency,
       stock: entity.stock,
@@ -186,6 +227,13 @@ class OfferModel {
       itemLocationId: entity.itemLocationId,
       itemLocationSnapshot: entity.itemLocationSnapshot != null
           ? AddressModel.fromEntity(entity.itemLocationSnapshot!)
+          : null,
+      pickupSchedule: entity.pickupSchedule != null
+          ? PickupScheduleModel.fromEntity(entity.pickupSchedule!)
+          : null,
+      useConcierge: entity.useConcierge,
+      conciergeInfo: entity.conciergeInfo != null
+          ? ConciergeInfoModel.fromEntity(entity.conciergeInfo!)
           : null,
     );
   }

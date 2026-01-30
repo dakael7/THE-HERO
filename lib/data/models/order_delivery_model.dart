@@ -7,6 +7,7 @@ class OrderDeliveryModel {
   final String recipientName;
   final String recipientPhone;
   final String instructions;
+  final bool deliverToReception;
 
   OrderDeliveryModel({
     required this.geo,
@@ -14,6 +15,7 @@ class OrderDeliveryModel {
     required this.recipientName,
     required this.recipientPhone,
     this.instructions = '',
+    this.deliverToReception = false,
   });
 
   factory OrderDeliveryModel.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,7 @@ class OrderDeliveryModel {
       recipientName: json['recipientName'] as String? ?? '',
       recipientPhone: json['recipientPhone'] as String? ?? '',
       instructions: json['instructions'] as String? ?? '',
+      deliverToReception: json['deliverToReception'] as bool? ?? false,
     );
   }
 
@@ -33,6 +36,7 @@ class OrderDeliveryModel {
       'recipientName': recipientName,
       'recipientPhone': recipientPhone,
       'instructions': instructions,
+      'deliverToReception': deliverToReception,
     };
   }
 
@@ -43,6 +47,7 @@ class OrderDeliveryModel {
       recipientName: recipientName,
       recipientPhone: recipientPhone,
       instructions: instructions,
+      deliverToReception: deliverToReception,
     );
   }
 
@@ -53,6 +58,7 @@ class OrderDeliveryModel {
       recipientName: entity.recipientName,
       recipientPhone: entity.recipientPhone,
       instructions: entity.instructions,
+      deliverToReception: entity.deliverToReception,
     );
   }
 }

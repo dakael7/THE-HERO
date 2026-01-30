@@ -101,7 +101,7 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
                         width: 180,
                         height: 180,
                         decoration: BoxDecoration(
-                          color: backgroundWhite.withOpacity(0.12),
+                          color: backgroundWhite.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -113,7 +113,7 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
                         width: 110,
                         height: 110,
                         decoration: BoxDecoration(
-                          color: primaryOrange.withOpacity(0.10),
+                          color: primaryOrange.withValues(alpha: 0.10),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -259,9 +259,9 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: backgroundWhite.withOpacity(0.15),
+        color: backgroundWhite.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: backgroundWhite.withOpacity(0.3), width: 1),
+        border: Border.all(color: backgroundWhite.withValues(alpha: 0.3), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -319,7 +319,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: textGray900.withOpacity(0.08),
+                  color: textGray900.withValues(alpha: 0.08),
                   blurRadius: 12,
                   offset: const Offset(0, 3),
                 ),
@@ -347,7 +347,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
                   border: Border.all(color: primaryYellow, width: 2),
                   boxShadow: [
                     BoxShadow(
-                      color: primaryOrange.withOpacity(0.4),
+                      color: primaryOrange.withValues(alpha: 0.4),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -380,33 +380,33 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: _isSearchExpanded
-              ? primaryOrange.withOpacity(0.3)
-              : backgroundWhite.withOpacity(0.5),
+              ? primaryOrange.withValues(alpha: 0.3)
+              : backgroundWhite.withValues(alpha: 0.5),
           width: _isSearchExpanded ? 2 : 1,
         ),
         boxShadow: _isSearchExpanded
             ? [
                 BoxShadow(
-                  color: primaryOrange.withOpacity(0.2),
+                  color: primaryOrange.withValues(alpha: 0.2),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                   spreadRadius: 2,
                 ),
                 BoxShadow(
-                  color: textGray900.withOpacity(0.08),
+                  color: textGray900.withValues(alpha: 0.08),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
               ]
             : [
                 BoxShadow(
-                  color: textGray900.withOpacity(0.1),
+                  color: textGray900.withValues(alpha: 0.1),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                   spreadRadius: 1,
                 ),
                 BoxShadow(
-                  color: primaryOrange.withOpacity(0.1),
+                  color: primaryOrange.withValues(alpha: 0.1),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -423,7 +423,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
             decoration: InputDecoration(
               hintText: 'Buscar productos...',
               hintStyle: TextStyle(
-                color: textGray600.withOpacity(0.7),
+                color: textGray600.withValues(alpha: 0.7),
                 fontSize: 15,
               ),
               prefixIcon: const Icon(
@@ -457,7 +457,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
                         margin: const EdgeInsets.all(8),
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: primaryOrange.withOpacity(0.1),
+                          color: primaryOrange.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Icon(
@@ -627,7 +627,7 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                             Expanded(
                               child: ListView.separated(
                                 itemCount: searchState.recentQueries.length,
-                                separatorBuilder: (_, __) =>
+                                separatorBuilder: (_, _) =>
                                     const SizedBox(height: 8),
                                 itemBuilder: (context, index) {
                                   final query =
@@ -749,7 +749,7 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                         return ListView.separated(
                           key: const ValueKey('results'),
                           itemCount: offers.length,
-                          separatorBuilder: (_, __) =>
+                          separatorBuilder: (_, _) =>
                               const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final offer = offers[index];
@@ -768,7 +768,7 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: textGray900.withOpacity(0.05),
+                                      color: textGray900.withValues(alpha: 0.05),
                                       blurRadius: 8,
                                       offset: const Offset(0, 2),
                                     ),

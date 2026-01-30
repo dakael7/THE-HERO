@@ -11,8 +11,7 @@ class RegisterRiderScreen extends ConsumerStatefulWidget {
   final String? email;
   final User? existingUser;
 
-  const RegisterRiderScreen({Key? key, this.email, this.existingUser})
-    : super(key: key);
+  const RegisterRiderScreen({super.key, this.email, this.existingUser});
 
   @override
   ConsumerState<RegisterRiderScreen> createState() =>
@@ -107,7 +106,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     return InputDecoration(
       labelText: labelText,
       hintText: hintText,
-      hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
+      hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(
@@ -156,7 +155,6 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
 
-    // Escuchar cambios en authNotifierProvider dentro del build
     ref.listen(authNotifierProvider, (previous, next) {
       if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -474,18 +472,18 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                         },
                                   style: ButtonStyle(
                                     backgroundColor:
-                                        MaterialStateProperty.resolveWith<
+                                        WidgetStateProperty.resolveWith<
                                           Color
-                                        >((Set<MaterialState> states) {
+                                        >((Set<WidgetState> states) {
                                           if (states.contains(
-                                            MaterialState.pressed,
+                                            WidgetState.pressed,
                                           )) {
                                             return const Color(0xFFE67300);
                                           }
                                           return primaryOrange;
                                         }),
                                     shape:
-                                        MaterialStateProperty.all<
+                                        WidgetStateProperty.all<
                                           RoundedRectangleBorder
                                         >(
                                           RoundedRectangleBorder(

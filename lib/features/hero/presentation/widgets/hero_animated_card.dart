@@ -46,26 +46,24 @@ class AnimatedHeroCard extends StatelessWidget {
     );
     final iconSize = ResponsiveUtils.isMobile(context) ? 36.0 : 40.0;
     final Color accentColor = this.accentColor ?? primaryOrange;
-    final Color cardBackgroundColor = backgroundColor ?? backgroundWhite;
-    final Color iconBackgroundColor =
-        this.iconBackgroundColor ?? accentColor.withOpacity(0.12);
+    final Color _ = backgroundColor ?? backgroundWhite;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        splashColor: accentColor.withOpacity(0.08),
+        splashColor: accentColor.withValues(alpha: 0.08),
         child: Container(
           padding: EdgeInsets.symmetric(
             horizontal: padding,
             vertical: padding * 0.8,
           ),
           decoration: BoxDecoration(
-            color: accentColor.withOpacity(0.08),
+            color: accentColor.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: accentColor.withOpacity(0.15),
+              color: accentColor.withValues(alpha: 0.15),
               width: 1.5,
             ),
           ),
@@ -75,7 +73,7 @@ class AnimatedHeroCard extends StatelessWidget {
               Container(
                 padding: EdgeInsets.all(padding * 0.5),
                 decoration: BoxDecoration(
-                  color: accentColor.withOpacity(0.12),
+                  color: accentColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: accentColor, size: iconSize),

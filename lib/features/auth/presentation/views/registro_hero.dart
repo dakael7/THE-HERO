@@ -108,7 +108,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
       decoration: InputDecoration(
         labelText: labelText,
         hintText: hintText,
-        hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
+        hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(

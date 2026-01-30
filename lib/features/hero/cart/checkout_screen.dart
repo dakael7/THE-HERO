@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/config/env.dart';
+import '../../../core/utils/weight_utils.dart';
 import '../../../features/shared/profile/presentation/providers/profile_provider.dart';
 import '../../../features/shared/profile/presentation/views/location_picker_screen.dart';
 import '../../../domain/entities/user.dart';
+import '../../../domain/providers/orders_usecase_providers.dart';
 import 'cart_provider.dart';
 import 'cart_summary_provider.dart';
 import 'order_builder.dart';
+import 'waiting_rider_screen.dart';
 
 class CheckoutScreen extends ConsumerStatefulWidget {
   const CheckoutScreen({super.key});
@@ -25,6 +29,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _instructionsController = TextEditingController();
   static const _defaultCountryCode = '+56 ';
   bool _prefilled = false;
+  bool _isSubmitting = false;
+  bool _deliverToReception = false;
+  double? _deliveryLatitude;
+  double? _deliveryLongitude;
   ProviderSubscription<AsyncValue<User?>>? _profileSub;
 
   @override
@@ -41,7 +49,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _prefillFromProfile());
-    _profileSub = ref.listenManual<AsyncValue<User?>>(profileProvider, (previous, next) {
+    _profileSub = ref.listenManual<AsyncValue<User?>>(profileProvider, (
+      previous,
+      next,
+    ) {
       if (next.hasValue && !_prefilled) {
         _prefillFromProfile(next.value);
       }
@@ -91,11 +102,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     if (result != null && mounted) {
       setState(() {
         _addressController.text = result.address;
+        _deliveryLatitude = result.latitude;
+        _deliveryLongitude = result.longitude;
       });
+
+      print(
+        '📍 [Checkout] Delivery coordinates captured: ${result.latitude}, ${result.longitude}',
+      );
     }
   }
 
-  void _proceedToPayment() {
+  Future<void> _proceedToPayment() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -114,63 +131,194 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
+    if (_isSubmitting) return;
+
+    setState(() => _isSubmitting = true);
+
     try {
-      // Create delivery info
+      // Create delivery info with coordinates
       final delivery = OrderBuilder.createDelivery(
         address: _addressController.text.trim(),
         recipientName: _nameController.text.trim(),
         recipientPhone: _phoneController.text.trim(),
         instructions: _instructionsController.text.trim(),
+        deliverToReception: _deliverToReception,
+        geo: _deliveryLatitude != null && _deliveryLongitude != null
+            ? firestore.GeoPoint(_deliveryLatitude!, _deliveryLongitude!)
+            : null,
       );
 
-      // Build order locally
+      print(
+        '📦 [Checkout] Creating order with delivery geo: ${delivery.geo.latitude}, ${delivery.geo.longitude}',
+      );
+
+      final pickupGeo =
+          user.address?.latitude != null && user.address?.longitude != null
+          ? firestore.GeoPoint(user.address!.latitude, user.address!.longitude)
+          : null;
+
+      final pickupAddress =
+          user.address?.fullAddress ?? 'Dirección del vendedor';
+
+      print(
+        '📍 [Checkout] Pickup geo from profile: ${pickupGeo?.latitude}, ${pickupGeo?.longitude}',
+      );
+
+      final firstItem = cartItems.first;
+      final pickupSchedule = firstItem.pickupSchedule;
+      final useConcierge = firstItem.useConcierge;
+      final conciergeInfo = firstItem.conciergeInfo;
+
       final order = OrderBuilder.buildOrderFromCart(
         cartItems: cartItems,
         cartSummary: summary,
         heroId: user.id,
         delivery: delivery,
-        pickupAddress:
-            'Dirección del vendedor', // TODO: Get from seller profile
+        pickupAddress: pickupAddress,
+        pickupGeo: pickupGeo,
         pickupContactName: user.fullName,
-        pickupContactPhone: '', // TODO: Add phone field to User entity
+        pickupContactPhone: user.phoneNumber,
+        pickupSchedule: pickupSchedule,
+        useConcierge: useConcierge,
+        conciergeInfo: conciergeInfo,
       );
 
-      // TODO: In future, this will create payment intent and navigate to payment screen
-      // For now, just show a success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Orden creada localmente. Total: \$${order.amountTotal.toStringAsFixed(0)} CLP',
-          ),
-          duration: const Duration(milliseconds: 2500),
-          backgroundColor: Colors.green,
-        ),
-      );
+      final createOrderUseCase = ref.read(createOrderUseCaseProvider);
+      final createdOrder = await createOrderUseCase.execute(order);
 
-      // Debug: Print order details
-      debugPrint('=== ORDER PREVIEW ===');
-      debugPrint('Order ID: ${order.orderId}');
-      debugPrint('Hero ID: ${order.heroId}');
-      debugPrint('Items: ${order.items.length}');
-      debugPrint('Subtotal: \$${order.subtotal}');
-      debugPrint('Delivery Fee: \$${order.deliveryFee}');
-      debugPrint('Service Fee: \$${order.serviceFee}');
-      debugPrint('Tax: \$${order.tax}');
-      debugPrint('Total: \$${order.amountTotal}');
-      debugPrint('Weight: ${order.requirements.weightKg} kg');
-      debugPrint('Required Vehicle: ${order.requirements.requiredVehicle}');
-      debugPrint('Delivery Address: ${order.delivery.addressSnapshot}');
-      debugPrint('Recipient: ${order.delivery.recipientName}');
+      final updateStatusUseCase = ref.read(updateOrderStatusUseCaseProvider);
+      await updateStatusUseCase.execute(createdOrder.orderId, 'queued');
+
+      if (mounted) {
+        await _showPaymentResult(
+          success: true,
+          message:
+              'Orden creada y publicada. Total: \$${createdOrder.amountTotal.toStringAsFixed(0)} CLP',
+        );
+
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => WaitingRiderScreen(orderId: createdOrder.orderId),
+            ),
+          );
+        }
+      }
+
+      debugPrint('=== ORDER CREATED ===');
+      debugPrint('Order ID: ${createdOrder.orderId}');
+      debugPrint('Hero ID: ${createdOrder.heroId}');
+      debugPrint('Items: ${createdOrder.items.length}');
+      debugPrint('Subtotal: \$${createdOrder.subtotal}');
+      debugPrint('Delivery Fee: \$${createdOrder.deliveryFee}');
+      debugPrint('Service Fee: \$${createdOrder.serviceFee}');
+      debugPrint('Tax: \$${createdOrder.tax}');
+      debugPrint('Total: \$${createdOrder.amountTotal}');
+      debugPrint('Weight: ${createdOrder.requirements.weightKg} kg');
+      debugPrint(
+        'Required Vehicle: ${createdOrder.requirements.requiredVehicle}',
+      );
+      debugPrint('Delivery Address: ${createdOrder.delivery.addressSnapshot}');
+      debugPrint(
+        'Delivery Geo: ${createdOrder.delivery.geo.latitude}, ${createdOrder.delivery.geo.longitude}',
+      );
+      debugPrint('Pickup Address: ${createdOrder.pickup.addressSnapshot}');
+      debugPrint(
+        'Pickup Geo: ${createdOrder.pickup.geo.latitude}, ${createdOrder.pickup.geo.longitude}',
+      );
+      debugPrint('Recipient: ${createdOrder.delivery.recipientName}');
+      debugPrint('Status set to queued for riders');
       debugPrint('====================');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al crear orden: $e'),
-          duration: const Duration(milliseconds: 2500),
-          backgroundColor: Colors.red,
-        ),
+      await _showPaymentResult(
+        success: false,
+        message: 'Error al crear orden: $e',
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
+  }
+
+  Future<void> _showPaymentResult({
+    required bool success,
+    String? message,
+  }) async {
+    if (!mounted) return;
+
+    final color = success ? Colors.green : Colors.red;
+    final icon = success ? Icons.check_circle : Icons.error_rounded;
+    final title = success ? 'Compra exitosa' : 'Pago fallido';
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.7, end: 1.0),
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutBack,
+                  builder: (context, value, child) {
+                    return Transform.scale(
+                      scale: value,
+                      child: Opacity(opacity: value.clamp(0, 1), child: child),
+                    );
+                  },
+                  child: CircleAvatar(
+                    radius: 38,
+                    backgroundColor: color.withOpacity(0.12),
+                    child: Icon(icon, color: color, size: 48),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: textGray900,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                if (message != null)
+                  Text(
+                    message,
+                    style: const TextStyle(fontSize: 14, color: textGray700),
+                    textAlign: TextAlign.center,
+                  ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: color,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: Text(success ? 'Continuar' : 'Entendido'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -294,6 +442,29 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ),
                     maxLines: 2,
                   ),
+                  const SizedBox(height: 6),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: _deliverToReception,
+                    onChanged: _isSubmitting
+                        ? null
+                        : (val) {
+                            setState(() => _deliverToReception = val);
+                          },
+                    title: const Text(
+                      'Recibir en portería',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: textGray900,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Actívalo si quieres que el repartidor entregue en recepción/portería.',
+                      style: TextStyle(color: textGray600, fontSize: 12),
+                    ),
+                    activeThumbColor: primaryOrange,
+                    activeTrackColor: primaryOrange.withValues(alpha: 0.12),
+                  ),
                 ],
               ),
             ),
@@ -337,7 +508,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         ),
                       ),
                       Text(
-                        '${summary.totalWeight.toStringAsFixed(2)} kg',
+                        formatWeightKg(summary.totalWeight),
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -354,9 +525,28 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     '\$${summary.subtotal.toStringAsFixed(0)}',
                   ),
                   const SizedBox(height: 8),
-                  _buildSummaryRow(
-                    'Envío:',
-                    '\$${summary.shippingCost.toStringAsFixed(0)}',
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSummaryRow(
+                        'Envío:',
+                        '\$${summary.shippingCost.toStringAsFixed(0)}',
+                      ),
+                      if (summary.shippingBreakdown != null) ...[
+                        const SizedBox(height: 4),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            summary.shippingBreakdown!,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: textGray600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 8),
                   _buildSummaryRow(
@@ -401,7 +591,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _proceedToPayment,
+                onPressed: _isSubmitting ? null : _proceedToPayment,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryOrange,
                   foregroundColor: backgroundWhite,

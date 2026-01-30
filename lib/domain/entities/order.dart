@@ -5,6 +5,8 @@ import 'order_requirements.dart';
 import 'order_rider.dart';
 import 'order_timestamps.dart';
 import 'order_status.dart';
+import 'pickup_schedule.dart';
+import 'concierge_info.dart';
 
 class Order {
   final String orderId;
@@ -26,6 +28,9 @@ class Order {
   final String? canceledBy;
   final DateTime updatedAt;
   final int version;
+  final PickupSchedule? pickupSchedule;
+  final bool useConcierge;
+  final ConciergeInfo? conciergeInfo;
 
   Order({
     required this.orderId,
@@ -47,6 +52,9 @@ class Order {
     this.canceledBy,
     required this.updatedAt,
     this.version = 1,
+    this.pickupSchedule,
+    this.useConcierge = false,
+    this.conciergeInfo,
   });
 
   bool get isAssigned => rider.isAssigned;
@@ -76,6 +84,9 @@ class Order {
     String? canceledBy,
     DateTime? updatedAt,
     int? version,
+    PickupSchedule? pickupSchedule,
+    bool? useConcierge,
+    ConciergeInfo? conciergeInfo,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -97,6 +108,9 @@ class Order {
       canceledBy: canceledBy ?? this.canceledBy,
       updatedAt: updatedAt ?? this.updatedAt,
       version: version ?? this.version,
+      pickupSchedule: pickupSchedule ?? this.pickupSchedule,
+      useConcierge: useConcierge ?? this.useConcierge,
+      conciergeInfo: conciergeInfo ?? this.conciergeInfo,
     );
   }
 }

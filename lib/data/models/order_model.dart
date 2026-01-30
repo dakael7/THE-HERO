@@ -7,6 +7,8 @@ import 'order_delivery_model.dart';
 import 'order_requirements_model.dart';
 import 'order_rider_model.dart';
 import 'order_timestamps_model.dart';
+import 'pickup_schedule_model.dart';
+import 'concierge_info_model.dart';
 
 class OrderModel {
   final String orderId;
@@ -28,6 +30,9 @@ class OrderModel {
   final String? canceledBy;
   final firestore.Timestamp updatedAt;
   final int version;
+  final PickupScheduleModel? pickupSchedule;
+  final bool useConcierge;
+  final ConciergeInfoModel? conciergeInfo;
 
   OrderModel({
     required this.orderId,
@@ -49,14 +54,20 @@ class OrderModel {
     this.canceledBy,
     required this.updatedAt,
     this.version = 1,
+    this.pickupSchedule,
+    this.useConcierge = false,
+    this.conciergeInfo,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
     return OrderModel(
       orderId: json['orderId'] as String? ?? '',
       heroId: json['heroId'] as String? ?? '',
-      items: (json['items'] as List<dynamic>?)
-              ?.map((item) => OrderItemModel.fromJson(item as Map<String, dynamic>))
+      items:
+          (json['items'] as List<dynamic>?)
+              ?.map(
+                (item) => OrderItemModel.fromJson(item as Map<String, dynamic>),
+              )
               .toList() ??
           [],
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0.0,
@@ -65,16 +76,39 @@ class OrderModel {
       tax: (json['tax'] as num?)?.toDouble() ?? 0.0,
       amountTotal: (json['amountTotal'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] as String? ?? 'CLP',
-      pickup: OrderPickupModel.fromJson(json['pickup'] as Map<String, dynamic>? ?? {}),
-      delivery: OrderDeliveryModel.fromJson(json['delivery'] as Map<String, dynamic>? ?? {}),
-      requirements: OrderRequirementsModel.fromJson(json['requirements'] as Map<String, dynamic>? ?? {}),
-      rider: OrderRiderModel.fromJson(json['rider'] as Map<String, dynamic>? ?? {}),
+      pickup: OrderPickupModel.fromJson(
+        json['pickup'] as Map<String, dynamic>? ?? {},
+      ),
+      delivery: OrderDeliveryModel.fromJson(
+        json['delivery'] as Map<String, dynamic>? ?? {},
+      ),
+      requirements: OrderRequirementsModel.fromJson(
+        json['requirements'] as Map<String, dynamic>? ?? {},
+      ),
+      rider: OrderRiderModel.fromJson(
+        json['rider'] as Map<String, dynamic>? ?? {},
+      ),
       status: json['status'] as String? ?? 'created',
-      timestamps: OrderTimestampsModel.fromJson(json['timestamps'] as Map<String, dynamic>? ?? {}),
+      timestamps: OrderTimestampsModel.fromJson(
+        json['timestamps'] as Map<String, dynamic>? ?? {},
+      ),
       cancelReason: json['cancelReason'] as String?,
       canceledBy: json['canceledBy'] as String?,
-      updatedAt: json['updatedAt'] as firestore.Timestamp? ?? firestore.Timestamp.now(),
+      updatedAt:
+          json['updatedAt'] as firestore.Timestamp? ??
+          firestore.Timestamp.now(),
       version: json['version'] as int? ?? 1,
+      pickupSchedule: json['pickupSchedule'] != null
+          ? PickupScheduleModel.fromJson(
+              json['pickupSchedule'] as Map<String, dynamic>,
+            )
+          : null,
+      useConcierge: json['useConcierge'] as bool? ?? false,
+      conciergeInfo: json['conciergeInfo'] != null
+          ? ConciergeInfoModel.fromJson(
+              json['conciergeInfo'] as Map<String, dynamic>,
+            )
+          : null,
     );
   }
 
@@ -99,6 +133,9 @@ class OrderModel {
       'canceledBy': canceledBy,
       'updatedAt': updatedAt,
       'version': version,
+      'pickupSchedule': pickupSchedule?.toJson(),
+      'useConcierge': useConcierge,
+      'conciergeInfo': conciergeInfo?.toJson(),
     };
   }
 
@@ -123,6 +160,9 @@ class OrderModel {
       canceledBy: canceledBy,
       updatedAt: updatedAt.toDate(),
       version: version,
+      pickupSchedule: pickupSchedule?.toEntity(),
+      useConcierge: useConcierge,
+      conciergeInfo: conciergeInfo?.toEntity(),
     );
   }
 
@@ -130,7 +170,9 @@ class OrderModel {
     return OrderModel(
       orderId: entity.orderId,
       heroId: entity.heroId,
-      items: entity.items.map((item) => OrderItemModel.fromEntity(item)).toList(),
+      items: entity.items
+          .map((item) => OrderItemModel.fromEntity(item))
+          .toList(),
       subtotal: entity.subtotal,
       deliveryFee: entity.deliveryFee,
       serviceFee: entity.serviceFee,
@@ -147,6 +189,13 @@ class OrderModel {
       canceledBy: entity.canceledBy,
       updatedAt: firestore.Timestamp.fromDate(entity.updatedAt),
       version: entity.version,
+      pickupSchedule: entity.pickupSchedule != null
+          ? PickupScheduleModel.fromEntity(entity.pickupSchedule!)
+          : null,
+      useConcierge: entity.useConcierge,
+      conciergeInfo: entity.conciergeInfo != null
+          ? ConciergeInfoModel.fromEntity(entity.conciergeInfo!)
+          : null,
     );
   }
 

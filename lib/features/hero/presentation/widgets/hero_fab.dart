@@ -114,7 +114,7 @@ class _HeroFABState extends ConsumerState<HeroFAB>
             height: fabHeight,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: primaryOrange.withOpacity(0.2),
+              color: primaryOrange.withValues(alpha: 0.2),
             ),
             child: Container(
               decoration: BoxDecoration(
@@ -122,7 +122,7 @@ class _HeroFABState extends ConsumerState<HeroFAB>
                 color: primaryOrange,
                 boxShadow: [
                   BoxShadow(
-                    color: primaryOrange.withOpacity(0.4),
+                    color: primaryOrange.withValues(alpha: 0.4),
                     blurRadius: 8,
                     offset: const Offset(0, 4),
                   ),
@@ -133,10 +133,13 @@ class _HeroFABState extends ConsumerState<HeroFAB>
                   clipBehavior: Clip.none,
                   alignment: Alignment.center,
                   children: [
-                    Icon(
-                      Icons.shopping_cart_outlined,
-                      color: backgroundWhite,
-                      size: iconSize,
+                    SizedBox(
+                      width: iconSize * 2,
+                      height: iconSize * 2,
+                      child: Image.asset(
+                        'assets/wheel.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
                     if (itemCount > 0)
                       Positioned(

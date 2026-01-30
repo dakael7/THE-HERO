@@ -28,7 +28,7 @@ class ProfileStatsSection extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: textGray900.withOpacity(0.06),
+              color: textGray900.withValues(alpha: 0.06),
               blurRadius: 18,
               offset: const Offset(0, 10),
             ),

@@ -8,6 +8,8 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.util.Base64
+
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-Xlint:-options")
 }
@@ -26,6 +28,16 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    // Decode dart-defines to obtain GOOGLE_MAPS_API_KEY when passed via `flutter run --dart-define=...`
+    val dartDefines: Map<String, String> = (project.findProperty("dart-defines") as? String)
+        ?.split(',')
+        ?.map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
+        ?.associate { define: String ->
+            val parts = define.split('=', limit = 2)
+            parts[0] to parts.getOrElse(1) { "" }
+        }
+        ?: emptyMap<String, String>()
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.the_hero"
@@ -35,6 +47,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        manifestPlaceholders["MAPS_API_KEY"] =
+            dartDefines["GOOGLE_MAPS_API_KEY"]
+                ?: (project.findProperty("MAPS_API_KEY") as? String)
+                ?: ""
     }
 
     buildTypes {
@@ -42,7 +59,15 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 }
 

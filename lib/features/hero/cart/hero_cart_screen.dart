@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/weight_utils.dart';
 import 'cart_provider.dart';
 import 'cart_item.dart';
 import 'cart_summary_provider.dart';
@@ -60,7 +61,7 @@ class HeroCartScreen extends ConsumerWidget {
                   child: ListView.separated(
                     padding: const EdgeInsets.all(16),
                     itemCount: cartItems.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 14),
+                    separatorBuilder: (_, _) => const SizedBox(height: 14),
                     itemBuilder: (context, index) {
                       final item = cartItems[index];
                       return _CartItemTile(item: item);
@@ -85,14 +86,20 @@ class HeroCartScreen extends ConsumerWidget {
                           offset: Offset(0, -6),
                         ),
                       ],
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(18),
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: const [
-                            Icon(Icons.receipt_long, color: textGray700, size: 18),
+                            Icon(
+                              Icons.receipt_long,
+                              color: textGray700,
+                              size: 18,
+                            ),
                             SizedBox(width: 8),
                             Text(
                               'Resumen de pago',
@@ -115,7 +122,10 @@ class HeroCartScreen extends ConsumerWidget {
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(color: borderGray100),
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                           child: Column(
                             children: [
                               _buildSummaryRow(
@@ -124,10 +134,26 @@ class HeroCartScreen extends ConsumerWidget {
                                 fontSize: 13,
                               ),
                               const SizedBox(height: 8),
-                              _buildSummaryRow(
-                                'Envío (Bicicleta):',
-                                _formatPrice(summary.shippingCost),
-                                fontSize: 13,
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildSummaryRow(
+                                    'Envío:',
+                                    _formatPrice(summary.shippingCost),
+                                    fontSize: 13,
+                                  ),
+                                  if (summary.shippingBreakdown != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      summary.shippingBreakdown!,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: textGray600,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                               const SizedBox(height: 8),
                               _buildSummaryRow(
@@ -142,8 +168,13 @@ class HeroCartScreen extends ConsumerWidget {
                                 fontSize: 13,
                               ),
                               Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                child: Container(height: 1, color: borderGray100),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                                child: Container(
+                                  height: 1,
+                                  color: borderGray100,
+                                ),
                               ),
                               _buildSummaryRow(
                                 'Total:',
@@ -155,7 +186,7 @@ class HeroCartScreen extends ConsumerWidget {
                               Align(
                                 alignment: Alignment.centerLeft,
                                 child: Text(
-                                  '* Peso total: ${summary.totalWeight.toStringAsFixed(2)} kg',
+                                  '* Peso total: ${formatWeightKg(summary.totalWeight)}',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: textGray600,
@@ -175,7 +206,7 @@ class HeroCartScreen extends ConsumerWidget {
                               foregroundColor: backgroundWhite,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               elevation: 4,
-                              shadowColor: primaryOrange.withOpacity(0.4),
+                              shadowColor: primaryOrange.withValues(alpha: 0.4),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -245,7 +276,11 @@ class HeroCartScreen extends ConsumerWidget {
             CircleAvatar(
               radius: 42,
               backgroundColor: Color(0xFFFFF2E5),
-              child: Icon(Icons.shopping_cart_outlined, size: 40, color: primaryOrange),
+              child: Icon(
+                Icons.shopping_cart_outlined,
+                size: 40,
+                color: primaryOrange,
+              ),
             ),
             SizedBox(height: 18),
             Text(
@@ -287,7 +322,7 @@ class _CartItemTile extends ConsumerWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: textGray900.withOpacity(0.06),
+            color: textGray900.withValues(alpha: 0.06),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -306,12 +341,13 @@ class _CartItemTile extends ConsumerWidget {
               child: !hasImage
                   ? const Icon(Icons.image, color: textGray600)
                   : isAsset
-                      ? Image.asset(image, fit: BoxFit.cover)
-                      : Image.network(
-                          image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.image, color: textGray600),
-                        ),
+                  ? Image.asset(image, fit: BoxFit.cover)
+                  : Image.network(
+                      image,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) =>
+                          const Icon(Icons.image, color: textGray600),
+                    ),
             ),
           ),
           const SizedBox(width: 12),
@@ -338,7 +374,10 @@ class _CartItemTile extends ConsumerWidget {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: borderGray100,
                         borderRadius: BorderRadius.circular(12),
@@ -354,7 +393,7 @@ class _CartItemTile extends ConsumerWidget {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      '${item.weight.toStringAsFixed(2)} kg',
+                      formatWeightKg(item.weight),
                       style: const TextStyle(fontSize: 12, color: textGray600),
                     ),
                   ],
@@ -371,7 +410,8 @@ class _CartItemTile extends ConsumerWidget {
                   _QtyButton(
                     icon: Icons.remove,
                     color: textGray600,
-                    onTap: () => ref.read(cartProvider.notifier).removeOne(item),
+                    onTap: () =>
+                        ref.read(cartProvider.notifier).removeOne(item),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -387,7 +427,9 @@ class _CartItemTile extends ConsumerWidget {
                   _QtyButton(
                     icon: Icons.add,
                     color: primaryOrange,
-                    onTap: () => ref.read(cartProvider.notifier).addItem(
+                    onTap: () => ref
+                        .read(cartProvider.notifier)
+                        .addItem(
                           offerId: item.offerId,
                           name: item.name,
                           condition: item.condition,
@@ -402,7 +444,8 @@ class _CartItemTile extends ConsumerWidget {
               IconButton(
                 icon: const Icon(Icons.delete_outline, size: 20),
                 color: textGray600,
-                onPressed: () => ref.read(cartProvider.notifier).removeItem(item),
+                onPressed: () =>
+                    ref.read(cartProvider.notifier).removeItem(item),
                 tooltip: 'Eliminar',
               ),
             ],
@@ -418,7 +461,11 @@ class _QtyButton extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
-  const _QtyButton({required this.icon, required this.color, required this.onTap});
+  const _QtyButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -428,7 +475,7 @@ class _QtyButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
+          color: color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(icon, color: color, size: 18),

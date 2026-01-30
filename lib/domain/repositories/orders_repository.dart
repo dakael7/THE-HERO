@@ -7,7 +7,7 @@ abstract class OrdersRepository {
   Stream<List<Order>> getOrdersByHero(String heroId);
   Stream<List<Order>> getOrdersByRider(String riderId);
   Stream<List<Order>> getAvailableOrders({
-    required String requiredVehicle,
+    required List<String> requiredVehicles,
     int limit = 50,
   });
   Future<void> updateOrderStatus(String orderId, String status);

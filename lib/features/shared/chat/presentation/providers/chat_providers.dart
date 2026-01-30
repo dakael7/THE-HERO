@@ -7,7 +7,7 @@ import '../../../../../domain/entities/chat_message.dart';
 import '../../../../../domain/repositories/chat_repository.dart';
 
 final userChatsProvider = StreamProvider<List<Chat>>((ref) {
-  final auth = ref.read(firebaseAuthProvider);
+  final auth = ref.watch(firebaseAuthProvider);
   final user = auth.currentUser;
   if (user == null) {
     return Stream.value([]);
@@ -19,10 +19,10 @@ final userChatsProvider = StreamProvider<List<Chat>>((ref) {
 
 final chatMessagesProvider =
     StreamProvider.family<List<ChatMessage>, String>((ref, chatId) {
-  final auth = ref.read(firebaseAuthProvider);
+  final auth = ref.watch(firebaseAuthProvider);
   final user = auth.currentUser;
   if (user == null) {
-    return Stream.error(Exception('Usuario no autenticado'));
+    return Stream.value([]);
   }
   final repo = ref.read(chatRepositoryProvider);
   return repo.watchChatMessages(chatId, limit: 100);
@@ -30,7 +30,7 @@ final chatMessagesProvider =
 
 final chatActionsProvider = Provider<ChatActions>((ref) {
   final repo = ref.read(chatRepositoryProvider);
-  final auth = ref.read(firebaseAuthProvider);
+  final auth = ref.watch(firebaseAuthProvider);
   final uid = auth.currentUser?.uid;
   return ChatActions(repo: repo, currentUserId: uid);
 });

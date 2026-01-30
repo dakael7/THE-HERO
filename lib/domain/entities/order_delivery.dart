@@ -6,6 +6,7 @@ class OrderDelivery {
   final String recipientName;
   final String recipientPhone;
   final String instructions;
+  final bool deliverToReception;
 
   OrderDelivery({
     required this.geo,
@@ -13,6 +14,7 @@ class OrderDelivery {
     required this.recipientName,
     required this.recipientPhone,
     this.instructions = '',
+    this.deliverToReception = false,
   });
 
   OrderDelivery copyWith({
@@ -21,6 +23,7 @@ class OrderDelivery {
     String? recipientName,
     String? recipientPhone,
     String? instructions,
+    bool? deliverToReception,
   }) {
     return OrderDelivery(
       geo: geo ?? this.geo,
@@ -28,6 +31,7 @@ class OrderDelivery {
       recipientName: recipientName ?? this.recipientName,
       recipientPhone: recipientPhone ?? this.recipientPhone,
       instructions: instructions ?? this.instructions,
+      deliverToReception: deliverToReception ?? this.deliverToReception,
     );
   }
 }

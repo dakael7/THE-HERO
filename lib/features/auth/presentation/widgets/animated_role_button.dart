@@ -106,7 +106,7 @@ class _AnimatedRoleButtonState extends State<AnimatedRoleButton> {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black26.withOpacity(_isPressed ? 0.15 : 0.26),
+              color: Colors.black26.withValues(alpha: _isPressed ? 0.15 : 0.26),
               blurRadius: _isPressed ? 5 : 10,
               offset: Offset(0, _isPressed ? 2 : 5),
             ),

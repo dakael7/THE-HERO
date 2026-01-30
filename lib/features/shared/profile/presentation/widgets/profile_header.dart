@@ -24,7 +24,7 @@ class ProfileHeader extends StatelessWidget {
           border: Border.all(color: borderGray100, width: 1),
           boxShadow: [
             BoxShadow(
-              color: textGray900.withOpacity(0.08),
+              color: textGray900.withValues(alpha: 0.08),
               blurRadius: 18,
               offset: const Offset(0, 10),
             ),
@@ -40,14 +40,14 @@ class ProfileHeader extends StatelessWidget {
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
                   colors: [
-                    primaryOrange.withOpacity(0.25),
-                    primaryYellow.withOpacity(0.55),
+                    primaryOrange.withValues(alpha: 0.25),
+                    primaryYellow.withValues(alpha: 0.55),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 border: Border.all(
-                  color: primaryOrange.withOpacity(0.55),
+                  color: primaryOrange.withValues(alpha: 0.55),
                   width: 2,
                 ),
               ),
@@ -86,10 +86,10 @@ class ProfileHeader extends StatelessWidget {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: primaryOrange.withOpacity(0.10),
+                      color: primaryOrange.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(
-                        color: primaryOrange.withOpacity(0.20),
+                        color: primaryOrange.withValues(alpha: 0.20),
                       ),
                     ),
                     child: Text(

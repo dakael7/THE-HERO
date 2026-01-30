@@ -110,7 +110,7 @@ class _UnverifiedEmailScreenState extends ConsumerState<UnverifiedEmailScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: primaryOrange.withOpacity(0.1),
+                  color: primaryOrange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(Icons.mark_email_unread, color: primaryOrange, size: 28),

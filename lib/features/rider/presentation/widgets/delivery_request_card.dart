@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/app_colors.dart';
 
 class DeliveryRequestCard extends StatelessWidget {
@@ -9,10 +10,11 @@ class DeliveryRequestCard extends StatelessWidget {
   final double earnings;
   final String pickupAddress;
   final String deliveryAddress;
+  final bool deliverToReception;
   final void Function(BuildContext)? onViewDetails;
 
   const DeliveryRequestCard({
-    Key? key,
+    super.key,
     required this.productName,
     required this.productImage,
     required this.weight,
@@ -20,136 +22,189 @@ class DeliveryRequestCard extends StatelessWidget {
     required this.earnings,
     required this.pickupAddress,
     required this.deliveryAddress,
+    this.deliverToReception = false,
     this.onViewDetails,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Imagen del producto
-          ClipRRect(
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
-            ),
-            child: Container(
-              height: 180,
-              width: double.infinity,
-              color: backgroundGray50,
-              child: productImage.startsWith('http')
-                  ? Image.network(
-                      productImage,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return _buildPlaceholderImage();
-                      },
-                    )
-                  : _buildPlaceholderImage(),
-            ),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: InkWell(
+        onTap: onViewDetails != null ? () => onViewDetails!(context) : null,
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header con imagen compacta y earnings destacado
+            Row(
               children: [
-                Text(
-                  productName,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: textGray900,
+                // Imagen del producto más pequeña
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    bottomLeft: Radius.circular(16),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  child: Container(
+                    height: 100,
+                    width: 100,
+                    color: backgroundGray50,
+                    child: productImage.startsWith('http')
+                        ? CachedNetworkImage(
+                            imageUrl: productImage,
+                            fit: BoxFit.cover,
+                            fadeInDuration: const Duration(milliseconds: 120),
+                            memCacheHeight: 200,
+                            memCacheWidth: 200,
+                            placeholder: (context, url) =>
+                                _buildPlaceholderImage(),
+                            errorWidget: (context, url, error) =>
+                                _buildPlaceholderImage(),
+                          )
+                        : _buildPlaceholderImage(),
+                  ),
                 ),
-                const SizedBox(height: 12),
 
-                Row(
-                  children: [
-                    _buildInfoChip(
-                      icon: Icons.scale_outlined,
-                      label: '${weight.toStringAsFixed(1)} kg',
-                      color: categoryTextBlue,
-                      bgColor: categoryBgBlue,
-                    ),
-                    const SizedBox(width: 12),
-                    _buildInfoChip(
-                      icon: Icons.route_outlined,
-                      label: '${distance.toStringAsFixed(1)} km',
-                      color: categoryTextGreen,
-                      bgColor: categoryBgGreen,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                // Información principal
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Nombre del producto
+                        Text(
+                          productName,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: textGray900,
+                            height: 1.2,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
 
-                _buildInfoChip(
-                  icon: Icons.attach_money,
-                  label: '\$${earnings.toStringAsFixed(0)} CLP',
-                  color: const Color(0xFF4CAF50),
-                  bgColor: const Color(0xFFE8F5E9),
-                ),
-                const SizedBox(height: 16),
+                        // Chips de información compactos
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _buildCompactChip(
+                              icon: Icons.scale_outlined,
+                              label: '${weight.toStringAsFixed(1)}kg',
+                              color: categoryTextBlue,
+                              bgColor: categoryBgBlue,
+                            ),
+                            _buildCompactChip(
+                              icon: Icons.route_outlined,
+                              label: '${distance.toStringAsFixed(1)}km',
+                              color: categoryTextGreen,
+                              bgColor: categoryBgGreen,
+                            ),
+                            if (deliverToReception)
+                              _buildCompactChip(
+                                icon: Icons.apartment_outlined,
+                                label: 'Recibir en portería',
+                                color: categoryTextGreen,
+                                bgColor: categoryBgGreen,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
 
-                _buildAddressRow(
-                  icon: Icons.location_on_outlined,
-                  label: 'Recoger en:',
-                  address: pickupAddress,
-                  color: primaryOrange,
-                ),
-                const SizedBox(height: 8),
-                _buildAddressRow(
-                  icon: Icons.flag_outlined,
-                  label: 'Entregar en:',
-                  address: deliveryAddress,
-                  color: categoryTextGreen,
-                ),
-                const SizedBox(height: 16),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: onViewDetails != null
-                        ? () => onViewDetails!(context)
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryOrange,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: const Text(
-                      'Ver Detalles',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                        // Earnings destacado
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF4CAF50),
+                                const Color(0xFF66BB6A),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.payments_outlined,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '\$${earnings.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+
+            // Divider sutil
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Divider(
+                height: 1,
+                thickness: 1,
+                color: borderGray100.withValues(alpha: 0.5),
+              ),
+            ),
+
+            // Direcciones compactas
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  _buildCompactAddressRow(
+                    icon: Icons.location_on_outlined,
+                    address: pickupAddress,
+                    color: primaryOrange,
+                  ),
+                  const SizedBox(height: 6),
+                  _buildCompactAddressRow(
+                    icon: Icons.flag_outlined,
+                    address: deliveryAddress,
+                    color: categoryTextGreen,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -158,32 +213,32 @@ class DeliveryRequestCard extends StatelessWidget {
     return Container(
       color: backgroundGray50,
       child: const Center(
-        child: Icon(Icons.inventory_2_outlined, size: 64, color: textGray600),
+        child: Icon(Icons.inventory_2_outlined, size: 40, color: textGray600),
       ),
     );
   }
 
-  Widget _buildInfoChip({
+  Widget _buildCompactChip({
     required IconData icon,
     required String label,
     required Color color,
     required Color bgColor,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 6),
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               color: color,
             ),
@@ -193,37 +248,26 @@ class DeliveryRequestCard extends StatelessWidget {
     );
   }
 
-  Widget _buildAddressRow({
+  Widget _buildCompactAddressRow({
     required IconData icon,
-    required String label,
     required String address,
     required Color color,
   }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: color),
-        const SizedBox(width: 8),
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: textGray600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                address,
-                style: const TextStyle(fontSize: 14, color: textGray900),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+          child: Text(
+            address,
+            style: const TextStyle(
+              fontSize: 12,
+              color: textGray700,
+              height: 1.3,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

@@ -150,7 +150,7 @@ class _HeroPromoBannerState extends State<HeroPromoBanner> {
                     decoration: BoxDecoration(
                       color: _currentIndex == index
                           ? primaryOrange
-                          : primaryOrange.withOpacity(0.3),
+                          : primaryOrange.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
@@ -189,8 +189,8 @@ class _PromoImageView extends StatelessWidget {
           CachedNetworkImage(
             imageUrl: slide.path,
             fit: BoxFit.cover,
-            placeholder: (_, __) => Container(color: Colors.black12),
-            errorWidget: (_, __, ___) => Container(color: Colors.black12),
+            placeholder: (_, _) => Container(color: Colors.black12),
+            errorWidget: (_, _, _) => Container(color: Colors.black12),
           )
         else
           Image.asset(

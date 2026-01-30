@@ -50,8 +50,6 @@ class MapState {
   }
 }
 
-// Temporary model for products with location
-// TODO: Update actual Product entity with location fields
 class MapProduct {
   final String id;
   final String name;

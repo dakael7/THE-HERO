@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../domain/entities/order_requirements.dart';
+import '../../../domain/services/delivery_fee_calculator.dart';
 import 'cart_provider.dart';
 
 class CartSummary {
@@ -8,6 +10,7 @@ class CartSummary {
   final double tax;
   final double total;
   final double totalWeight;
+  final String? shippingBreakdown;
 
   const CartSummary({
     required this.subtotal,
@@ -16,6 +19,7 @@ class CartSummary {
     required this.tax,
     required this.total,
     required this.totalWeight,
+    this.shippingBreakdown,
   });
 }
 
@@ -30,11 +34,30 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
     totalWeight += item.weight * item.quantity;
   }
 
-  const shippingCost = 1500.0;
-  const serviceFeePercentage = 0.05;
+  // Calcular tipo de vehículo requerido basado en el peso total
+  final requiredVehicle = totalWeight > 0
+      ? OrderRequirements.calculateRequiredVehicle(totalWeight)
+      : null;
+
+  // Calcular costo de envío dinámicamente
+  // Usamos una distancia estimada de 5 km si no tenemos la distancia real
+  // Esto se actualizará cuando el usuario ingrese su dirección
+  double shippingCost = 0.0;
+  String? shippingBreakdown;
+
+  if (requiredVehicle != null && cartItems.isNotEmpty) {
+    final feeResult = DeliveryFeeCalculator.calculateFee(
+      vehicleType: requiredVehicle,
+      distanceKm: 5.0, // Distancia estimada por defecto
+    );
+    shippingCost = feeResult.fee;
+    shippingBreakdown = feeResult.breakdown;
+  }
+
+  // Comisión de servicio fija de $2,000 CLP
+  const serviceFee = 2000.0;
   const taxPercentage = 0.19;
 
-  final serviceFee = subtotal * serviceFeePercentage;
   final subtotalWithFees = subtotal + shippingCost + serviceFee;
   final tax = subtotalWithFees * taxPercentage;
   final total = subtotalWithFees + tax;
@@ -46,5 +69,6 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
     tax: tax,
     total: total,
     totalWeight: totalWeight,
+    shippingBreakdown: shippingBreakdown,
   );
 });

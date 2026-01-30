@@ -61,16 +61,14 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<void> _sendVerificationEmail(User user) async {
     try {
       await user.sendEmailVerification();
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   Future<void> _syncEmailVerified(User user) async {
     if (user.emailVerified) {
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .update({'contact.emailVerified': true});
+      await _firestore.collection('users').doc(user.uid).update({
+        'contact.emailVerified': true,
+      });
     }
   }
 
@@ -138,7 +136,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String phone,
   }) async {
     try {
-      // DEBUG: Mostrar valores recibidos
       print('=== DEBUG registerHero ===');
       print('Email: "$email"');
       print('Password: "$password"');
@@ -148,7 +145,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       print('Phone: "$phone"');
       print('========================');
 
-      // Validar datos antes de enviar
       if (email.isEmpty || !email.contains('@')) {
         throw Exception('Email inválido: $email');
       }
@@ -159,7 +155,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Nombre y apellido son obligatorios.');
       }
 
-      // 1. Crear usuario en Firebase Auth
       final userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -170,10 +165,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Error al crear usuario');
       }
 
-      // Enviar email de verificación (no bloqueante)
       await _sendVerificationEmail(user);
 
-      // 2. Guardar datos adicionales en Firestore con nueva estructura
       final now = DateTime.now().toIso8601String();
       final userData = {
         'identity': {
@@ -198,7 +191,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       await _firestore.collection('users').doc(user.uid).set(userData);
 
-      // 3. Retornar UserModel
       return UserModel.fromJson({'id': user.uid, ...userData});
     } on FirebaseAuthException catch (e) {
       final errorMessage = _getFirebaseErrorMessage(e);
@@ -237,7 +229,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Nombre y apellido son obligatorios.');
       }
 
-      // 1. Crear usuario en Firebase Auth
       final userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -250,7 +241,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       await _sendVerificationEmail(user);
 
-      // 2. Guardar datos adicionales en Firestore con nueva estructura
       final now = DateTime.now().toIso8601String();
       final userData = {
         'identity': {
@@ -284,7 +274,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       await _firestore.collection('users').doc(user.uid).set(userData);
 
-      // 3. Retornar UserModel
       return UserModel.fromJson({'id': user.uid, ...userData});
     } on FirebaseAuthException catch (e) {
       final errorMessage = _getFirebaseErrorMessage(e);
@@ -350,7 +339,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   @override
   Future<bool> checkEmailExists(String email) async {
     try {
-      // Query using the correct nested field path
       final querySnapshot = await _firestore
           .collection('users')
           .where('contact.email', isEqualTo: email.toLowerCase())
@@ -375,18 +363,15 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Usuario no autenticado en Firebase');
       }
 
-      // Verificar si el usuario ya existe en Firestore
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
       if (userDoc.exists) {
-        // Usuario ya existe: obtener sus datos actuales
         final userData = userDoc.data();
         if (userData != null) {
           return UserModel.fromJson({'id': user.uid, ...userData});
         }
       }
 
-      // Extraer nombre y apellido del displayName de Google
       String firstName = '';
       String lastName = '';
 
@@ -394,14 +379,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         final nameParts = user.displayName!.trim().split(' ');
         if (nameParts.isNotEmpty) {
           firstName = nameParts.first;
-          // Si hay más de una palabra, el resto se considera apellido
           if (nameParts.length > 1) {
             lastName = nameParts.sublist(1).join(' ');
           }
         }
       }
 
-      // Usuario nuevo: crear documento con datos mínimos y nueva estructura
       final now = DateTime.now().toIso8601String();
       final newUserData = {
         'identity': {
@@ -418,7 +401,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'status': {'termsAccepted': true, 'createdAt': now, 'lastUpdated': now},
       };
 
-      // Agregar perfil según el rol
       if (role == 'hero') {
         newUserData['heroProfile'] = {
           'isActive': true,
@@ -446,14 +428,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       await _firestore.collection('users').doc(user.uid).set(newUserData);
 
-      // Retornar UserModel
       return UserModel.fromJson({'id': user.uid, ...newUserData});
     } catch (e) {
       throw Exception('Error al registrar usuario con Google: $e');
     }
   }
 
-  /// Convierte errores de Firebase en mensajes legibles
   String _getFirebaseErrorMessage(FirebaseAuthException e) {
     print('FirebaseAuthException code: ${e.code}');
     print('FirebaseAuthException message: ${e.message}');
@@ -493,7 +473,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     try {
       final now = DateTime.now().toIso8601String();
 
-      // Datos para crear el perfil de rider por defecto
       final riderProfileData = {
         'isActive': false,
         'isVerified': false,
@@ -510,7 +489,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'rating': 0.0,
       };
 
-      // Actualizar documento existente
       await _firestore.collection('users').doc(uid).update({
         'identity.firstName': firstName,
         'identity.lastName': lastName,
@@ -521,7 +499,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'riderProfile': riderProfileData,
       });
 
-      // Obtener usuario actualizado para retornarlo
       final updatedDoc = await _firestore.collection('users').doc(uid).get();
       if (!updatedDoc.exists || updatedDoc.data() == null) {
         throw Exception('Error al recuperar usuario actualizado');
@@ -544,7 +521,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     try {
       final now = DateTime.now().toIso8601String();
 
-      // Datos para crear el perfil de hero por defecto
       final heroProfileData = {
         'isActive': true,
         'completedOrders': 0,
@@ -552,7 +528,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'totalSpent': 0.0,
       };
 
-      // Actualizar documento existente
       await _firestore.collection('users').doc(uid).update({
         'identity.firstName': firstName,
         'identity.lastName': lastName,
@@ -563,7 +538,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'heroProfile': heroProfileData,
       });
 
-      // Obtener usuario actualizado para retornarlo
       final updatedDoc = await _firestore.collection('users').doc(uid).get();
       if (!updatedDoc.exists || updatedDoc.data() == null) {
         throw Exception('Error al recuperar usuario actualizado');

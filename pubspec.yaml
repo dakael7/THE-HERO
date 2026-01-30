@@ -66,6 +66,9 @@ dependencies:
 
   # Almacenamiento local
   shared_preferences: ^2.3.2
+  google_maps_flutter_android: ^2.18.12
+  google_maps_flutter_platform_interface: ^2.14.1
+  riverpod: ^3.2.0
 
 dev_dependencies:
   flutter_test:

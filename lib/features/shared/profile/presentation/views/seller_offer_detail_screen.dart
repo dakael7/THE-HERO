@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/utils/weight_utils.dart';
 import '../../../../../domain/entities/offer.dart';
-import '../../../../../domain/entities/offer_condition.dart';
 import '../../../../../domain/entities/offer_status.dart';
+import '../../../../../domain/entities/offer_condition.dart';
 import '../../../../offers/presentation/providers/offer_comments_provider.dart';
-import '../providers/profile_provider.dart';
 import '../../../../../data/providers/repository_providers.dart';
+import '../providers/profile_provider.dart';
 import './offer_form_screen.dart';
 
 class SellerOfferDetailScreen extends ConsumerWidget {
@@ -194,7 +195,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                         : Image.network(
                             coverUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) {
+                            errorBuilder: (_, _, _) {
                               return Image.asset(
                                 'assets/logo_hero.png',
                                 fit: BoxFit.contain,
@@ -213,7 +214,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: galleryImages.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
                 itemBuilder: (context, index) {
                   final imageUrl = galleryImages[index];
                   final isAssetThumb = imageUrl.startsWith('assets/');
@@ -227,7 +228,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                           : Image.network(
                               imageUrl,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) {
+                              errorBuilder: (_, _, _) {
                                 return Image.asset(
                                   'assets/logo_hero.png',
                                   fit: BoxFit.contain,
@@ -261,7 +262,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
+                  color: statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: statusColor),
                 ),
@@ -293,7 +294,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: badgeColor.withOpacity(0.1),
+              color: badgeColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: badgeColor),
             ),
@@ -401,7 +402,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                'Peso: ${offer.weight} kg',
+                'Peso: ${formatWeightKg(offer.weight)}',
                 style: const TextStyle(fontSize: 13, color: textGray600),
               ),
             ],
@@ -737,7 +738,6 @@ class SellerOfferDetailScreen extends ConsumerWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              // TODO: Implementar lógica para eliminar oferta
               Navigator.pop(context);
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
@@ -777,7 +777,7 @@ class _StatRow extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, size: 20, color: color),

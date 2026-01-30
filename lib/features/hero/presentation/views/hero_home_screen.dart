@@ -180,7 +180,7 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                                       ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: textGray900.withOpacity(0.05),
+                                          color: textGray900.withValues(alpha: 0.05),
                                           blurRadius: 12,
                                           offset: const Offset(0, 8),
                                         ),
@@ -191,8 +191,8 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                                         Container(
                                           padding: const EdgeInsets.all(10),
                                           decoration: BoxDecoration(
-                                            color: primaryYellow.withOpacity(
-                                              0.18,
+                                            color: primaryYellow.withValues(
+                                              alpha: 0.18,
                                             ),
                                             borderRadius: BorderRadius.circular(
                                               14,
@@ -375,7 +375,7 @@ class _CatalogSection extends ConsumerWidget {
                     border: Border.all(color: borderGray100),
                     boxShadow: [
                       BoxShadow(
-                        color: textGray900.withOpacity(0.05),
+                        color: textGray900.withValues(alpha: 0.05),
                         blurRadius: 12,
                         offset: const Offset(0, 8),
                       ),

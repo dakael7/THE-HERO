@@ -83,13 +83,13 @@ class ProductCard extends ConsumerWidget {
               boxShadow: showShadow
                   ? [
                       BoxShadow(
-                        color: textGray900.withOpacity(0.08),
+                        color: textGray900.withValues(alpha: 0.08),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                         spreadRadius: 1,
                       ),
                       BoxShadow(
-                        color: primaryOrange.withOpacity(0.05),
+                        color: primaryOrange.withValues(alpha: 0.05),
                         blurRadius: 6,
                         offset: const Offset(0, 2),
                       ),
@@ -107,7 +107,7 @@ class ProductCard extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: textGray900.withOpacity(0.05),
+                        color: textGray900.withValues(alpha: 0.05),
                         blurRadius: 6,
                         offset: const Offset(0, 2),
                       ),
@@ -137,7 +137,7 @@ class ProductCard extends ConsumerWidget {
                         imageWidget = Image.network(
                           resolved,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) {
+                          errorBuilder: (_, _, _) {
                             return const Center(
                               child: Icon(
                                 Icons.image_not_supported_outlined,
@@ -219,7 +219,7 @@ class ProductCard extends ConsumerWidget {
                             StarRatingWidget(rating: avgRating, size: 14.0),
                             const SizedBox(width: 4),
                             Text(
-                              '(${ratingCount})',
+                              '($ratingCount)',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: textGray600,
@@ -237,7 +237,7 @@ class ProductCard extends ConsumerWidget {
                               vertical: conditionPadding * 0.5,
                             ),
                             decoration: BoxDecoration(
-                              color: colorCondition.withOpacity(0.1),
+                              color: colorCondition.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
@@ -277,7 +277,7 @@ class ProductCard extends ConsumerWidget {
                               borderRadius: BorderRadius.circular(10),
                               boxShadow: [
                                 BoxShadow(
-                                  color: primaryOrange.withOpacity(0.3),
+                                  color: primaryOrange.withValues(alpha: 0.3),
                                   blurRadius: 6,
                                   offset: const Offset(0, 2),
                                 ),

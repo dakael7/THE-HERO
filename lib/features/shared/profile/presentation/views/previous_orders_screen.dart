@@ -41,7 +41,7 @@ class PreviousOrdersScreen extends ConsumerWidget {
                 width: 72,
                 height: 72,
                 decoration: BoxDecoration(
-                  color: primaryOrange.withOpacity(0.12),
+                  color: primaryOrange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: const Icon(

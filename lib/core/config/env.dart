@@ -5,6 +5,8 @@
 class Env {
   const Env._();
 
+  static const bool mapsLiteMode =
+      bool.fromEnvironment('MAPS_LITE_MODE', defaultValue: false);
 
   static const String placesApiKey =
       String.fromEnvironment('PLACES_API_KEY', defaultValue: '');

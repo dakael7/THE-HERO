@@ -65,7 +65,7 @@ class ProductListSheet extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: primaryOrange.withOpacity(0.1),
+                    color: primaryOrange.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -115,7 +115,7 @@ class ProductListSheet extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: isSelected ? primaryOrange.withOpacity(0.1) : Colors.white,
+        color: isSelected ? primaryOrange.withValues(alpha: 0.1) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isSelected ? primaryOrange : backgroundGray50,
@@ -136,7 +136,7 @@ class ProductListSheet extends StatelessWidget {
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: primaryOrange.withOpacity(0.1),
+                    color: primaryOrange.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
@@ -238,7 +238,7 @@ class ProductListSheet extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off, size: 64, color: textGray600.withOpacity(0.5)),
+          Icon(Icons.search_off, size: 64, color: textGray600.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
           Text(
             'No hay productos cercanos',

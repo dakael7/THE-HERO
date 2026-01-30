@@ -50,21 +50,16 @@ class RiderBottomNav extends ConsumerWidget {
         ? safeBottom
         : (12.0 * scaleFactor).clamp(10.0, 24.0);
 
-    // Responsive item padding
     final itemPadding = (6.0 * scaleFactor).clamp(4.0, 12.0);
 
-    // Responsive font size
     final fontSize = (11.0 * scaleFactor).clamp(9.5, 14.0);
 
-    // Responsive icon size
     final iconSize = (26.0 * scaleFactor).clamp(22.0, 32.0);
 
-    // Responsive border radius
     final navRadius = (26.0 * scaleFactor).clamp(22.0, 32.0);
 
-    final navBackground = backgroundWhite.withOpacity(0.92);
+    final navBackground = backgroundWhite.withValues(alpha: 0.92);
 
-    // Responsive badge size
     final badgeFontSize = (8.0 * scaleFactor).clamp(7.0, 10.0);
     final badgeMinSize = (14.0 * scaleFactor).clamp(12.0, 18.0);
 
@@ -82,15 +77,15 @@ class RiderBottomNav extends ConsumerWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(navRadius),
-            border: Border.all(color: textGray900.withOpacity(0.06), width: 1),
+            border: Border.all(color: textGray900.withValues(alpha: 0.06), width: 1),
             boxShadow: [
               BoxShadow(
-                color: textGray900.withOpacity(0.10),
+                color: textGray900.withValues(alpha: 0.10),
                 blurRadius: 28,
                 offset: const Offset(0, 10),
               ),
               BoxShadow(
-                color: primaryOrange.withOpacity(0.10),
+                color: primaryOrange.withValues(alpha: 0.10),
                 blurRadius: 24,
                 offset: const Offset(0, 16),
               ),
@@ -113,8 +108,8 @@ class RiderBottomNav extends ConsumerWidget {
                         Expanded(
                           child: _buildNavItem(
                             context,
-                            Icons.delivery_dining,
-                            'Solicitudes',
+                            Icons.home_outlined,
+                            'Inicio',
                             0,
                             selectedIndex,
                             () => viewModel.selectNavItem(0),
@@ -128,8 +123,8 @@ class RiderBottomNav extends ConsumerWidget {
                         Expanded(
                           child: _buildNavItem(
                             context,
-                            Icons.local_shipping,
-                            'Activas',
+                            Icons.local_fire_department,
+                            'En vivo',
                             1,
                             selectedIndex,
                             () => viewModel.selectNavItem(1),
@@ -143,8 +138,8 @@ class RiderBottomNav extends ConsumerWidget {
                         Expanded(
                           child: _buildNavItem(
                             context,
-                            Icons.chat_bubble_outline,
-                            'Mensajes',
+                            Icons.local_shipping,
+                            'Pedidos',
                             2,
                             selectedIndex,
                             () => viewModel.selectNavItem(2),
@@ -199,7 +194,7 @@ class RiderBottomNav extends ConsumerWidget {
     final bool isActive = selectedIndex == index;
     Color iconColor = isActive ? primaryOrange : textGray600;
     Color backgroundColor = isActive
-        ? primaryOrange.withOpacity(0.12)
+        ? primaryOrange.withValues(alpha: 0.12)
         : Colors.transparent;
     Color textColor = isActive ? primaryOrange : textGray600;
 
@@ -209,8 +204,8 @@ class RiderBottomNav extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          splashColor: primaryOrange.withOpacity(0.12),
-          highlightColor: primaryOrange.withOpacity(0.06),
+          splashColor: primaryOrange.withValues(alpha: 0.12),
+          highlightColor: primaryOrange.withValues(alpha: 0.06),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
@@ -219,15 +214,15 @@ class RiderBottomNav extends ConsumerWidget {
               borderRadius: BorderRadius.circular(20),
               border: isActive
                   ? Border.all(
-                      color: primaryOrange.withOpacity(0.20),
+                      color: primaryOrange.withValues(alpha: 0.20),
                       width: 1.5,
                     )
-                  : Border.all(color: textGray900.withOpacity(0.04), width: 1),
+                  : Border.all(color: textGray900.withValues(alpha: 0.04), width: 1),
               gradient: isActive
                   ? LinearGradient(
                       colors: [
-                        primaryOrange.withOpacity(0.16),
-                        primaryOrange.withOpacity(0.08),
+                        primaryOrange.withValues(alpha: 0.16),
+                        primaryOrange.withValues(alpha: 0.08),
                       ],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -259,7 +254,7 @@ class RiderBottomNav extends ConsumerWidget {
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: primaryOrange.withOpacity(0.35),
+                                color: primaryOrange.withValues(alpha: 0.35),
                                 blurRadius: 8,
                                 spreadRadius: 1,
                               ),

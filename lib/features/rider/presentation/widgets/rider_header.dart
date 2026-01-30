@@ -38,13 +38,12 @@ class RiderHeaderDelegate extends SliverPersistentHeaderDelegate {
         ? (shrinkOffset / availableRange).clamp(0.0, 1.0)
         : 0.0;
 
-    final double statusBarHeight = MediaQuery.of(context).padding.top;
     final double decorOpacity = 1.0 - (t * 0.85);
 
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [primaryOrange, primaryYellow.withOpacity(0.95)],
+          colors: [primaryOrange, primaryYellow.withValues(alpha: 0.95)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -54,7 +53,7 @@ class RiderHeaderDelegate extends SliverPersistentHeaderDelegate {
         ),
         boxShadow: [
           BoxShadow(
-            color: primaryOrange.withOpacity(0.22),
+            color: primaryOrange.withValues(alpha: 0.22),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -76,7 +75,7 @@ class RiderHeaderDelegate extends SliverPersistentHeaderDelegate {
                         width: 140,
                         height: 140,
                         decoration: BoxDecoration(
-                          color: backgroundWhite.withOpacity(0.16),
+                          color: backgroundWhite.withValues(alpha: 0.16),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -88,7 +87,7 @@ class RiderHeaderDelegate extends SliverPersistentHeaderDelegate {
                         width: 180,
                         height: 180,
                         decoration: BoxDecoration(
-                          color: backgroundWhite.withOpacity(0.12),
+                          color: backgroundWhite.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -100,7 +99,7 @@ class RiderHeaderDelegate extends SliverPersistentHeaderDelegate {
                         width: 110,
                         height: 110,
                         decoration: BoxDecoration(
-                          color: primaryOrange.withOpacity(0.10),
+                          color: primaryOrange.withValues(alpha: 0.10),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -110,16 +109,26 @@ class RiderHeaderDelegate extends SliverPersistentHeaderDelegate {
               ),
             ),
           ),
-          // Logo y notificaciones centrados verticalmente
-          Positioned(
-            top: statusBarHeight + paddingNormal,
-            left: paddingLarge,
-            right: paddingLarge,
-            child: Opacity(
-              opacity: 1.0 - t,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [buildLogoSection(), buildNotificationIcon()],
+          Positioned.fill(
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  paddingLarge,
+                  paddingNormal,
+                  paddingLarge,
+                  0,
+                ),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Opacity(
+                    opacity: 1.0 - t,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [buildLogoSection(), buildNotificationIcon()],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -158,9 +167,9 @@ class RiderHeader extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: backgroundWhite.withOpacity(0.15),
+        color: backgroundWhite.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: backgroundWhite.withOpacity(0.3), width: 1),
+        border: Border.all(color: backgroundWhite.withValues(alpha: 0.3), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -234,7 +243,7 @@ class RiderHeader extends ConsumerWidget {
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: textGray900.withOpacity(0.08),
+                  color: textGray900.withValues(alpha: 0.08),
                   blurRadius: 12,
                   offset: const Offset(0, 3),
                 ),
@@ -262,7 +271,7 @@ class RiderHeader extends ConsumerWidget {
                   border: Border.all(color: primaryYellow, width: 2),
                   boxShadow: [
                     BoxShadow(
-                      color: primaryOrange.withOpacity(0.4),
+                      color: primaryOrange.withValues(alpha: 0.4),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),

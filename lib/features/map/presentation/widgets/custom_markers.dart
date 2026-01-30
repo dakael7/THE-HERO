@@ -17,8 +17,8 @@ class _UserMarker extends StatelessWidget {
         border: Border.all(color: Colors.white, width: 4),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 8,
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
@@ -48,7 +48,7 @@ Widget buildProductMarker({required product, required bool isSelected}) {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isSelected ? 0.4 : 0.2),
+            color: Colors.black.withValues(alpha: isSelected ? 0.4 : 0.2),
             blurRadius: isSelected ? 12 : 6,
             offset: Offset(0, isSelected ? 4 : 2),
           ),

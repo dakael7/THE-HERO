@@ -92,7 +92,7 @@ class HeroCategoriesSection extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: () {},
-        splashColor: primaryOrange.withOpacity(0.1),
+        splashColor: primaryOrange.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(100),
         child: SizedBox(
           width: width,
@@ -106,7 +106,7 @@ class HeroCategoriesSection extends StatelessWidget {
                   height: 80,
                   width: 80,
                   decoration: BoxDecoration(
-                    color: primaryOrange.withOpacity(0.12),
+                    color: primaryOrange.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(icon, color: primaryOrange, size: 36),

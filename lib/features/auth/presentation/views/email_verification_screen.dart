@@ -51,7 +51,7 @@ class _EmailVerificationScreenState
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
+                  color: Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -89,10 +89,10 @@ class _EmailVerificationScreenState
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.05),
+                  color: Colors.orange.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Colors.orange.withOpacity(0.2),
+                    color: Colors.orange.withValues(alpha: 0.2),
                     width: 1,
                   ),
                 ),
@@ -179,7 +179,6 @@ class _EmailVerificationScreenState
         final email = _emailController.text.trim();
 
         if (_accountExists) {
-          // Login con email y contraseña
           final password = _passwordController.text;
 
           await ref
@@ -190,7 +189,6 @@ class _EmailVerificationScreenState
             final authState = ref.read(authNotifierProvider);
 
             if (authState.isAuthenticated && authState.errorMessage == null) {
-              // Obtener el usuario actual para verificar su perfil
               final currentUser = await ref
                   .read(getCurrentUserUseCaseProvider)
                   .execute();
@@ -200,7 +198,6 @@ class _EmailVerificationScreenState
                 return;
               }
 
-              // Si el correo no está verificado, mandar a pantalla de no verificado
               if (!currentUser.contact.emailVerified) {
                 if (!context.mounted) return;
                 Navigator.pushReplacement(
@@ -215,10 +212,8 @@ class _EmailVerificationScreenState
                 return;
               }
 
-              // Verificar que el usuario tenga el perfil del rol seleccionado
               if (widget.userRole == UserRole.hero) {
                 if (!currentUser.isHero) {
-                  // Tiene cuenta pero NO es Hero, redirigir a registro Hero
                   if (context.mounted) {
                     Navigator.pushReplacement(
                       context,
@@ -232,7 +227,6 @@ class _EmailVerificationScreenState
                   }
                   return;
                 }
-                // Tiene perfil Hero, navegar a Hero Home
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
@@ -240,9 +234,7 @@ class _EmailVerificationScreenState
                   ),
                 );
               } else {
-                // UserRole.rider
                 if (!currentUser.isRider) {
-                  // Tiene cuenta pero NO es Rider, redirigir a registro Rider
                   if (context.mounted) {
                     Navigator.pushReplacement(
                       context,
@@ -256,7 +248,6 @@ class _EmailVerificationScreenState
                   }
                   return;
                 }
-                // Tiene perfil Rider, navegar a Rider Home
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
@@ -310,11 +301,10 @@ class _EmailVerificationScreenState
     return 'Introduce tu correo electrónico para continuar';
   }
 
-  // Optimización: InputDecoration cacheada
   InputDecoration _getEmailInputDecoration() {
     return InputDecoration(
       hintText: 'email@domain.com',
-      hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
+      hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
       filled: true,
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -353,19 +343,17 @@ class _EmailVerificationScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // 1. LOGO SECTION
                 _buildLogoSection(),
 
                 const SizedBox(height: 30),
 
-                // 2. TEXTOS DE BIENVENIDA
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: primaryOrange.withOpacity(0.1),
+                    color: primaryOrange.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -394,13 +382,11 @@ class _EmailVerificationScreenState
 
                 const SizedBox(height: 40),
 
-                // 3. INPUT DE EMAIL
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   enabled: !_isLoading,
                   onChanged: (value) {
-                    // Reset account exists when email changes
                     if (_accountExists) {
                       setState(() {
                         _accountExists = false;
@@ -428,7 +414,6 @@ class _EmailVerificationScreenState
 
                 const SizedBox(height: 20),
 
-                // 3.5 INPUT DE CONTRASEÑA (solo si la cuenta existe)
                 if (_accountExists) ...[
                   TextFormField(
                     controller: _passwordController,
@@ -437,7 +422,7 @@ class _EmailVerificationScreenState
                     style: const TextStyle(color: textGray900, fontSize: 16),
                     decoration: InputDecoration(
                       hintText: 'Contraseña',
-                      hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
+                      hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
                       filled: true,
                       fillColor: Colors.white,
                       contentPadding: const EdgeInsets.symmetric(
@@ -494,23 +479,19 @@ class _EmailVerificationScreenState
                   const SizedBox(height: 20),
                 ],
 
-                // 4. BOTÓN CONTINUAR
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _isLoading
                         ? null
                         : () async {
-                            // Primero verificar el email si no se ha hecho
                             if (!_accountExists &&
                                 _emailController.text.trim().isNotEmpty) {
                               await _checkEmail();
-                              // Si la cuenta existe, no continuar aún
                               if (_accountExists) {
                                 return;
                               }
                             }
-                            // Si la cuenta existe o no, proceder con el submit
                             _submitForm();
                           },
                     style: ElevatedButton.styleFrom(
@@ -545,7 +526,6 @@ class _EmailVerificationScreenState
 
                 const SizedBox(height: 20),
 
-                // 4.5 LINK DE REGISTRO
                 Center(
                   child: TextButton(
                     onPressed: _isLoading
@@ -592,7 +572,6 @@ class _EmailVerificationScreenState
 
                 const SizedBox(height: 30),
 
-                // 5. SEPARADOR "O"
                 Row(
                   children: [
                     Expanded(child: Divider(color: Colors.grey.shade300)),
@@ -606,7 +585,6 @@ class _EmailVerificationScreenState
 
                 const SizedBox(height: 30),
 
-                // 6. BOTONES SOCIALES
                 _buildSocialButton(
                   iconWidget: SvgPicture.asset(
                     'assets/icono-google.svg',
@@ -635,7 +613,6 @@ class _EmailVerificationScreenState
                             );
 
                             if (mounted) {
-                              // Obtener el usuario actual para verificar su perfil
                               final currentUser = await ref
                                   .read(getCurrentUserUseCaseProvider)
                                   .execute();
@@ -651,10 +628,8 @@ class _EmailVerificationScreenState
                                 return;
                               }
 
-                              // Verificar que el usuario tenga el perfil del rol seleccionado
                               if (widget.userRole == UserRole.hero) {
                                 if (!currentUser.isHero) {
-                                  // Tiene cuenta pero NO es Hero, redirigir a registro Hero
                                   Navigator.pushReplacement(
                                     context,
                                     MaterialPageRoute(
@@ -666,7 +641,6 @@ class _EmailVerificationScreenState
                                   );
                                   return;
                                 }
-                                // Tiene perfil Hero, navegar a Hero Home
                                 Navigator.pushReplacement(
                                   context,
                                   MaterialPageRoute(
@@ -675,9 +649,7 @@ class _EmailVerificationScreenState
                                   ),
                                 );
                               } else {
-                                // UserRole.rider
                                 if (!currentUser.isRider) {
-                                  // Tiene cuenta pero NO es Rider, redirigir a registro Rider
                                   Navigator.pushReplacement(
                                     context,
                                     MaterialPageRoute(
@@ -714,7 +686,6 @@ class _EmailVerificationScreenState
 
                 const SizedBox(height: 40),
 
-                // 7. FOOTER LEGAL
                 Padding(
                   padding: const EdgeInsets.only(bottom: 20),
                   child: Text(
@@ -722,7 +693,7 @@ class _EmailVerificationScreenState
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
-                      color: textGray600.withOpacity(0.7),
+                      color: textGray600.withValues(alpha: 0.7),
                     ),
                   ),
                 ),
@@ -776,7 +747,7 @@ class _EmailVerificationScreenState
             ),
           ),
           style: OutlinedButton.styleFrom(
-            backgroundColor: Colors.blue.shade50.withOpacity(0.5),
+            backgroundColor: Colors.blue.shade50.withValues(alpha: 0.5),
             side: BorderSide.none,
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(

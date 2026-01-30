@@ -8,7 +8,7 @@ abstract class OrdersRemoteDataSource {
   Stream<List<OrderModel>> getOrdersByHero(String heroId);
   Stream<List<OrderModel>> getOrdersByRider(String riderId);
   Stream<List<OrderModel>> getAvailableOrders({
-    required String requiredVehicle,
+    required List<String> requiredVehicles,
     int limit = 50,
   });
   Future<void> updateOrderStatus(String orderId, String status);
@@ -99,14 +99,14 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
 
   @override
   Stream<List<OrderModel>> getAvailableOrders({
-    required String requiredVehicle,
+    required List<String> requiredVehicles,
     int limit = 50,
   }) {
     try {
       return _firestore
           .collection('orders')
           .where('status', isEqualTo: 'queued')
-          .where('requirements.requiredVehicle', isEqualTo: requiredVehicle)
+          .where('requirements.requiredVehicle', whereIn: requiredVehicles)
           .orderBy('timestamps.queuedAt', descending: true)
           .limit(limit)
           .snapshots()

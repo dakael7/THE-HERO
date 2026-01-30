@@ -1,5 +1,6 @@
 const {onCall, HttpsError} = require('firebase-functions/v2/https');
 const {onObjectFinalized} = require('firebase-functions/v2/storage');
+const {onDocumentWritten} = require('firebase-functions/v2/firestore');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const sharp = require('sharp');
@@ -427,6 +428,123 @@ exports.processImage1200Webp = onObjectFinalized(
 
   return null;
 });
+
+function getIsoWeekKey(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  const year = d.getUTCFullYear();
+  const week = String(weekNo).padStart(2, '0');
+  return `${year}-W${week}`;
+}
+
+exports.syncRiderStatsOnOrderWrite = onDocumentWritten(
+  {document: 'orders/{orderId}', region: STORAGE_REGION},
+  async (event) => {
+    const before = event.data && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after.exists ? event.data.after.data() : null;
+
+    if (!after) {
+      return;
+    }
+
+    const beforeStatus = before && typeof before.status === 'string' ? before.status : null;
+    const afterStatus = typeof after.status === 'string' ? after.status : null;
+
+    if (beforeStatus === afterStatus) {
+      return;
+    }
+
+    const riderId =
+      (after.rider && after.rider.assignedRiderId) ||
+      (before && before.rider && before.rider.assignedRiderId) ||
+      null;
+
+    if (!riderId) {
+      return;
+    }
+
+    const deliveryFee = typeof after.deliveryFee === 'number' ? after.deliveryFee : 0;
+    const statsRef = admin.firestore().collection('rider_stats').doc(riderId);
+    const inc = admin.firestore.FieldValue.increment;
+
+    const currentWeekKey = getIsoWeekKey(new Date());
+
+    const toCounters = (status) => {
+      switch ((status || '').toLowerCase()) {
+        case 'delivered':
+          return {deliveredTrips: 1, canceledTrips: 0, failedTrips: 0};
+        case 'canceled':
+          return {deliveredTrips: 0, canceledTrips: 1, failedTrips: 0};
+        case 'failed':
+          return {deliveredTrips: 0, canceledTrips: 0, failedTrips: 1};
+        default:
+          return {deliveredTrips: 0, canceledTrips: 0, failedTrips: 0};
+      }
+    };
+
+    const beforeC = toCounters(beforeStatus);
+    const afterC = toCounters(afterStatus);
+
+    const deltaDelivered = afterC.deliveredTrips - beforeC.deliveredTrips;
+    const deltaCanceled = afterC.canceledTrips - beforeC.canceledTrips;
+    const deltaFailed = afterC.failedTrips - beforeC.failedTrips;
+
+    const updates = {
+      riderId,
+      deliveredTrips: inc(deltaDelivered),
+      canceledTrips: inc(deltaCanceled),
+      failedTrips: inc(deltaFailed),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    if (deltaDelivered !== 0) {
+      updates.totalEarnings = inc(deltaDelivered * deliveryFee);
+      updates.totalTrips = inc(deltaDelivered);
+
+      const deliveredAt =
+        after.timestamps && after.timestamps.deliveredAt && typeof after.timestamps.deliveredAt.toDate === 'function'
+          ? after.timestamps.deliveredAt.toDate()
+          : new Date();
+      const deliveredWeekKey = getIsoWeekKey(deliveredAt);
+
+      updates.weekKey = currentWeekKey;
+
+      if (deliveredWeekKey === currentWeekKey) {
+        updates.weeklyEarnings = inc(deltaDelivered * deliveryFee);
+        updates.weeklyTrips = inc(deltaDelivered);
+      }
+    }
+
+    const deltaCompleted = deltaDelivered + deltaCanceled + deltaFailed;
+    if (deltaCompleted !== 0) {
+      updates.completedTrips = inc(deltaCompleted);
+    }
+
+    await admin.firestore().runTransaction(async (tx) => {
+      const snap = await tx.get(statsRef);
+      const existingWeekKey = snap.exists && snap.data() && typeof snap.data().weekKey === 'string'
+        ? snap.data().weekKey
+        : null;
+
+      if (existingWeekKey !== currentWeekKey) {
+        tx.set(
+          statsRef,
+          {
+            weekKey: currentWeekKey,
+            weeklyEarnings: 0,
+            weeklyTrips: 0,
+          },
+          {merge: true}
+        );
+      }
+
+      tx.set(statsRef, updates, {merge: true});
+    });
+  }
+);
 
 function buildDownloadUrl(bucketName, filePath) {
   const encodedPath = encodeURIComponent(filePath);

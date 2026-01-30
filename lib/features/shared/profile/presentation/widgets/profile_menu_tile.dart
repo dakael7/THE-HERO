@@ -41,7 +41,7 @@ class ProfileMenuTile extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: primaryOrange.withOpacity(0.12),
+                    color: primaryOrange.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -84,7 +84,7 @@ class ProfileMenuTile extends StatelessWidget {
                 Icon(
                   Icons.chevron_right,
                   size: 20,
-                  color: enabled ? textGray600 : textGray600.withOpacity(0.6),
+                  color: enabled ? textGray600 : textGray600.withValues(alpha: 0.6),
                 ),
               ],
             ),

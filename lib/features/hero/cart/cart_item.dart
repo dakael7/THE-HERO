@@ -1,4 +1,6 @@
 import '../../../domain/entities/order_item.dart';
+import '../../../domain/entities/pickup_schedule.dart';
+import '../../../domain/entities/concierge_info.dart';
 
 class CartItem {
   final String offerId;
@@ -8,6 +10,9 @@ class CartItem {
   final double price;
   final double weight;
   final String imageUrl;
+  final PickupSchedule? pickupSchedule;
+  final bool useConcierge;
+  final ConciergeInfo? conciergeInfo;
 
   const CartItem({
     required this.offerId,
@@ -17,6 +22,9 @@ class CartItem {
     required this.price,
     this.weight = 0.5,
     required this.imageUrl,
+    this.pickupSchedule,
+    this.useConcierge = false,
+    this.conciergeInfo,
   });
 
   CartItem copyWith({int? quantity}) {
@@ -28,6 +36,9 @@ class CartItem {
       price: price,
       weight: weight,
       imageUrl: imageUrl,
+      pickupSchedule: pickupSchedule,
+      useConcierge: useConcierge,
+      conciergeInfo: conciergeInfo,
     );
   }
 

@@ -15,10 +15,10 @@ class LoginPasswordScreen extends ConsumerStatefulWidget {
   final String userRole; // 'hero' o 'rider'
 
   const LoginPasswordScreen({
-    Key? key,
+    super.key,
     required this.email,
     required this.userRole,
-  }) : super(key: key);
+  });
 
   @override
   ConsumerState<LoginPasswordScreen> createState() =>
@@ -51,7 +51,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
+                  color: Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(
@@ -89,10 +89,10 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.05),
+                  color: Colors.orange.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Colors.orange.withOpacity(0.2),
+                    color: Colors.orange.withValues(alpha: 0.2),
                     width: 1,
                   ),
                 ),
@@ -159,7 +159,9 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                 .execute();
 
             if (currentUser == null) {
-              _showErrorDialog('No se pudo cargar tu perfil. Intenta de nuevo.');
+              _showErrorDialog(
+                'No se pudo cargar tu perfil. Intenta de nuevo.',
+              );
               return;
             }
 
@@ -331,7 +333,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                   style: TextStyle(color: textGray900, fontSize: inputFontSize),
                   decoration: InputDecoration(
                     hintText: 'Contraseña',
-                    hintStyle: TextStyle(color: textGray600.withOpacity(0.5)),
+                    hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
                     filled: true,
                     fillColor: Colors.white,
                     contentPadding: EdgeInsets.symmetric(
@@ -392,18 +394,18 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _submitForm,
                     style: ButtonStyle(
-                      backgroundColor: MaterialStateProperty.resolveWith<Color>(
-                        (Set<MaterialState> states) {
-                          if (states.contains(MaterialState.pressed)) {
-                            return const Color(0xFFE67300);
-                          }
-                          return primaryOrange;
-                        },
-                      ),
-                      padding: MaterialStateProperty.all(
+                      backgroundColor: WidgetStateProperty.resolveWith<Color>((
+                        Set<WidgetState> states,
+                      ) {
+                        if (states.contains(WidgetState.pressed)) {
+                          return const Color(0xFFE67300);
+                        }
+                        return primaryOrange;
+                      }),
+                      padding: WidgetStateProperty.all(
                         EdgeInsets.symmetric(vertical: contentPadding),
                       ),
-                      shape: MaterialStateProperty.all(
+                      shape: WidgetStateProperty.all(
                         RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),

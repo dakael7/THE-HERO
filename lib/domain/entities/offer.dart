@@ -1,6 +1,8 @@
 import 'offer_status.dart';
 import 'offer_condition.dart';
 import 'address.dart';
+import 'pickup_schedule.dart';
+import 'concierge_info.dart';
 
 class Offer {
   final String offerId;
@@ -9,11 +11,13 @@ class Offer {
   final String description;
   final String category;
   final OfferCondition condition;
+  final bool? isInGoodState;
+  final bool? worksCorrectly;
   final double price;
   final String currency;
   final int stock;
   final int availableQty;
-  final double weight; // Weight in kg
+  final double weight; 
   final String coverImageUrl;
   final List<String> imageUrls;
   final OfferStatus status;
@@ -25,10 +29,16 @@ class Offer {
   final int orderCount;
   final double avgRating;
   final int ratingCount;
+
   /// Location from which the item will be picked up/shipped.
   /// Optional id to a stored location (e.g., user address), plus a snapshot for history.
   final String? itemLocationId;
   final Address? itemLocationSnapshot;
+
+  /// Pickup schedule configuration
+  final PickupSchedule? pickupSchedule;
+  final bool useConcierge;
+  final ConciergeInfo? conciergeInfo;
 
   Offer({
     required this.offerId,
@@ -37,6 +47,8 @@ class Offer {
     required this.description,
     required this.category,
     required this.condition,
+    this.isInGoodState,
+    this.worksCorrectly,
     required this.price,
     required this.currency,
     required this.stock,
@@ -55,6 +67,9 @@ class Offer {
     this.ratingCount = 0,
     this.itemLocationId,
     this.itemLocationSnapshot,
+    this.pickupSchedule,
+    this.useConcierge = false,
+    this.conciergeInfo,
   });
 
   bool get isPublished => status.isPublished;
@@ -70,6 +85,8 @@ class Offer {
     String? description,
     String? category,
     OfferCondition? condition,
+    bool? isInGoodState,
+    bool? worksCorrectly,
     double? price,
     String? currency,
     int? stock,
@@ -88,6 +105,9 @@ class Offer {
     int? ratingCount,
     String? itemLocationId,
     Address? itemLocationSnapshot,
+    PickupSchedule? pickupSchedule,
+    bool? useConcierge,
+    ConciergeInfo? conciergeInfo,
   }) {
     return Offer(
       offerId: offerId ?? this.offerId,
@@ -96,6 +116,8 @@ class Offer {
       description: description ?? this.description,
       category: category ?? this.category,
       condition: condition ?? this.condition,
+      isInGoodState: isInGoodState ?? this.isInGoodState,
+      worksCorrectly: worksCorrectly ?? this.worksCorrectly,
       price: price ?? this.price,
       currency: currency ?? this.currency,
       stock: stock ?? this.stock,
@@ -114,6 +136,9 @@ class Offer {
       ratingCount: ratingCount ?? this.ratingCount,
       itemLocationId: itemLocationId ?? this.itemLocationId,
       itemLocationSnapshot: itemLocationSnapshot ?? this.itemLocationSnapshot,
+      pickupSchedule: pickupSchedule ?? this.pickupSchedule,
+      useConcierge: useConcierge ?? this.useConcierge,
+      conciergeInfo: conciergeInfo ?? this.conciergeInfo,
     );
   }
 }

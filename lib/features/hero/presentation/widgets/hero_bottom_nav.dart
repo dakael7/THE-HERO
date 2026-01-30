@@ -217,7 +217,7 @@ class HeroBottomNav extends ConsumerWidget {
     final bool isActive = selectedIndex == index;
     Color iconColor = isActive ? primaryOrange : textGray600;
     Color backgroundColor = isActive
-        ? primaryOrange.withOpacity(0.12)
+        ? primaryOrange.withValues(alpha: 0.12)
         : Colors.transparent;
     Color textColor = isActive ? primaryOrange : textGray600;
 
@@ -227,8 +227,8 @@ class HeroBottomNav extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          splashColor: primaryOrange.withOpacity(0.12),
-          highlightColor: primaryOrange.withOpacity(0.06),
+          splashColor: primaryOrange.withValues(alpha: 0.12),
+          highlightColor: primaryOrange.withValues(alpha: 0.06),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
@@ -237,15 +237,15 @@ class HeroBottomNav extends ConsumerWidget {
               borderRadius: BorderRadius.circular(20),
               border: isActive
                   ? Border.all(
-                      color: primaryOrange.withOpacity(0.20),
+                      color: primaryOrange.withValues(alpha: 0.20),
                       width: 1.5,
                     )
-                  : Border.all(color: textGray900.withOpacity(0.04), width: 1),
+                  : Border.all(color: textGray900.withValues(alpha: 0.04), width: 1),
               gradient: isActive
                   ? LinearGradient(
                       colors: [
-                        primaryOrange.withOpacity(0.16),
-                        primaryOrange.withOpacity(0.08),
+                        primaryOrange.withValues(alpha: 0.16),
+                        primaryOrange.withValues(alpha: 0.08),
                       ],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -277,7 +277,7 @@ class HeroBottomNav extends ConsumerWidget {
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: primaryOrange.withOpacity(0.35),
+                                color: primaryOrange.withValues(alpha: 0.35),
                                 blurRadius: 8,
                                 spreadRadius: 1,
                               ),
