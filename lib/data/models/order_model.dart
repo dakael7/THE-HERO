@@ -33,6 +33,9 @@ class OrderModel {
   final PickupScheduleModel? pickupSchedule;
   final bool useConcierge;
   final ConciergeInfoModel? conciergeInfo;
+  final bool confirmedByHero;
+  final double? heroRating;
+  final String? heroRatingComment;
 
   OrderModel({
     required this.orderId,
@@ -57,6 +60,9 @@ class OrderModel {
     this.pickupSchedule,
     this.useConcierge = false,
     this.conciergeInfo,
+    this.confirmedByHero = false,
+    this.heroRating,
+    this.heroRatingComment,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
@@ -109,6 +115,9 @@ class OrderModel {
               json['conciergeInfo'] as Map<String, dynamic>,
             )
           : null,
+      confirmedByHero: json['confirmedByHero'] as bool? ?? false,
+      heroRating: (json['heroRating'] as num?)?.toDouble(),
+      heroRatingComment: json['heroRatingComment'] as String?,
     );
   }
 
@@ -136,6 +145,9 @@ class OrderModel {
       'pickupSchedule': pickupSchedule?.toJson(),
       'useConcierge': useConcierge,
       'conciergeInfo': conciergeInfo?.toJson(),
+      'confirmedByHero': confirmedByHero,
+      'heroRating': heroRating,
+      'heroRatingComment': heroRatingComment,
     };
   }
 
@@ -163,6 +175,9 @@ class OrderModel {
       pickupSchedule: pickupSchedule?.toEntity(),
       useConcierge: useConcierge,
       conciergeInfo: conciergeInfo?.toEntity(),
+      confirmedByHero: confirmedByHero,
+      heroRating: heroRating,
+      heroRatingComment: heroRatingComment,
     );
   }
 
@@ -196,6 +211,9 @@ class OrderModel {
       conciergeInfo: entity.conciergeInfo != null
           ? ConciergeInfoModel.fromEntity(entity.conciergeInfo!)
           : null,
+      confirmedByHero: entity.confirmedByHero,
+      heroRating: entity.heroRating,
+      heroRatingComment: entity.heroRatingComment,
     );
   }
 

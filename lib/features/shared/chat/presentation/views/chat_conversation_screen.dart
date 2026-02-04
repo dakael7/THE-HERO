@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/chat.dart';
@@ -42,10 +43,17 @@ class _ChatConversationScreenState
     return 'Ocurrió un error al cargar los mensajes.';
   }
 
+  String _formatTimestamp(DateTime dateTime) {
+    final formatter = DateFormat('MMM dd, HH:mm');
+    return formatter.format(dateTime);
+  }
+
   @override
   void initState() {
     super.initState();
-    _ensureChatFuture = ref.read(chatActionsProvider).ensureChatExists(widget.chat);
+    _ensureChatFuture = ref
+        .read(chatActionsProvider)
+        .ensureChatExists(widget.chat);
   }
 
   @override
@@ -65,20 +73,34 @@ class _ChatConversationScreenState
       await actions.sendTextMessage(chatId: widget.chat.chatId, text: text);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_friendlyError(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_friendlyError(e))));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final contextLabel = (widget.chat.orderId != null && widget.chat.orderId!.isNotEmpty)
-        ? 'Orden ${widget.chat.orderId}'
+    final currentUserId = ref.read(chatActionsProvider).currentUserId;
+
+    // Determine which name to show based on current user
+    final String participantName;
+    if (currentUserId == widget.chat.buyerId) {
+      // Current user is buyer (hero), show rider name
+      participantName = widget.chat.riderName ?? 'Rider';
+    } else {
+      // Current user is rider, show buyer name
+      participantName = widget.chat.buyerName ?? 'Cliente';
+    }
+
+    final contextLabel =
+        (widget.chat.orderId != null && widget.chat.orderId!.isNotEmpty)
+        ? 'Orden #${widget.chat.orderId}'
         : (widget.chat.offerId != null && widget.chat.offerId!.isNotEmpty)
-            ? 'Oferta ${widget.chat.offerId}'
-            : (widget.chat.type == ChatType.heroRider ? 'Chat con Rider' : 'Chat con Vendedor');
-    final typeLabel = widget.chat.type == ChatType.heroRider ? 'Rider' : 'Vendedor';
+        ? 'Oferta #${widget.chat.offerId}'
+        : (widget.chat.type == ChatType.heroRider
+              ? 'Chat con Rider'
+              : 'Chat con Vendedor');
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -89,7 +111,7 @@ class _ChatConversationScreenState
             Text(contextLabel),
             const SizedBox(height: 2),
             Text(
-              typeLabel,
+              participantName,
               style: const TextStyle(fontSize: 12, color: textGray600),
             ),
           ],
@@ -116,9 +138,9 @@ class _ChatConversationScreenState
             );
           }
 
-          final messagesAsync =
-              ref.watch(chatMessagesProvider(widget.chat.chatId));
-          final currentUserId = ref.read(chatActionsProvider).currentUserId;
+          final messagesAsync = ref.watch(
+            chatMessagesProvider(widget.chat.chatId),
+          );
 
           return Column(
             children: [
@@ -135,7 +157,8 @@ class _ChatConversationScreenState
                     ),
                   ),
                   data: (messages) {
-                    final shouldAutoScroll = messages.length != _lastMessageCount;
+                    final shouldAutoScroll =
+                        messages.length != _lastMessageCount;
                     _lastMessageCount = messages.length;
                     if (shouldAutoScroll) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -153,8 +176,16 @@ class _ChatConversationScreenState
                       itemCount: messages.length,
                       itemBuilder: (context, index) {
                         final message = messages[index];
-                        final isMe = currentUserId != null &&
+                        final isMe =
+                            currentUserId != null &&
                             message.senderId == currentUserId;
+
+                        // Determine sender name
+                        final senderName = isMe
+                            ? 'Tú'
+                            : (message.senderId == widget.chat.buyerId
+                                  ? (widget.chat.buyerName ?? 'Cliente')
+                                  : (widget.chat.riderName ?? 'Rider'));
 
                         return Align(
                           key: ValueKey(message.messageId),
@@ -182,13 +213,39 @@ class _ChatConversationScreenState
                                     : borderGray100,
                               ),
                             ),
-                            child: Text(
-                              message.text,
-                              style: const TextStyle(
-                                color: textGray900,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (!isMe)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Text(
+                                      senderName,
+                                      style: const TextStyle(
+                                        color: primaryOrange,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                Text(
+                                  message.text,
+                                  style: const TextStyle(
+                                    color: textGray900,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _formatTimestamp(message.sentAt),
+                                  style: const TextStyle(
+                                    color: textGray600,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -203,9 +260,7 @@ class _ChatConversationScreenState
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                   decoration: BoxDecoration(
                     color: backgroundWhite,
-                    border: Border(
-                      top: BorderSide(color: borderGray100),
-                    ),
+                    border: Border(top: BorderSide(color: borderGray100)),
                   ),
                   child: Row(
                     children: [

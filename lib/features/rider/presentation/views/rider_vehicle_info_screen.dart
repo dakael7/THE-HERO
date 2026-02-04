@@ -4,6 +4,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/vehicle.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import 'rider_vehicle_verification_screen.dart';
 
 class RiderVehicleInfoScreen extends ConsumerStatefulWidget {
   const RiderVehicleInfoScreen({super.key});
@@ -178,13 +179,15 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       isVerified: isVehicleVerified(VehicleType.motorcycle),
                       enabled: isVehicleVerified(VehicleType.motorcycle),
                       onTap: () => setState(() => _selected = VehicleType.motorcycle),
-                      onPrimaryAction: () {
-                        _showInfoDialog(
-                          context,
-                          title: 'Verificar vehículo',
-                          message:
-                              'Este vehículo requiere licencia vigente y documentación del vehículo. Sube tus documentos desde tu perfil y espera validación.',
+                      onPrimaryAction: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const RiderVehicleVerificationScreen(
+                              vehicleType: VehicleType.motorcycle,
+                            ),
+                          ),
                         );
+                        ref.invalidate(profileProvider);
                       },
                       primaryActionLabel: '+ Verificar vehículo',
                       warningText:
@@ -199,13 +202,15 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       isVerified: isVehicleVerified(VehicleType.car),
                       enabled: isVehicleVerified(VehicleType.car),
                       onTap: () => setState(() => _selected = VehicleType.car),
-                      onPrimaryAction: () {
-                        _showInfoDialog(
-                          context,
-                          title: 'Verificar vehículo',
-                          message:
-                              'Este vehículo requiere licencia vigente y documentación del vehículo. Sube tus documentos desde tu perfil y espera validación.',
+                      onPrimaryAction: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const RiderVehicleVerificationScreen(
+                              vehicleType: VehicleType.car,
+                            ),
+                          ),
                         );
+                        ref.invalidate(profileProvider);
                       },
                       primaryActionLabel: '+ Verificar vehículo',
                       warningText:
@@ -220,13 +225,15 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       isVerified: isVehicleVerified(VehicleType.truck),
                       enabled: isVehicleVerified(VehicleType.truck),
                       onTap: () => setState(() => _selected = VehicleType.truck),
-                      onPrimaryAction: () {
-                        _showInfoDialog(
-                          context,
-                          title: 'Verificar vehículo',
-                          message:
-                              'Este vehículo requiere licencia vigente y documentación del vehículo. Sube tus documentos desde tu perfil y espera validación.',
+                      onPrimaryAction: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const RiderVehicleVerificationScreen(
+                              vehicleType: VehicleType.truck,
+                            ),
+                          ),
                         );
+                        ref.invalidate(profileProvider);
                       },
                       primaryActionLabel: '+ Verificar vehículo',
                       warningText:

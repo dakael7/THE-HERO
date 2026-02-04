@@ -10,6 +10,7 @@ import '../../../hero/presentation/views/hero_home_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
 import 'unverified_email_screen.dart';
 import '../../domain/providers/get_current_user_usecase_provider.dart';
+import '../../../../data/providers/network_providers.dart';
 
 class EmailVerificationScreen extends ConsumerStatefulWidget {
   final UserRole userRole;
@@ -248,6 +249,18 @@ class _EmailVerificationScreenState
                   }
                   return;
                 }
+
+                final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
+                if (uid != null && currentUser.riderProfile?.isActive != true) {
+                  try {
+                    await ref
+                        .read(firebaseFirestoreProvider)
+                        .collection('users')
+                        .doc(uid)
+                        .update({'riderProfile.isActive': true});
+                  } catch (_) {}
+                }
+
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(

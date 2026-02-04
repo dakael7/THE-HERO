@@ -3,12 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../providers/auth_provider.dart';
+import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart' as hero;
 import '../../../rider/presentation/views/rider_home_screen.dart';
-import '../../domain/providers/get_current_user_usecase_provider.dart';
 import 'registro_rider.dart';
 import 'unverified_email_screen.dart';
 import '../../../../domain/entities/user.dart';
+import '../../../../data/providers/network_providers.dart';
 
 class LoginPasswordScreen extends ConsumerStatefulWidget {
   final String email;
@@ -136,6 +137,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
 
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
+      FocusScope.of(context).unfocus();
       setState(() {
         _isLoading = true;
       });
@@ -154,9 +156,7 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
 
           if (authState.isAuthenticated && authState.errorMessage == null) {
             // Obtener usuario actual para verificar verificación y rol
-            final currentUser = await ref
-                .read(getCurrentUserUseCaseProvider)
-                .execute();
+            final currentUser = await ref.read(profileProvider.future);
 
             if (currentUser == null) {
               _showErrorDialog(
@@ -208,6 +208,18 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
 
               // Guardar preferencia de rol
               ref.read(authNotifierProvider.notifier).saveLastRole('rider');
+
+              final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
+              if (uid != null && currentUser.riderProfile?.isActive != true) {
+                try {
+                  await ref
+                      .read(firebaseFirestoreProvider)
+                      .collection('users')
+                      .doc(uid)
+                      .update({'riderProfile.isActive': true});
+                  ref.invalidate(profileProvider);
+                } catch (_) {}
+              }
 
               Navigator.pushReplacement(
                 context,

@@ -14,7 +14,7 @@ class Documents {
 
   bool isValidForVehicle(VehicleType vehicleType) {
     if (vehicleType == VehicleType.bicycle) {
-      return idCardUrl.isNotEmpty;
+      return true;
     }
     return idCardUrl.isNotEmpty && 
            licenseUrl != null && 

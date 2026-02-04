@@ -26,7 +26,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   final FirebaseFirestore _firestore;
 
   OrdersRemoteDataSourceImpl({required FirebaseFirestore firestore})
-      : _firestore = firestore;
+    : _firestore = firestore;
 
   @override
   Future<OrderModel> createOrder(OrderModel order) async {
@@ -73,9 +73,11 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .where('heroId', isEqualTo: heroId)
           .orderBy('timestamps.createdAt', descending: true)
           .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => OrderModel.fromJson(doc.data()))
-              .toList());
+          .map(
+            (snapshot) => snapshot.docs
+                .map((doc) => OrderModel.fromJson(doc.data()))
+                .toList(),
+          );
     } catch (e) {
       throw Exception('Error al obtener pedidos del hero: $e');
     }
@@ -89,9 +91,11 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .where('rider.assignedRiderId', isEqualTo: riderId)
           .orderBy('timestamps.assignedAt', descending: true)
           .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => OrderModel.fromJson(doc.data()))
-              .toList());
+          .map(
+            (snapshot) => snapshot.docs
+                .map((doc) => OrderModel.fromJson(doc.data()))
+                .toList(),
+          );
     } catch (e) {
       throw Exception('Error al obtener pedidos del rider: $e');
     }
@@ -110,9 +114,11 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .orderBy('timestamps.queuedAt', descending: true)
           .limit(limit)
           .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => OrderModel.fromJson(doc.data()))
-              .toList());
+          .map(
+            (snapshot) => snapshot.docs
+                .map((doc) => OrderModel.fromJson(doc.data()))
+                .toList(),
+          );
     } catch (e) {
       throw Exception('Error al obtener pedidos disponibles: $e');
     }
@@ -175,13 +181,20 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           throw Exception('Pedido ya tiene rider asignado');
         }
 
+        // Build the complete rider object for the update
+        // This is necessary because Firestore rules validate request.resource.data.rider
+        // and dot notation updates don't reconstruct the full object
+        final riderUpdate = {
+          'assignedRiderId': riderId,
+          'assignedAt': FieldValue.serverTimestamp(),
+          'vehicleTypeSnapshot': vehicleType,
+          'riderNameSnapshot': riderName,
+          'riderPhoneSnapshot': riderPhone,
+        };
+
         transaction.update(orderRef, {
           'status': 'assigned',
-          'rider.assignedRiderId': riderId,
-          'rider.assignedAt': FieldValue.serverTimestamp(),
-          'rider.vehicleTypeSnapshot': vehicleType,
-          'rider.riderNameSnapshot': riderName,
-          'rider.riderPhoneSnapshot': riderPhone,
+          'rider': riderUpdate,
           'timestamps.assignedAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -192,7 +205,11 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   }
 
   @override
-  Future<void> cancelOrder(String orderId, String reason, String canceledBy) async {
+  Future<void> cancelOrder(
+    String orderId,
+    String reason,
+    String canceledBy,
+  ) async {
     try {
       await _firestore.collection('orders').doc(orderId).update({
         'status': 'canceled',

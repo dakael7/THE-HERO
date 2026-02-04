@@ -7,8 +7,9 @@ import '../widgets/animated_role_button.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
-import '../../domain/providers/get_current_user_usecase_provider.dart';
 import 'email_verification_screen.dart';
+import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../../data/providers/network_providers.dart';
 
 // =========================================================
 // WIDGET DE PÁGINA DE LOGIN
@@ -42,11 +43,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       final wasAuthenticated = previous?.isAuthenticated ?? false;
       if (!wasAuthenticated && next.isAuthenticated) {
         Future.microtask(() async {
-          final currentUser = await ref
-              .read(getCurrentUserUseCaseProvider)
-              .execute();
+          final currentUser = await ref.read(profileProvider.future);
           if (!mounted) return;
           if (currentUser?.isRider == true) {
+            final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
+            if (uid != null && currentUser?.riderProfile?.isActive != true) {
+              try {
+                await ref
+                    .read(firebaseFirestoreProvider)
+                    .collection('users')
+                    .doc(uid)
+                    .update({'riderProfile.isActive': true});
+                ref.invalidate(profileProvider);
+              } catch (_) {}
+            }
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const RiderHomeScreen()),

@@ -3,6 +3,8 @@ import '../../../../domain/entities/order.dart';
 import '../../../../domain/entities/vehicle.dart';
 import '../../../../domain/providers/orders_usecase_providers.dart';
 import '../../../../data/providers/network_providers.dart';
+import '../../../../data/models/order_model.dart';
+import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
 final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   ref,
@@ -30,6 +32,24 @@ final riderOrdersProvider = StreamProvider.family<List<Order>, String>((
 
   final useCase = ref.read(getOrdersByRiderUseCaseProvider);
   return useCase.execute(riderId);
+});
+
+final orderByIdProvider = StreamProvider.family<Order?, String>((ref, orderId) {
+  final auth = ref.watch(firebaseAuthProvider);
+  final currentUid = auth.currentUser?.uid;
+  if (currentUid == null) {
+    return Stream.value(null);
+  }
+
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore.collection('orders').doc(orderId).snapshots().map((doc) {
+    if (!doc.exists) return null;
+    final data = doc.data();
+    if (data == null) return null;
+
+    final order = OrderModel.fromJson(data).toEntity();
+    return order;
+  });
 });
 
 final availableOrdersProvider = StreamProvider.autoDispose
@@ -84,6 +104,28 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
   }) async {
     state = const AsyncValue.loading();
     try {
+      final profile = await ref.read(profileProvider.future);
+      final riderProfile = profile?.riderProfile;
+      if (riderProfile == null) {
+        throw Exception('Debes completar tu perfil de rider.');
+      }
+
+      final canAccept = riderProfile.canAcceptDeliveries == true;
+      final isActive = riderProfile.isActive == true;
+
+      // Business rule: bicycle riders can accept without full verification flow.
+      if (riderVehicleType == VehicleType.bicycle) {
+        if (!isActive) {
+          throw Exception(
+            'Debes activar tu perfil de rider para aceptar pedidos',
+          );
+        }
+      } else {
+        if (!canAccept) {
+          throw Exception('Rider no verificado para aceptar pedidos');
+        }
+      }
+
       final useCase = ref.read(claimOrderUseCaseProvider);
       await useCase.execute(
         orderId: orderId,
@@ -96,6 +138,7 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
       state = const AsyncValue.data(null);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
+      rethrow;
     }
   }
 
@@ -110,6 +153,74 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
     }
   }
 
+  Future<void> confirmDeliveryAndRate({
+    required String orderId,
+    required double rating,
+    String? comment,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final firestore = ref.read(firebaseFirestoreProvider);
+
+      // Get the order to find the rider ID
+      final orderDoc = await firestore.collection('orders').doc(orderId).get();
+      if (!orderDoc.exists) {
+        throw Exception('Order not found');
+      }
+
+      final orderData = orderDoc.data();
+      if (orderData == null) {
+        throw Exception('Order data is null');
+      }
+
+      final riderData = orderData['rider'] as Map<String, dynamic>?;
+      final riderId = riderData?['assignedRiderId'] as String?;
+
+      if (riderId == null || riderId.isEmpty) {
+        throw Exception('No rider assigned to this order');
+      }
+
+      // Update order with confirmation and rating
+      await firestore.collection('orders').doc(orderId).update({
+        'confirmedByHero': true,
+        'heroRating': rating,
+        'heroRatingComment': comment,
+        'updatedAt': DateTime.now(),
+      });
+
+      // Update rider's rating statistics
+      final riderDoc = await firestore.collection('users').doc(riderId).get();
+      if (riderDoc.exists) {
+        final userData = riderDoc.data();
+        final riderProfile = userData?['riderProfile'] as Map<String, dynamic>?;
+
+        if (riderProfile != null) {
+          final currentRating =
+              (riderProfile['rating'] as num?)?.toDouble() ?? 0.0;
+          final currentTotalRatings =
+              (riderProfile['totalRatings'] as int?) ?? 0;
+
+          // Calculate new average rating
+          final newTotalRatings = currentTotalRatings + 1;
+          final newAverageRating =
+              ((currentRating * currentTotalRatings) + rating) /
+              newTotalRatings;
+
+          // Update rider profile with new rating
+          await firestore.collection('users').doc(riderId).update({
+            'riderProfile.rating': newAverageRating,
+            'riderProfile.totalRatings': newTotalRatings,
+          });
+        }
+      }
+
+      state = const AsyncValue.data(null);
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
+      rethrow;
+    }
+  }
+
   void reset() {
     state = const AsyncValue.data(null);
   }
@@ -119,3 +230,6 @@ final orderNotifierProvider =
     NotifierProvider<OrderNotifier, AsyncValue<Order?>>(() {
       return OrderNotifier();
     });
+
+// Alias for easier access to order actions
+final orderActionsProvider = orderNotifierProvider.notifier;

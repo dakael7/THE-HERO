@@ -31,6 +31,9 @@ class Order {
   final PickupSchedule? pickupSchedule;
   final bool useConcierge;
   final ConciergeInfo? conciergeInfo;
+  final bool confirmedByHero;
+  final double? heroRating;
+  final String? heroRatingComment;
 
   Order({
     required this.orderId,
@@ -55,6 +58,9 @@ class Order {
     this.pickupSchedule,
     this.useConcierge = false,
     this.conciergeInfo,
+    this.confirmedByHero = false,
+    this.heroRating,
+    this.heroRatingComment,
   });
 
   bool get isAssigned => rider.isAssigned;
@@ -87,6 +93,9 @@ class Order {
     PickupSchedule? pickupSchedule,
     bool? useConcierge,
     ConciergeInfo? conciergeInfo,
+    bool? confirmedByHero,
+    double? heroRating,
+    String? heroRatingComment,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -111,6 +120,9 @@ class Order {
       pickupSchedule: pickupSchedule ?? this.pickupSchedule,
       useConcierge: useConcierge ?? this.useConcierge,
       conciergeInfo: conciergeInfo ?? this.conciergeInfo,
+      confirmedByHero: confirmedByHero ?? this.confirmedByHero,
+      heroRating: heroRating ?? this.heroRating,
+      heroRatingComment: heroRatingComment ?? this.heroRatingComment,
     );
   }
 }

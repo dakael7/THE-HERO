@@ -29,11 +29,8 @@ class DeliveryFeeCalculator {
   }) {
     // Validar que la distancia no exceda el máximo del vehículo
     final maxDistance = TransportPricingConfig.getMaxDistance(vehicleType);
-    if (distanceKm > maxDistance) {
-      throw Exception(
-        'La distancia de ${distanceKm.toStringAsFixed(1)} km excede el máximo de ${maxDistance.toStringAsFixed(1)} km para ${vehicleType.displayName}',
-      );
-    }
+    final effectiveDistanceKm =
+        distanceKm > maxDistance ? maxDistance : distanceKm;
 
     final minimumCharge = TransportPricingConfig.getMinimumCharge(vehicleType);
     double calculatedFee = 0.0;
@@ -42,13 +39,14 @@ class DeliveryFeeCalculator {
     String breakdown = '';
 
     // Calcular tarifa base
-    if (distanceKm <= TransportPricingConfig.distanceThresholdForDiscount ||
+    if (effectiveDistanceKm <=
+            TransportPricingConfig.distanceThresholdForDiscount ||
         !TransportPricingConfig.hasDistanceDiscount(vehicleType)) {
       // Tarifa normal para toda la distancia
       final pricePerKm = TransportPricingConfig.getPricePerKm(vehicleType);
-      calculatedFee = distanceKm * pricePerKm;
+      calculatedFee = effectiveDistanceKm * pricePerKm;
       breakdown =
-          '${distanceKm.toStringAsFixed(1)} km × \$${pricePerKm.toStringAsFixed(0)} = \$${calculatedFee.toStringAsFixed(0)}';
+          '${effectiveDistanceKm.toStringAsFixed(1)} km × \$${pricePerKm.toStringAsFixed(0)} = \$${calculatedFee.toStringAsFixed(0)}';
     } else {
       // Aplicar descuento por distancia (solo para auto y camión)
       final pricePerKm = TransportPricingConfig.getPricePerKm(vehicleType);
@@ -62,7 +60,8 @@ class DeliveryFeeCalculator {
 
       // Distancia adicional a precio reducido
       final extraDistance =
-          distanceKm - TransportPricingConfig.distanceThresholdForDiscount;
+          effectiveDistanceKm -
+          TransportPricingConfig.distanceThresholdForDiscount;
       final reducedDistanceFee = extraDistance * reducedPrice;
 
       calculatedFee = normalDistanceFee + reducedDistanceFee;
@@ -82,7 +81,7 @@ class DeliveryFeeCalculator {
 
     return DeliveryFeeResult(
       fee: finalFee,
-      distanceKm: distanceKm,
+      distanceKm: effectiveDistanceKm,
       vehicleType: vehicleType,
       minimumChargeApplied: minimumChargeApplied,
       distanceDiscountApplied: distanceDiscountApplied,

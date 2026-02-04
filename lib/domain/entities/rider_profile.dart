@@ -12,6 +12,7 @@ class RiderProfile {
   final Verification? verification;
   final int deliveredOrders;
   final double rating;
+  final int totalRatings;
 
   RiderProfile({
     this.isActive = false,
@@ -22,13 +23,14 @@ class RiderProfile {
     this.verification,
     this.deliveredOrders = 0,
     this.rating = 0.0,
+    this.totalRatings = 0,
   });
 
   bool get isComplete {
-    return vehicle.isValid && 
-           documents.isValidForVehicle(vehicle.type) &&
-           verification != null &&
-           verification!.isRecent;
+    return vehicle.isValid &&
+        documents.isValidForVehicle(vehicle.type) &&
+        verification != null &&
+        verification!.isRecent;
   }
 
   bool get canAcceptDeliveries {
@@ -44,6 +46,7 @@ class RiderProfile {
     Verification? verification,
     int? deliveredOrders,
     double? rating,
+    int? totalRatings,
   }) {
     return RiderProfile(
       isActive: isActive ?? this.isActive,
@@ -54,6 +57,7 @@ class RiderProfile {
       verification: verification ?? this.verification,
       deliveredOrders: deliveredOrders ?? this.deliveredOrders,
       rating: rating ?? this.rating,
+      totalRatings: totalRatings ?? this.totalRatings,
     );
   }
 }

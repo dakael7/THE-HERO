@@ -162,10 +162,10 @@ class RiderEarningsScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 12),
                         _buildBreakdownRow(
-                          'Impuestos (14.5%)',
+                          'Descuento (7%)',
                           -totalTaxDeductions,
                           color: Colors.red,
-                          subtitle: 'Retención de impuestos',
+                          subtitle: 'Descuento sobre envío neto',
                         ),
                         const SizedBox(height: 16),
                         const Divider(height: 1, color: borderGray100),
@@ -213,7 +213,7 @@ class RiderEarningsScreen extends ConsumerWidget {
                               ),
                               SizedBox(height: 4),
                               Text(
-                                'Se aplica una comisión fija de \$2,000 por entrega más un 14.5% de retención de impuestos sobre el total facturado.',
+                                'Se aplica una comisión fija de \$2,000 por entrega más un 7% de descuento sobre el envío neto (envío menos comisión).',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: textGray700,

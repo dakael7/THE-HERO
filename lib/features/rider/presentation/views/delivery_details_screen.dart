@@ -11,6 +11,7 @@ import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../domain/services/rider_tracking_service.dart';
 import '../../domain/services/directions_service.dart';
+import 'rider_delivery_map_screen.dart';
 
 final _routeProvider = FutureProvider.autoDispose
     .family<DirectionsRoute, _RouteParams>((ref, params) {
@@ -39,33 +40,8 @@ class _RouteParams {
 
 class DeliveryDetailsScreen extends ConsumerStatefulWidget {
   final Order order;
-  final String productName;
-  final String productImage;
-  final double weight;
-  final double distance;
-  final double earnings;
-  final String pickupAddress;
-  final String deliveryAddress;
-  final double pickupLat;
-  final double pickupLng;
-  final double deliveryLat;
-  final double deliveryLng;
 
-  const DeliveryDetailsScreen({
-    super.key,
-    required this.order,
-    required this.productName,
-    required this.productImage,
-    required this.weight,
-    required this.distance,
-    required this.earnings,
-    required this.pickupAddress,
-    required this.deliveryAddress,
-    required this.pickupLat,
-    required this.pickupLng,
-    required this.deliveryLat,
-    required this.deliveryLng,
-  });
+  const DeliveryDetailsScreen({super.key, required this.order});
 
   @override
   ConsumerState<DeliveryDetailsScreen> createState() =>
@@ -84,25 +60,29 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final claimState = ref.watch(orderNotifierProvider);
+
+    // Extract data from order
+    final pickupLat = widget.order.pickup.geo.latitude;
+    final pickupLng = widget.order.pickup.geo.longitude;
+    final deliveryLat = widget.order.delivery.geo.latitude;
+    final deliveryLng = widget.order.delivery.geo.longitude;
+
     final routeAsync = ref.watch(
       _routeProvider(
         _RouteParams(
-          pickupLat: widget.pickupLat,
-          pickupLng: widget.pickupLng,
-          deliveryLat: widget.deliveryLat,
-          deliveryLng: widget.deliveryLng,
+          pickupLat: pickupLat,
+          pickupLng: pickupLng,
+          deliveryLat: deliveryLat,
+          deliveryLng: deliveryLng,
         ),
       ),
     );
 
-    final pickupLocation = gmap.LatLng(widget.pickupLat, widget.pickupLng);
-    final deliveryLocation = gmap.LatLng(
-      widget.deliveryLat,
-      widget.deliveryLng,
-    );
+    final pickupLocation = gmap.LatLng(pickupLat, pickupLng);
+    final deliveryLocation = gmap.LatLng(deliveryLat, deliveryLng);
     final initialCenter = gmap.LatLng(
-      (widget.pickupLat + widget.deliveryLat) / 2,
-      (widget.pickupLng + widget.deliveryLng) / 2,
+      (pickupLat + deliveryLat) / 2,
+      (pickupLng + deliveryLng) / 2,
     );
 
     final polylinePoints = routeAsync.maybeWhen(
@@ -113,12 +93,12 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
 
     final distanceText = routeAsync.maybeWhen(
       data: (r) => '${(r.distanceMeters / 1000).toStringAsFixed(1)} km',
-      orElse: () => '${widget.distance.toStringAsFixed(1)} km',
+      orElse: () => '0.0 km',
     );
 
     final durationText = routeAsync.maybeWhen(
       data: (r) => '${(r.durationSeconds / 60).ceil()} min',
-      orElse: () => '~${(widget.distance * 3).ceil()} min',
+      orElse: () => '~15 min',
     );
 
     return Scaffold(
@@ -202,7 +182,10 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.black.withValues(alpha: 0.6), Colors.transparent],
+                  colors: [
+                    Colors.black.withValues(alpha: 0.6),
+                    Colors.transparent,
+                  ],
                 ),
               ),
               child: Row(
@@ -316,9 +299,16 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                             width: 70,
                             height: 70,
                             color: backgroundGray50,
-                            child: widget.productImage.startsWith('http')
+                            child:
+                                widget.order.items.isNotEmpty &&
+                                    widget.order.items.first.imageUrlSnapshot
+                                        .startsWith('http')
                                 ? CachedNetworkImage(
-                                    imageUrl: widget.productImage,
+                                    imageUrl: widget
+                                        .order
+                                        .items
+                                        .first
+                                        .imageUrlSnapshot,
                                     fit: BoxFit.cover,
                                     placeholder: (context, url) => const Center(
                                       child: CircularProgressIndicator(
@@ -328,13 +318,12 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                     ),
                                     errorWidget: (context, url, error) =>
                                         const Icon(
-                                          Icons.inventory_2_outlined,
-                                          size: 32,
+                                          Icons.image_not_supported_outlined,
                                           color: textGray600,
                                         ),
                                   )
                                 : const Icon(
-                                    Icons.inventory_2_outlined,
+                                    Icons.shopping_bag_outlined,
                                     size: 32,
                                     color: textGray600,
                                   ),
@@ -348,7 +337,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                widget.productName,
+                                widget.order.items.isNotEmpty
+                                    ? widget.order.items.first.titleSnapshot
+                                    : 'Pedido',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
@@ -378,7 +369,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      '${widget.weight.toStringAsFixed(1)} kg',
+                                      '${widget.order.requirements.weightKg.toStringAsFixed(1)} kg',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
@@ -405,7 +396,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                             borderRadius: BorderRadius.circular(10),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
+                                color: const Color(
+                                  0xFF4CAF50,
+                                ).withValues(alpha: 0.3),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
@@ -420,7 +413,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '\$${widget.earnings.toStringAsFixed(0)}',
+                                '\$${widget.order.deliveryFee.toStringAsFixed(0)}',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
@@ -507,14 +500,14 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                     _buildCompactAddressRow(
                       icon: Icons.location_on_outlined,
                       label: 'Recogida',
-                      address: widget.pickupAddress,
+                      address: widget.order.pickup.addressSnapshot,
                       color: primaryOrange,
                     ),
                     const SizedBox(height: 12),
                     _buildCompactAddressRow(
                       icon: Icons.flag_outlined,
                       label: 'Entrega',
-                      address: widget.deliveryAddress,
+                      address: widget.order.delivery.addressSnapshot,
                       color: categoryTextGreen,
                     ),
                     if (widget.order.delivery.deliverToReception) ...[
@@ -791,15 +784,20 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
             order: widget.order,
           );
 
-      // Start tracking this order
-      final trackingService = RiderTrackingService(
-        firestore: FirebaseFirestore.instance,
-        locationRepository: LocationRepositoryImpl(),
-      );
-      await trackingService.startTracking(
-        orderId: widget.order.orderId,
-        riderId: user.id,
-      );
+      // Start tracking this order (non-blocking - don't fail claim if tracking fails)
+      try {
+        final trackingService = RiderTrackingService(
+          firestore: FirebaseFirestore.instance,
+          locationRepository: LocationRepositoryImpl(),
+        );
+        await trackingService.startTracking(
+          orderId: widget.order.orderId,
+          riderId: user.id,
+        );
+      } catch (trackingError) {
+        // Log tracking error but don't block the claim success
+        print('⚠️ Warning: Failed to start tracking: $trackingError');
+      }
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -816,7 +814,12 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
-        Navigator.pop(context);
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) =>
+                RiderDeliveryMapScreen(orderId: widget.order.orderId),
+          ),
+        );
       }
     } catch (e) {
       if (context.mounted) {

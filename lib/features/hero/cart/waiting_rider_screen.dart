@@ -7,6 +7,7 @@ import '../../../domain/entities/order_status.dart';
 import '../../orders/presentation/providers/orders_provider.dart';
 import '../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../hero/orders/presentation/views/hero_order_status_screen.dart';
+import '../../hero/presentation/views/hero_home_screen.dart';
 
 class WaitingRiderScreen extends ConsumerWidget {
   final String orderId;
@@ -16,66 +17,136 @@ class WaitingRiderScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(profileProvider);
 
-    return Scaffold(
-      backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        title: const Text('Buscando repartidor'),
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-      ),
-      body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: primaryOrange)),
-        error: (err, _) => _StatusMessage(
-          title: 'No pudimos cargar tu perfil',
-          subtitle: err.toString(),
-          showBack: true,
-        ),
-        data: (user) {
-          if (user == null) {
-            return const _StatusMessage(
-              title: 'Inicia sesión',
-              subtitle: 'Necesitas iniciar sesión para seguir el pedido.',
-              showBack: true,
-            );
-          }
-
-          final ordersAsync = ref.watch(myOrdersProvider(user.id));
-
-          return ordersAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator(color: primaryOrange)),
-            error: (err, _) => _StatusMessage(
-              title: 'No pudimos obtener el pedido',
-              subtitle: err.toString(),
-              showBack: true,
-            ),
-            data: (orders) {
-              final order = orders.where((o) => o.orderId == orderId).firstOrNull;
-
-              if (order == null) {
-                return const _StatusMessage(
-                  title: 'Publicando pedido...',
-                  subtitle: 'Estamos esperando la confirmación del servidor.',
-                );
-              }
-
-              return _WaitingContent(order: order);
-            },
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // Navigate to home instead of going back to cart
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
+            (route) => false,
           );
-        },
+        }
+      },
+      child: Scaffold(
+        backgroundColor: backgroundGray50,
+        appBar: AppBar(
+          title: const Text('Buscando repartidor'),
+          backgroundColor: primaryYellow,
+          foregroundColor: textGray900,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.home),
+            onPressed: () {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
+                (route) => false,
+              );
+            },
+            tooltip: 'Ir a inicio',
+          ),
+        ),
+        body: profileAsync.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: primaryOrange),
+          ),
+          error: (err, _) => _StatusMessage(
+            title: 'No pudimos cargar tu perfil',
+            subtitle: err.toString(),
+            showBack: true,
+          ),
+          data: (user) {
+            if (user == null) {
+              return const _StatusMessage(
+                title: 'Inicia sesión',
+                subtitle: 'Necesitas iniciar sesión para seguir el pedido.',
+                showBack: true,
+              );
+            }
+
+            final ordersAsync = ref.watch(myOrdersProvider(user.id));
+
+            return ordersAsync.when(
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: primaryOrange),
+              ),
+              error: (err, _) => _StatusMessage(
+                title: 'No pudimos obtener el pedido',
+                subtitle: err.toString(),
+                showBack: true,
+              ),
+              data: (orders) {
+                final order = orders
+                    .where((o) => o.orderId == orderId)
+                    .firstOrNull;
+
+                if (order == null) {
+                  return const _StatusMessage(
+                    title: 'Publicando pedido...',
+                    subtitle: 'Estamos esperando la confirmación del servidor.',
+                  );
+                }
+
+                return _WaitingContent(order: order);
+              },
+            );
+          },
+        ),
       ),
     );
   }
 }
 
-class _WaitingContent extends StatelessWidget {
+class _WaitingContent extends ConsumerStatefulWidget {
   final Order order;
   const _WaitingContent({required this.order});
 
   @override
+  ConsumerState<_WaitingContent> createState() => _WaitingContentState();
+}
+
+class _WaitingContentState extends ConsumerState<_WaitingContent> {
+  OrderStatus? _previousStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    _previousStatus = widget.order.status;
+  }
+
+  @override
+  void didUpdateWidget(_WaitingContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Check if status changed from queued/created to assigned
+    final currentStatus = widget.order.status;
+    final wasQueued =
+        _previousStatus == OrderStatus.queued ||
+        _previousStatus == OrderStatus.created;
+    final isNowAssigned = currentStatus == OrderStatus.assigned;
+
+    if (wasQueued && isNowAssigned) {
+      // Auto-navigate to order status screen
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) =>
+                  HeroOrderStatusScreen(orderId: widget.order.orderId),
+            ),
+          );
+        }
+      });
+    }
+
+    _previousStatus = currentStatus;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final status = order.status;
-    final isQueued = status == OrderStatus.queued || status == OrderStatus.created;
+    final status = widget.order.status;
+    final isQueued =
+        status == OrderStatus.queued || status == OrderStatus.created;
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -86,12 +157,20 @@ class _WaitingContent extends StatelessWidget {
           CircleAvatar(
             radius: 48,
             backgroundColor: primaryOrange.withValues(alpha: 0.12),
-            child: const Icon(Icons.delivery_dining, color: primaryOrange, size: 48),
+            child: const Icon(
+              Icons.delivery_dining,
+              color: primaryOrange,
+              size: 48,
+            ),
           ),
           const SizedBox(height: 16),
           Text(
             isQueued ? 'Tu pedido está publicado' : status.displayName,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: textGray900),
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: textGray900,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
@@ -103,7 +182,7 @@ class _WaitingContent extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          _InfoCard(order: order),
+          _InfoCard(order: widget.order),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -111,7 +190,8 @@ class _WaitingContent extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => HeroOrderStatusScreen(orderId: order.orderId),
+                    builder: (_) =>
+                        HeroOrderStatusScreen(orderId: widget.order.orderId),
                   ),
                 );
               },
@@ -165,7 +245,10 @@ class _InfoCard extends StatelessWidget {
           const SizedBox(height: 8),
           _row('Total', '\$${order.amountTotal.toStringAsFixed(0)} CLP'),
           const SizedBox(height: 8),
-          _row('Vehículo requerido', order.requirements.requiredVehicle.displayName),
+          _row(
+            'Vehículo requerido',
+            order.requirements.requiredVehicle.displayName,
+          ),
           const SizedBox(height: 8),
           _row('Peso', '${order.requirements.weightKg.toStringAsFixed(2)} kg'),
           const SizedBox(height: 8),
@@ -183,13 +266,19 @@ class _InfoCard extends StatelessWidget {
           width: 140,
           child: Text(
             label,
-            style: const TextStyle(fontWeight: FontWeight.w600, color: textGray700),
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: textGray700,
+            ),
           ),
         ),
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(fontWeight: FontWeight.w700, color: textGray900),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: textGray900,
+            ),
           ),
         ),
       ],
@@ -257,10 +346,7 @@ class _BlinkingDotState extends State<_BlinkingDot>
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _controller,
-      child: const CircleAvatar(
-        radius: 6,
-        backgroundColor: primaryOrange,
-      ),
+      child: const CircleAvatar(radius: 6, backgroundColor: primaryOrange),
     );
   }
 }
@@ -288,7 +374,11 @@ class _StatusMessage extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: textGray900),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: textGray900,
+              ),
               textAlign: TextAlign.center,
             ),
             if (subtitle != null) ...[

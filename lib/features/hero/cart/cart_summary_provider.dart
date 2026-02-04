@@ -35,9 +35,14 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
   }
 
   // Calcular tipo de vehículo requerido basado en el peso total
-  final requiredVehicle = totalWeight > 0
-      ? OrderRequirements.calculateRequiredVehicle(totalWeight)
-      : null;
+  final requiredVehicle = (() {
+    if (totalWeight <= 0) return null;
+    try {
+      return OrderRequirements.calculateRequiredVehicle(totalWeight);
+    } catch (_) {
+      return null;
+    }
+  })();
 
   // Calcular costo de envío dinámicamente
   // Usamos una distancia estimada de 5 km si no tenemos la distancia real
@@ -45,13 +50,29 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
   double shippingCost = 0.0;
   String? shippingBreakdown;
 
+  if (requiredVehicle == null && totalWeight > 0) {
+    shippingBreakdown =
+        'No se pudo calcular el tipo de vehículo para el peso total (${totalWeight.toStringAsFixed(2)} kg).';
+  }
+
   if (requiredVehicle != null && cartItems.isNotEmpty) {
-    final feeResult = DeliveryFeeCalculator.calculateFee(
+    const estimatedDistanceKm = 5.0;
+    final feeResult = DeliveryFeeCalculator.tryCalculateFee(
       vehicleType: requiredVehicle,
-      distanceKm: 5.0, // Distancia estimada por defecto
+      distanceKm: estimatedDistanceKm,
     );
-    shippingCost = feeResult.fee;
-    shippingBreakdown = feeResult.breakdown;
+
+    if (feeResult != null) {
+      shippingCost = feeResult.fee;
+      shippingBreakdown = feeResult.breakdown;
+    } else {
+      shippingCost = DeliveryFeeCalculator.estimateFee(
+        vehicleType: requiredVehicle,
+        estimatedDistanceKm: estimatedDistanceKm,
+      );
+      shippingBreakdown =
+          'Estimación por defecto no disponible (distancia ${estimatedDistanceKm.toStringAsFixed(1)} km excede el máximo).';
+    }
   }
 
   // Comisión de servicio fija de $2,000 CLP

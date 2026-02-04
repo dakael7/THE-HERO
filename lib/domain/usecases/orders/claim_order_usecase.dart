@@ -32,5 +32,9 @@ class ClaimOrderUseCase {
       riderName,
       riderPhone,
     );
+
+    // Ensure the order is no longer considered claimable (queued).
+    // This complements the transaction update and helps avoid UI showing stale data.
+    await _repository.updateOrderStatus(orderId, 'assigned');
   }
 }

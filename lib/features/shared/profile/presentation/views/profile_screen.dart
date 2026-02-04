@@ -21,6 +21,7 @@ import '../../../../rider/presentation/views/rider_earnings_screen.dart';
 import '../../../../rider/presentation/views/rider_vehicle_info_screen.dart';
 import '../../../../rider/presentation/views/rider_delivery_history_screen.dart';
 import '../../../../../domain/entities/user.dart';
+import '../../../../../data/providers/network_providers.dart';
 
 class ProfileScreen extends ConsumerWidget {
   final VoidCallback? onBackPressed;
@@ -346,6 +347,100 @@ class ProfileScreen extends ConsumerWidget {
         children: [
           // Rider-specific options
           if (isRiderProfile) ...[
+            Material(
+              color: backgroundWhite,
+              borderRadius: BorderRadius.circular(14),
+              child: Ink(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: borderGray100,
+                    width: 1,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: primaryOrange.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.power_settings_new,
+                          size: 20,
+                          color: primaryOrange,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Disponibilidad',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: textGray900,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        user.riderProfile?.isActive == true
+                            ? 'Disponible'
+                            : 'Inactivo',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: textGray600,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        height: 22,
+                        child: Switch(
+                          value: user.riderProfile?.isActive == true,
+                          activeColor: primaryOrange,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          onChanged: (value) async {
+                            final auth = ref.read(firebaseAuthProvider);
+                            final uid = auth.currentUser?.uid;
+                            if (uid == null) return;
+
+                            try {
+                              final firestore =
+                                  ref.read(firebaseFirestoreProvider);
+                              await firestore
+                                  .collection('users')
+                                  .doc(uid)
+                                  .update({'riderProfile.isActive': value});
+                              ref.invalidate(profileProvider);
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'No se pudo actualizar disponibilidad: $e',
+                                  ),
+                                  backgroundColor: Colors.red,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             ProfileMenuTile(
               icon: Icons.attach_money,
               title: 'Mis ganancias',

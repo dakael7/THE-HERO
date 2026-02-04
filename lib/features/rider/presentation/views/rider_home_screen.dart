@@ -1,7 +1,9 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
+import 'package:intl/intl.dart';
 import '../../../../core/config/env.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../widgets/rider_bottom_nav.dart';
@@ -12,13 +14,13 @@ import '../../../shared/profile/presentation/providers/profile_provider.dart'
     as profile;
 import '../../../shared/profile/presentation/views/profile_screen.dart'
     as profile_view;
-import '../widgets/delivery_request_card.dart';
 import 'delivery_details_screen.dart';
 import '../providers/rider_nearby_providers.dart';
 import '../providers/rider_stats_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../domain/entities/order_status.dart';
 import '../../domain/entities/nearby_order.dart';
+import 'rider_delivery_map_screen.dart';
 
 final mapControllerProvider = StateProvider<gmap.GoogleMapController?>(
   (ref) => null,
@@ -101,6 +103,11 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
       default:
         return '';
     }
+  }
+
+  String _formatTime(DateTime dateTime) {
+    final formatter = DateFormat('HH:mm');
+    return formatter.format(dateTime);
   }
 
   Widget _buildBody(int selectedIndex) {
@@ -205,10 +212,11 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                 (safeStats['deliveredTrips'] as num?)?.toInt() ?? 0;
             final failedTrips =
                 (safeStats['failedTrips'] as num?)?.toInt() ?? 0;
-            final completionRate = (deliveredTrips + canceledTrips + failedTrips) == 0
+            final completionRate =
+                (deliveredTrips + canceledTrips + failedTrips) == 0
                 ? 0.0
                 : deliveredTrips /
-                    (deliveredTrips + canceledTrips + failedTrips);
+                      (deliveredTrips + canceledTrips + failedTrips);
 
             return CustomScrollView(
               slivers: [
@@ -466,118 +474,222 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
     final currentStatus = order.status;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => RiderDeliveryMapScreen(orderId: order.orderId),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    order.orderId,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
+            // Orange header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: const BoxDecoration(
+                color: primaryOrange,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  topRight: Radius.circular(12),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pedido #${order.orderId.substring(0, 10)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '\$${order.amountTotal.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
                     ),
-                    overflow: TextOverflow.ellipsis,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      currentStatus.displayName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Chip(
-                  label: Text(currentStatus.displayName),
-                  backgroundColor: primaryOrange.withValues(alpha: 0.12),
-                  labelStyle: const TextStyle(
-                    color: primaryOrange,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                ],
+              ),
+            ),
+            // Body
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Pickup
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.only(top: 6, right: 8),
+                        decoration: const BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Retiro',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: textGray600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              order.pickup.addressSnapshot,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: textGray900,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (order.timestamps.pickedUpAt != null)
+                              const SizedBox(height: 4),
+                            if (order.timestamps.pickedUpAt != null)
+                              Text(
+                                'Retirado a las ${_formatTime(order.timestamps.pickedUpAt!)}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.green,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildAddressInfo(
-              icon: Icons.location_on_outlined,
-              label: 'Recogida',
-              address: order.pickup.addressSnapshot,
-            ),
-            const SizedBox(height: 8),
-            _buildAddressInfo(
-              icon: Icons.flag_outlined,
-              label: 'Entrega',
-              address: order.delivery.addressSnapshot,
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _statusButton(
-                  context: context,
-                  label: 'Recogido',
-                  target: 'picked_up',
-                  enabled: currentStatus == OrderStatus.assigned,
-                  orderId: order.orderId,
-                ),
-                _statusButton(
-                  context: context,
-                  label: 'En ruta',
-                  target: 'in_transit',
-                  enabled: currentStatus == OrderStatus.pickedUp,
-                  orderId: order.orderId,
-                ),
-                _statusButton(
-                  context: context,
-                  label: 'Entregado',
-                  target: 'delivered',
-                  enabled: currentStatus == OrderStatus.inTransit,
-                  orderId: order.orderId,
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  // Delivery
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.only(top: 6, right: 8),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Entrega',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: textGray600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              order.delivery.addressSnapshot,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: textGray900,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (order.timestamps.deliveredAt != null)
+                              const SizedBox(height: 4),
+                            if (order.timestamps.deliveredAt != null)
+                              Text(
+                                'Entregado a las ${_formatTime(order.timestamps.deliveredAt!)}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Action buttons
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _statusButton(
+                        context: context,
+                        label: 'Recogido',
+                        target: 'picked_up',
+                        enabled: currentStatus == OrderStatus.assigned,
+                        orderId: order.orderId,
+                      ),
+                      _statusButton(
+                        context: context,
+                        label: 'En ruta',
+                        target: 'in_transit',
+                        enabled: currentStatus == OrderStatus.pickedUp,
+                        orderId: order.orderId,
+                      ),
+                      _statusButton(
+                        context: context,
+                        label: 'Entregado',
+                        target: 'delivered',
+                        enabled: currentStatus == OrderStatus.inTransit,
+                        orderId: order.orderId,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildAddressInfo({
-    required IconData icon,
-    required String label,
-    required String address,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: textGray600),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: textGray600,
-                ),
-              ),
-              Text(
-                address,
-                style: const TextStyle(fontSize: 13, color: textGray900),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -949,101 +1061,350 @@ class _OrderListSliver extends ConsumerWidget {
     );
   }
 
+  double _calculateDistanceKm(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    // Haversine formula to calculate distance between two points
+    const double earthRadiusKm = 6371.0;
+
+    final dLat = _degreesToRadians(lat2 - lat1);
+    final dLon = _degreesToRadians(lon2 - lon1);
+
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degreesToRadians(lat1)) *
+            math.cos(_degreesToRadians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+
+    final c = 2 * math.asin(math.sqrt(a));
+    return earthRadiusKm * c;
+  }
+
+  double _degreesToRadians(double degrees) {
+    return degrees * math.pi / 180.0;
+  }
+
   Widget _buildOrderCard(BuildContext context, NearbyOrder n) {
-    final productName = n.order.items.isNotEmpty
-        ? n.order.items.first.titleSnapshot
-        : 'Pedido';
-    final productImage = n.order.items.isNotEmpty
-        ? n.order.items.first.imageUrlSnapshot
-        : '';
-    final totalWeight = n.order.items.fold<double>(
-      0,
+    final isSelected = selectedOrderId == n.order.orderId;
+
+    // Calculate pickup→delivery distance using Haversine formula
+    final pickupLat = n.order.pickup.geo.latitude;
+    final pickupLng = n.order.pickup.geo.longitude;
+    final deliveryLat = n.order.delivery.geo.latitude;
+    final deliveryLng = n.order.delivery.geo.longitude;
+
+    final pickupToDeliveryKm = _calculateDistanceKm(
+      pickupLat,
+      pickupLng,
+      deliveryLat,
+      deliveryLng,
+    );
+
+    // Calculate total distance
+    // If we have rider location, show total (rider→pickup + pickup→delivery)
+    // Otherwise, just show pickup→delivery distance
+    final double totalDistanceKm;
+    if (n.distanceMeters != null) {
+      final riderToPickupKm = n.distanceMeters! / 1000;
+      totalDistanceKm = riderToPickupKm + pickupToDeliveryKm;
+    } else {
+      // No rider location available, show only delivery distance
+      totalDistanceKm = pickupToDeliveryKm;
+    }
+
+    // Calculate total weight from all items
+    final totalWeightKg = n.order.items.fold<double>(
+      0.0,
       (sum, item) => sum + item.totalWeight,
     );
-    final hasDistance = n.distanceMeters != null;
-    final distanceKm = hasDistance ? (n.distanceMeters! / 1000) : 0.0;
-    final earnings = n.order.deliveryFee;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: DeliveryRequestCard(
-        key: ValueKey(n.order.orderId),
-        productName: productName,
-        productImage: productImage,
-        weight: totalWeight,
-        distance: distanceKm,
-        earnings: earnings,
-        pickupAddress: n.order.pickup.addressSnapshot,
-        deliveryAddress: n.order.delivery.addressSnapshot,
-        deliverToReception: n.order.delivery.deliverToReception,
-        onViewDetails: (context) {
-          // Validate coordinates before opening details
-          final hasValidPickup =
-              n.order.pickup.geo.latitude != 0 &&
-              n.order.pickup.geo.longitude != 0;
-          final hasValidDelivery =
-              n.order.delivery.geo.latitude != 0 &&
-              n.order.delivery.geo.longitude != 0;
-
-          if (!hasValidPickup || !hasValidDelivery) {
-            print('⚠️ [DeliveryDetails] Invalid coordinates:');
-            print(
-              '   Pickup: ${n.order.pickup.geo.latitude}, ${n.order.pickup.geo.longitude}',
-            );
-            print(
-              '   Delivery: ${n.order.delivery.geo.latitude}, ${n.order.delivery.geo.longitude}',
-            );
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: const [
-                    Icon(Icons.warning_amber_rounded, color: Colors.white),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Este pedido no tiene coordenadas válidas. Contacta al soporte.',
-                        style: TextStyle(fontSize: 13),
-                      ),
-                    ),
-                  ],
-                ),
-                backgroundColor: Colors.orange,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 4),
-              ),
-            );
-            return;
-          }
-
-          print('✅ [DeliveryDetails] Opening with valid coordinates:');
-          print(
-            '   Pickup: ${n.order.pickup.geo.latitude}, ${n.order.pickup.geo.longitude}',
-          );
-          print(
-            '   Delivery: ${n.order.delivery.geo.latitude}, ${n.order.delivery.geo.longitude}',
-          );
-
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => DeliveryDetailsScreen(
-                order: n.order,
-                productName: productName,
-                productImage: productImage,
-                weight: totalWeight,
-                distance: distanceKm,
-                earnings: earnings,
-                pickupAddress: n.order.pickup.addressSnapshot,
-                deliveryAddress: n.order.delivery.addressSnapshot,
-                pickupLat: n.order.pickup.geo.latitude,
-                pickupLng: n.order.pickup.geo.longitude,
-                deliveryLat: n.order.delivery.geo.latitude,
-                deliveryLng: n.order.delivery.geo.longitude,
-              ),
-            ),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: isSelected ? 4 : 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isSelected
+            ? const BorderSide(color: primaryOrange, width: 2)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        onTap: () {
+          onSelectOrder(
+            n.order.orderId,
+            n.order.pickup.geo.latitude,
+            n.order.pickup.geo.longitude,
           );
         },
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Orange header with order ID and price
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: const BoxDecoration(
+                color: primaryOrange,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  topRight: Radius.circular(12),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pedido #${n.order.orderId.substring(0, 10)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '\$${n.order.amountTotal.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      n.order.status.displayName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Pickup and delivery info
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Pickup
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.only(top: 6, right: 8),
+                        decoration: const BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Retiro',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: textGray600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              n.order.pickup.addressSnapshot,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: textGray900,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (n.order.pickupSchedule != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                n.order.pickupSchedule!
+                                    .getScheduleDescription(),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: textGray600,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Delivery
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.only(top: 6, right: 8),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Entrega',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: textGray600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              n.order.delivery.addressSnapshot,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: textGray900,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '15:00 - 16:00',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: textGray600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Distance, weight, and details link
+                  Row(
+                    children: [
+                      Text(
+                        '${totalDistanceKm.toStringAsFixed(1)} km',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: textGray700,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '•',
+                        style: TextStyle(fontSize: 13, color: textGray600),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        totalWeightKg < 1
+                            ? '${totalWeightKg.toStringAsFixed(1)} kg'
+                            : '${totalWeightKg.toStringAsFixed(0)} kg',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: textGray700,
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () {
+                          // Validate coordinates before opening details
+                          final hasValidPickup =
+                              n.order.pickup.geo.latitude != 0 &&
+                              n.order.pickup.geo.longitude != 0;
+                          final hasValidDelivery =
+                              n.order.delivery.geo.latitude != 0 &&
+                              n.order.delivery.geo.longitude != 0;
+
+                          if (!hasValidPickup || !hasValidDelivery) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Row(
+                                  children: const [
+                                    Icon(
+                                      Icons.warning_amber_rounded,
+                                      color: Colors.white,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Este pedido no tiene coordenadas válidas. Contacta al soporte.',
+                                        style: TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                backgroundColor: Colors.orange,
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                            return;
+                          }
+
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  DeliveryDetailsScreen(order: n.order),
+                            ),
+                          );
+                        },
+                        child: Row(
+                          children: [
+                            Text(
+                              'Ver detalles',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: primaryOrange,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.arrow_forward,
+                              size: 16,
+                              color: primaryOrange,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

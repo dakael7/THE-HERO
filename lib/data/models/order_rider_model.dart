@@ -27,13 +27,17 @@ class OrderRiderModel {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'assignedRiderId': assignedRiderId,
-      'assignedAt': assignedAt,
-      'vehicleTypeSnapshot': vehicleTypeSnapshot,
-      'riderNameSnapshot': riderNameSnapshot,
-      'riderPhoneSnapshot': riderPhoneSnapshot,
-    };
+    final data = <String, dynamic>{};
+    if (assignedRiderId != null) data['assignedRiderId'] = assignedRiderId;
+    if (assignedAt != null) data['assignedAt'] = assignedAt;
+    if (vehicleTypeSnapshot != null) {
+      data['vehicleTypeSnapshot'] = vehicleTypeSnapshot;
+    }
+    if (riderNameSnapshot != null) data['riderNameSnapshot'] = riderNameSnapshot;
+    if (riderPhoneSnapshot != null) {
+      data['riderPhoneSnapshot'] = riderPhoneSnapshot;
+    }
+    return data;
   }
 
   OrderRider toEntity() {

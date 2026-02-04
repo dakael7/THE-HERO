@@ -203,6 +203,34 @@ class DeliveryRequestCard extends StatelessWidget {
                 ],
               ),
             ),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: onViewDetails != null
+                      ? () => onViewDetails!(context)
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                        onViewDetails != null ? primaryOrange : borderGray100,
+                    foregroundColor:
+                        onViewDetails != null ? Colors.white : textGray600,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.map_outlined, size: 18),
+                  label: const Text(
+                    'Ver detalles',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

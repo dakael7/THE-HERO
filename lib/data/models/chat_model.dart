@@ -7,7 +7,9 @@ class ChatModel {
   final String chatId;
   final String type;
   final String buyerId;
+  final String? buyerName;
   final String? riderId;
+  final String? riderName;
   final String? sellerId;
   final List<String> participantIds;
   final String? orderId;
@@ -22,7 +24,9 @@ class ChatModel {
     required this.chatId,
     required this.type,
     required this.buyerId,
+    this.buyerName,
     this.riderId,
+    this.riderName,
     this.sellerId,
     required this.participantIds,
     this.orderId,
@@ -35,7 +39,8 @@ class ChatModel {
   });
 
   factory ChatModel.fromJson(Map<String, dynamic> json) {
-    final buyerId = (json['buyerId'] as String?) ?? (json['heroId'] as String?) ?? '';
+    final buyerId =
+        (json['buyerId'] as String?) ?? (json['heroId'] as String?) ?? '';
     final riderId = json['riderId'] as String?;
     final sellerId = json['sellerId'] as String?;
     final rawParticipantIds = json['participantIds'];
@@ -51,14 +56,20 @@ class ChatModel {
       chatId: json['chatId'] as String? ?? '',
       type: json['type'] as String? ?? 'hero_rider',
       buyerId: buyerId,
+      buyerName: json['buyerName'] as String? ?? '',
       riderId: riderId,
+      riderName: json['riderName'] as String?,
       sellerId: sellerId,
       participantIds: participantIds,
       orderId: json['orderId'] as String?,
       offerId: json['offerId'] as String?,
       lastMessageText: json['lastMessageText'] as String? ?? '',
-      createdAt: json['createdAt'] as firestore.Timestamp? ?? firestore.Timestamp.now(),
-      updatedAt: json['updatedAt'] as firestore.Timestamp? ?? firestore.Timestamp.now(),
+      createdAt:
+          json['createdAt'] as firestore.Timestamp? ??
+          firestore.Timestamp.now(),
+      updatedAt:
+          json['updatedAt'] as firestore.Timestamp? ??
+          firestore.Timestamp.now(),
       lastMessageAt: json['lastMessageAt'] as firestore.Timestamp?,
       version: json['version'] as int? ?? 1,
     );
@@ -69,8 +80,10 @@ class ChatModel {
       'chatId': chatId,
       'type': type,
       'buyerId': buyerId,
+      'buyerName': buyerName,
       'heroId': buyerId,
       'riderId': riderId,
+      'riderName': riderName,
       'sellerId': sellerId,
       'participantIds': participantIds,
       'orderId': orderId,
@@ -88,7 +101,9 @@ class ChatModel {
       chatId: chatId,
       type: ChatType.fromString(type),
       buyerId: buyerId,
+      buyerName: buyerName,
       riderId: riderId,
+      riderName: riderName,
       sellerId: sellerId,
       orderId: orderId,
       offerId: offerId,
@@ -105,7 +120,9 @@ class ChatModel {
       chatId: entity.chatId,
       type: entity.type.jsonValue,
       buyerId: entity.buyerId,
+      buyerName: entity.buyerName,
       riderId: entity.riderId,
+      riderName: entity.riderName,
       sellerId: entity.sellerId,
       participantIds: entity.participantIds,
       orderId: entity.orderId,
@@ -113,8 +130,9 @@ class ChatModel {
       lastMessageText: entity.lastMessageText,
       createdAt: firestore.Timestamp.fromDate(entity.createdAt),
       updatedAt: firestore.Timestamp.fromDate(entity.updatedAt),
-      lastMessageAt:
-          entity.lastMessageAt != null ? firestore.Timestamp.fromDate(entity.lastMessageAt!) : null,
+      lastMessageAt: entity.lastMessageAt != null
+          ? firestore.Timestamp.fromDate(entity.lastMessageAt!)
+          : null,
       version: entity.version,
     );
   }

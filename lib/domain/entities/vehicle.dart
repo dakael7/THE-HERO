@@ -39,20 +39,25 @@ class Vehicle {
   final String? plateNumber; // Obligatorio si type != bicycle
   final String? model;
   final int? year;
+  final String? color;
 
   Vehicle({
     required this.type,
     this.plateNumber,
     this.model,
     this.year,
+    this.color,
   });
 
   /// Valida que los campos condicionales estén presentes
   bool get isValid {
-    if (type != VehicleType.bicycle && plateNumber == null) {
-      return false;
+    if (type == VehicleType.bicycle) {
+      return true;
     }
-    return true;
+    return (plateNumber != null && plateNumber!.trim().isNotEmpty)
+        && (color != null && color!.trim().isNotEmpty)
+        && (model != null && model!.trim().isNotEmpty)
+        && (year != null);
   }
 
   Vehicle copyWith({
@@ -60,12 +65,14 @@ class Vehicle {
     String? plateNumber,
     String? model,
     int? year,
+    String? color,
   }) {
     return Vehicle(
       type: type ?? this.type,
       plateNumber: plateNumber ?? this.plateNumber,
       model: model ?? this.model,
       year: year ?? this.year,
+      color: color ?? this.color,
     );
   }
 }

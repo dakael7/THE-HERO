@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../domain/entities/chat.dart';
+import '../../../../../domain/entities/chat_type.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
+import '../../../../shared/chat/presentation/providers/chat_providers.dart';
+import '../../../../shared/chat/presentation/views/chat_conversation_screen.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
+import 'driver_rating_screen.dart';
 
 class HeroOrderStatusScreen extends ConsumerWidget {
   final String orderId;
@@ -38,12 +43,13 @@ class HeroOrderStatusScreen extends ConsumerWidget {
           if (user == null) {
             return const _StatusMessage(
               title: 'Inicia sesión',
-              subtitle: 'Necesitas iniciar sesión para ver el estado del pedido.',
+              subtitle:
+                  'Necesitas iniciar sesión para ver el estado del pedido.',
             );
           }
 
-          final ordersAsync = ref.watch(myOrdersProvider(user.id));
-          return ordersAsync.when(
+          final orderAsync = ref.watch(orderByIdProvider(orderId));
+          return orderAsync.when(
             loading: () => const Center(
               child: CircularProgressIndicator(color: primaryOrange),
             ),
@@ -51,15 +57,14 @@ class HeroOrderStatusScreen extends ConsumerWidget {
               title: 'No pudimos obtener el pedido',
               subtitle: err.toString(),
             ),
-            data: (orders) {
-              final order = orders.where((o) => o.orderId == orderId).firstOrNull;
+            data: (order) {
               if (order == null) {
                 return const _StatusMessage(
                   title: 'Buscando tu pedido…',
-                  subtitle: 'Espera unos segundos mientras sincronizamos el estado.',
+                  subtitle:
+                      'Espera unos segundos mientras sincronizamos el estado.',
                 );
               }
-
               return _OrderStatusContent(order: order);
             },
           );
@@ -101,13 +106,20 @@ class _OrderStatusContent extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Pedido ${order.orderId}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: textGray900,
-                  fontSize: 16,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Pedido ${order.orderId}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  _HeroChatButton(order: order),
+                ],
               ),
               const SizedBox(height: 8),
               Text(
@@ -123,6 +135,11 @@ class _OrderStatusContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        // Delivery confirmation card
+        if (status == OrderStatus.delivered && order.confirmedByHero != true)
+          _DeliveryConfirmationCard(order: order),
+        if (status == OrderStatus.delivered && order.confirmedByHero != true)
+          const SizedBox(height: 16),
         if (isCanceled)
           _StatusBanner(
             title: 'Pedido cancelado',
@@ -366,10 +383,7 @@ class _StatusBanner extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: color,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w900, color: color),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -438,6 +452,193 @@ class _StatusMessage extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HeroChatButton extends ConsumerWidget {
+  final Order order;
+  const _HeroChatButton({required this.order});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!order.rider.isAssigned) {
+      return const SizedBox.shrink();
+    }
+    final riderId = order.rider.assignedRiderId;
+    if (riderId == null || riderId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final profileAsync = ref.watch(profileProvider);
+
+    return IconButton(
+      tooltip: 'Chat con rider',
+      icon: const Icon(Icons.chat_bubble_outline),
+      color: primaryOrange,
+      onPressed: () async {
+        final user = profileAsync.value;
+        if (user == null) return;
+
+        final chatId = Chat.generateChatId(
+          type: ChatType.heroRider,
+          buyerId: order.heroId,
+          riderId: riderId,
+          orderId: order.orderId,
+        );
+        final chat = Chat(
+          chatId: chatId,
+          type: ChatType.heroRider,
+          buyerId: order.heroId,
+          buyerName: user.fullName,
+          riderId: riderId,
+          riderName: order.rider.riderNameSnapshot ?? 'Rider',
+          orderId: order.orderId,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        await ref.read(chatActionsProvider).ensureChatExists(chat);
+        if (!context.mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ChatConversationScreen(chat: chat)),
+        );
+      },
+    );
+  }
+}
+
+class _DeliveryConfirmationCard extends StatelessWidget {
+  final Order order;
+
+  const _DeliveryConfirmationCard({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            categoryTextGreen.withValues(alpha: 0.1),
+            categoryTextGreen.withValues(alpha: 0.05),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: categoryTextGreen.withValues(alpha: 0.3),
+          width: 2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: categoryTextGreen,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.check_circle,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '¿Recibiste el paquete?',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Confirma que recibiste tu pedido',
+                      style: TextStyle(fontSize: 13, color: textGray700),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => DriverRatingScreen(order: order),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: categoryTextGreen,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Sí, lo recibí',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      // TODO: Show problem report dialog
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Función de reporte en desarrollo'),
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primaryOrange,
+                      side: const BorderSide(color: primaryOrange, width: 2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Reportar problema',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

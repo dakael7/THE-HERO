@@ -13,6 +13,7 @@ class RiderProfileModel {
   final VerificationModel? verification;
   final int deliveredOrders;
   final double rating;
+  final int totalRatings;
 
   RiderProfileModel({
     this.isActive = false,
@@ -23,20 +24,30 @@ class RiderProfileModel {
     this.verification,
     this.deliveredOrders = 0,
     this.rating = 0.0,
+    this.totalRatings = 0,
   });
 
   factory RiderProfileModel.fromJson(Map<String, dynamic> json) {
     return RiderProfileModel(
       isActive: json['isActive'] as bool? ?? false,
       isVerified: json['isVerified'] as bool? ?? false,
-      vehicle: VehicleModel.fromJson(json['vehicle'] as Map<String, dynamic>? ?? {}),
-      documents: DocumentsModel.fromJson(json['documents'] as Map<String, dynamic>? ?? {}),
-      limits: LimitsModel.fromJson(json['limits'] as Map<String, dynamic>? ?? {}),
+      vehicle: VehicleModel.fromJson(
+        json['vehicle'] as Map<String, dynamic>? ?? {},
+      ),
+      documents: DocumentsModel.fromJson(
+        json['documents'] as Map<String, dynamic>? ?? {},
+      ),
+      limits: LimitsModel.fromJson(
+        json['limits'] as Map<String, dynamic>? ?? {},
+      ),
       verification: json['verification'] != null
-          ? VerificationModel.fromJson(json['verification'] as Map<String, dynamic>)
+          ? VerificationModel.fromJson(
+              json['verification'] as Map<String, dynamic>,
+            )
           : null,
       deliveredOrders: json['deliveredOrders'] as int? ?? 0,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
+      totalRatings: json['totalRatings'] as int? ?? 0,
     );
   }
 
@@ -50,6 +61,7 @@ class RiderProfileModel {
       'verification': verification?.toJson(),
       'deliveredOrders': deliveredOrders,
       'rating': rating,
+      'totalRatings': totalRatings,
     };
   }
 
@@ -63,6 +75,7 @@ class RiderProfileModel {
       verification: verification?.toEntity(),
       deliveredOrders: deliveredOrders,
       rating: rating,
+      totalRatings: totalRatings,
     );
   }
 
@@ -78,6 +91,7 @@ class RiderProfileModel {
           : null,
       deliveredOrders: entity.deliveredOrders,
       rating: entity.rating,
+      totalRatings: entity.totalRatings,
     );
   }
 }

@@ -88,6 +88,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       }
       _publishNow = offer.status == OfferStatus.active;
 
+      _pickupSchedule = offer.pickupSchedule;
+      _useConcierge = offer.useConcierge;
+      _conciergeInfo = offer.conciergeInfo;
+
       // Prefill ubicación desde la oferta si existe snapshot
       final snapshot = offer.itemLocationSnapshot;
       if (snapshot != null) {
@@ -198,9 +202,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     }
   }
 
-  String _buildKeywords(String title, String category) {
+  List<String> _buildKeywords(String title, String category) {
     final parts = <String>[title.toLowerCase(), category.toLowerCase()];
-    return parts.join('|');
+    return parts;
   }
 
   Widget _buildYesNoOption({
@@ -406,14 +410,19 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         searchKeywords: _buildKeywords(
           _titleController.text.trim(),
           _category,
-        ).split('|'),
+        ),
         createdAt: widget.initialOffer?.createdAt ?? now,
         updatedAt: now,
         publishedAt: publishedAt,
         viewCount: widget.initialOffer?.viewCount ?? 0,
         orderCount: widget.initialOffer?.orderCount ?? 0,
+        avgRating: widget.initialOffer?.avgRating ?? 0.0,
+        ratingCount: widget.initialOffer?.ratingCount ?? 0,
         itemLocationId: widget.initialOffer?.itemLocationId,
         itemLocationSnapshot: locationSnapshot,
+        pickupSchedule: _pickupSchedule,
+        useConcierge: _useConcierge,
+        conciergeInfo: _conciergeInfo,
       );
 
       if (isEdit) {

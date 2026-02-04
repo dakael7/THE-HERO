@@ -4,7 +4,9 @@ class Chat {
   final String chatId;
   final ChatType type;
   final String buyerId;
+  final String? buyerName;
   final String? riderId;
+  final String? riderName;
   final String? sellerId;
   final String? orderId;
   final String? offerId;
@@ -18,7 +20,9 @@ class Chat {
     required this.chatId,
     required this.type,
     required this.buyerId,
+    this.buyerName,
     this.riderId,
+    this.riderName,
     this.sellerId,
     this.orderId,
     this.offerId,
@@ -40,7 +44,9 @@ class Chat {
     String? chatId,
     ChatType? type,
     String? buyerId,
+    String? buyerName,
     String? riderId,
+    String? riderName,
     String? sellerId,
     String? orderId,
     String? offerId,
@@ -54,7 +60,9 @@ class Chat {
       chatId: chatId ?? this.chatId,
       type: type ?? this.type,
       buyerId: buyerId ?? this.buyerId,
+      buyerName: buyerName ?? this.buyerName,
       riderId: riderId ?? this.riderId,
+      riderName: riderName ?? this.riderName,
       sellerId: sellerId ?? this.sellerId,
       orderId: orderId ?? this.orderId,
       offerId: offerId ?? this.offerId,

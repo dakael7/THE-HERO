@@ -35,6 +35,48 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   double? _deliveryLongitude;
   ProviderSubscription<AsyncValue<User?>>? _profileSub;
 
+  firestore.GeoPoint? _tryParseGeoFromText(String text) {
+    final input = text.trim();
+    if (input.isEmpty) return null;
+
+    final latLngMatch = RegExp(
+      r'lat\s*[:=]?\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*lng\s*[:=]?\s*(-?\d+(?:\.\d+)?)',
+      caseSensitive: false,
+    ).firstMatch(input);
+
+    if (latLngMatch != null) {
+      final lat = double.tryParse(latLngMatch.group(1) ?? '');
+      final lng = double.tryParse(latLngMatch.group(2) ?? '');
+      if (lat != null && lng != null) {
+        return firestore.GeoPoint(lat, lng);
+      }
+    }
+
+    final pairMatch = RegExp(
+      r'(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)',
+      caseSensitive: false,
+    ).firstMatch(input);
+
+    if (pairMatch != null) {
+      final lat = double.tryParse(pairMatch.group(1) ?? '');
+      final lng = double.tryParse(pairMatch.group(2) ?? '');
+      if (lat != null && lng != null) {
+        return firestore.GeoPoint(lat, lng);
+      }
+    }
+
+    return null;
+  }
+
+  bool _isValidGeo(firestore.GeoPoint? geo) {
+    if (geo == null) return false;
+    if (geo.latitude == 0 && geo.longitude == 0) return false;
+    return geo.latitude >= -90 &&
+        geo.latitude <= 90 &&
+        geo.longitude >= -180 &&
+        geo.longitude <= 180;
+  }
+
   @override
   void dispose() {
     _profileSub?.close();
@@ -136,6 +178,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     setState(() => _isSubmitting = true);
 
     try {
+      var deliveryGeo = _deliveryLatitude != null && _deliveryLongitude != null
+          ? firestore.GeoPoint(_deliveryLatitude!, _deliveryLongitude!)
+          : null;
+
+      deliveryGeo ??= _tryParseGeoFromText(_addressController.text);
+
+      if (!_isValidGeo(deliveryGeo)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Selecciona una ubicación válida en el mapa para la entrega.',
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
       // Create delivery info with coordinates
       final delivery = OrderBuilder.createDelivery(
         address: _addressController.text.trim(),
@@ -143,9 +203,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         recipientPhone: _phoneController.text.trim(),
         instructions: _instructionsController.text.trim(),
         deliverToReception: _deliverToReception,
-        geo: _deliveryLatitude != null && _deliveryLongitude != null
-            ? firestore.GeoPoint(_deliveryLatitude!, _deliveryLongitude!)
-            : null,
+        geo: deliveryGeo,
       );
 
       print(
@@ -159,6 +217,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       final pickupAddress =
           user.address?.fullAddress ?? 'Dirección del vendedor';
+
+      final resolvedPickupGeo =
+          pickupGeo ?? _tryParseGeoFromText(pickupAddress);
 
       print(
         '📍 [Checkout] Pickup geo from profile: ${pickupGeo?.latitude}, ${pickupGeo?.longitude}',
@@ -175,7 +236,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         heroId: user.id,
         delivery: delivery,
         pickupAddress: pickupAddress,
-        pickupGeo: pickupGeo,
+        pickupGeo: resolvedPickupGeo,
         pickupContactName: user.fullName,
         pickupContactPhone: user.phoneNumber,
         pickupSchedule: pickupSchedule,
@@ -188,6 +249,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       final updateStatusUseCase = ref.read(updateOrderStatusUseCaseProvider);
       await updateStatusUseCase.execute(createdOrder.orderId, 'queued');
+
+      // Clear cart after successful order creation
+      ref.read(cartProvider.notifier).clear();
 
       if (mounted) {
         await _showPaymentResult(
