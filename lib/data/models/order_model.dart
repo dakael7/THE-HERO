@@ -66,6 +66,19 @@ class OrderModel {
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
+    // Helper to parse timestamp from either Timestamp or ISO string
+    firestore.Timestamp parseTimestamp(dynamic value) {
+      if (value is firestore.Timestamp) return value;
+      if (value is String) {
+        try {
+          return firestore.Timestamp.fromDate(DateTime.parse(value));
+        } catch (e) {
+          return firestore.Timestamp.now();
+        }
+      }
+      return firestore.Timestamp.now();
+    }
+
     return OrderModel(
       orderId: json['orderId'] as String? ?? '',
       heroId: json['heroId'] as String? ?? '',
@@ -100,9 +113,7 @@ class OrderModel {
       ),
       cancelReason: json['cancelReason'] as String?,
       canceledBy: json['canceledBy'] as String?,
-      updatedAt:
-          json['updatedAt'] as firestore.Timestamp? ??
-          firestore.Timestamp.now(),
+      updatedAt: parseTimestamp(json['updatedAt']),
       version: json['version'] as int? ?? 1,
       pickupSchedule: json['pickupSchedule'] != null
           ? PickupScheduleModel.fromJson(
@@ -140,7 +151,9 @@ class OrderModel {
       'timestamps': timestamps.toJson(),
       'cancelReason': cancelReason,
       'canceledBy': canceledBy,
-      'updatedAt': updatedAt,
+      'updatedAt': updatedAt
+          .toDate()
+          .toIso8601String(), // Convert to ISO string
       'version': version,
       'pickupSchedule': pickupSchedule?.toJson(),
       'useConcierge': useConcierge,

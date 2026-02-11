@@ -37,6 +37,9 @@ class _RiderVehicleVerificationScreenState
 
   bool _saving = false;
 
+  double _uploadProgress = 0;
+  String? _uploadLabel;
+
   bool _hasB = false;
   bool _hasC = false;
   bool _hasA4 = false;
@@ -64,7 +67,20 @@ class _RiderVehicleVerificationScreenState
     super.dispose();
   }
 
+  bool _licenseChipVisible(String label) {
+    final required = _requiredLicenseClassesFor(widget.vehicleType);
+    if (required.isEmpty) return false;
+
+    if (widget.vehicleType == VehicleType.truck) {
+      return label == 'A4' || label == 'A5';
+    }
+
+    return required.contains(label);
+  }
+
   bool get _isBicycle => widget.vehicleType == VehicleType.bicycle;
+
+  String get _vehicleKey => widget.vehicleType.name;
 
   List<String> _requiredLicenseClassesFor(VehicleType type) {
     switch (type) {
@@ -156,13 +172,30 @@ class _RiderVehicleVerificationScreenState
 
     final ref = storage
         .ref()
-        .child('user_uploads')
+        .child('riders')
         .child(userId)
+        .child('documents')
         .child('vehicle_verification')
+        .child(_vehicleKey)
         .child(requestId)
         .child('${DateTime.now().millisecondsSinceEpoch}_$fieldName.$ext');
 
-    await ref.putData(bytes, SettableMetadata(contentType: contentType));
+    setState(() {
+      _uploadLabel = fieldName;
+      _uploadProgress = 0;
+    });
+
+    final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+    task.snapshotEvents.listen((snapshot) {
+      final total = snapshot.totalBytes;
+      final transferred = snapshot.bytesTransferred;
+      if (total <= 0) return;
+      final progress = transferred / total;
+      if (!mounted) return;
+      setState(() => _uploadProgress = progress);
+    });
+
+    await task;
     return await ref.getDownloadURL();
   }
 
@@ -222,22 +255,47 @@ class _RiderVehicleVerificationScreenState
       final storage = ref.read(firebaseStorageProvider);
       final db = ref.read(firebaseFirestoreProvider);
 
+      final existingVerification = user.riderProfile?.vehicles[_vehicleKey] is Map
+          ? (user.riderProfile!.vehicles[_vehicleKey] as Map)['verification']
+          : null;
+      final existingStatus = existingVerification is Map
+          ? existingVerification['status']?.toString()
+          : null;
+      final existingRequestId = existingVerification is Map
+          ? existingVerification['requestId']?.toString()
+          : null;
+
       final now = DateTime.now();
       final requestsRef = db
           .collection('users')
           .doc(user.id)
           .collection('vehicle_verification_requests');
 
+      if (existingRequestId != null && existingRequestId.trim().isNotEmpty) {
+        final prevRef = requestsRef.doc(existingRequestId);
+        await prevRef.set(
+          {
+            'updatedAt': firestore.Timestamp.fromDate(now),
+            'status': 'superseded',
+          },
+          firestore.SetOptions(merge: true),
+        );
+      }
+
       final docRef = requestsRef.doc();
       final requestId = docRef.id;
 
-      final vehicle = {
-        'type': widget.vehicleType.name,
-        'plateNumber': _isBicycle ? null : _plateController.text.trim(),
-        'model': _isBicycle ? null : _modelController.text.trim(),
-        'year': _isBicycle ? null : int.parse(_yearController.text.trim()),
-        'color': _isBicycle ? null : _colorController.text.trim(),
-      };
+      final vehicle = _isBicycle
+          ? {
+              'type': widget.vehicleType.name,
+            }
+          : {
+              'type': widget.vehicleType.name,
+              'plateNumber': _plateController.text.trim(),
+              'model': _modelController.text.trim(),
+              'year': int.parse(_yearController.text.trim()),
+              'color': _colorController.text.trim(),
+            };
 
       final selectedClasses = <String>[
         if (_hasB) 'B',
@@ -251,6 +309,7 @@ class _RiderVehicleVerificationScreenState
         'createdAt': firestore.Timestamp.fromDate(now),
         'updatedAt': firestore.Timestamp.fromDate(now),
         'requestedVehicle': vehicle,
+        'vehicleType': widget.vehicleType.name,
         'requiredLicense': {
           'requiredClasses': _requiredLicenseClassesFor(widget.vehicleType),
           'optionalClasses': widget.vehicleType == VehicleType.car
@@ -331,10 +390,10 @@ class _RiderVehicleVerificationScreenState
 
       await docRef.update({
         'updatedAt': firestore.Timestamp.fromDate(DateTime.now()),
-        'status': 'verified',
+        'status': 'submitted',
         'verification': {
-          'verifiedAt': firestore.Timestamp.fromDate(DateTime.now()),
-          'verificationMode': 'auto',
+          'verifiedAt': null,
+          'verificationMode': 'pending',
           'reason': null,
         },
       });
@@ -342,21 +401,42 @@ class _RiderVehicleVerificationScreenState
       final limits = _limitsByVehicle(widget.vehicleType);
 
       await db.collection('users').doc(user.id).update({
-        'riderProfile.vehicle.type': widget.vehicleType.name,
-        'riderProfile.vehicle.plateNumber': _isBicycle
-            ? null
-            : _plateController.text.trim().toUpperCase(),
-        'riderProfile.vehicle.model': _isBicycle ? null : _modelController.text.trim(),
-        'riderProfile.vehicle.year': _isBicycle ? null : int.parse(_yearController.text.trim()),
-        'riderProfile.vehicle.color': _isBicycle ? null : _colorController.text.trim(),
-        'riderProfile.documents.idCardUrl': idCardFrontUrl ?? '',
-        'riderProfile.documents.licenseUrl': licenseFrontUrl,
-        'riderProfile.documents.padronUrl': circulationPermitUrl,
-        'riderProfile.isVerified': true,
-        'riderProfile.verification.apiRefId': requestId,
-        'riderProfile.verification.lastCheck': DateTime.now().toIso8601String(),
-        'riderProfile.limits.maxWeightKg': limits.maxWeightKg,
-        'riderProfile.limits.maxDistanceKm': limits.maxDistanceKm,
+        'riderProfile.activeVehicleType': widget.vehicleType.name,
+        'riderProfile.vehicles.${widget.vehicleType.name}.vehicle': vehicle,
+        if (!_isBicycle)
+          'riderProfile.vehicles.${widget.vehicleType.name}.documents': {
+            'licenseFrontUrl': licenseFrontUrl,
+            'licenseBackUrl': licenseBackUrl,
+            'idCardFrontUrl': idCardFrontUrl,
+            'idCardBackUrl': idCardBackUrl,
+            'circulationPermitUrl': circulationPermitUrl,
+          },
+        'riderProfile.vehicles.${widget.vehicleType.name}.submittedLicense': {
+          'classes': selectedClasses,
+        },
+        'riderProfile.vehicles.${widget.vehicleType.name}.requiredLicense': {
+          'requiredClasses': _requiredLicenseClassesFor(widget.vehicleType),
+        },
+        if (_isBicycle)
+          'riderProfile.vehicles.${widget.vehicleType.name}.verification': {
+            'status': 'not_required',
+            'requestId': requestId,
+            'submittedAt': DateTime.now().toIso8601String(),
+            'verifiedAt': null,
+          }
+        else if (existingStatus == null ||
+            existingStatus == 'submitted' ||
+            existingStatus == 'processing')
+          'riderProfile.vehicles.${widget.vehicleType.name}.verification': {
+            'status': 'submitted',
+            'requestId': requestId,
+            'submittedAt': DateTime.now().toIso8601String(),
+            'verifiedAt': null,
+          },
+        'riderProfile.vehicles.${widget.vehicleType.name}.limits.maxWeightKg':
+            limits.maxWeightKg,
+        'riderProfile.vehicles.${widget.vehicleType.name}.limits.maxDistanceKm':
+            limits.maxDistanceKm,
       });
 
       ref.invalidate(profileProvider);
@@ -364,7 +444,7 @@ class _RiderVehicleVerificationScreenState
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Vehículo verificado y actualizado'),
+          content: Text('Verificación enviada'),
           duration: Duration(milliseconds: 1800),
         ),
       );
@@ -386,6 +466,30 @@ class _RiderVehicleVerificationScreenState
   @override
   Widget build(BuildContext context) {
     final required = _requiredLicenseClassesFor(widget.vehicleType);
+    final profileAsync = ref.watch(profileProvider);
+    final user = profileAsync.value;
+    final riderProfile = user?.riderProfile;
+
+    final vehicleMap = (riderProfile?.vehicles[_vehicleKey] is Map)
+        ? (riderProfile!.vehicles[_vehicleKey] as Map)
+        : null;
+    final vehicleOcr = (vehicleMap?['ocr'] is Map) ? (vehicleMap!['ocr'] as Map) : null;
+    final vehicleVerification = (vehicleMap?['verification'] is Map)
+        ? (vehicleMap!['verification'] as Map)
+        : null;
+
+    final ocrStatus = (vehicleOcr?['status'] is String) ? vehicleOcr!['status'] as String : null;
+    final verificationStatus = (vehicleVerification?['status'] is String)
+        ? vehicleVerification!['status'] as String
+        : null;
+    final verificationMode = (vehicleVerification?['mode'] is String)
+        ? vehicleVerification!['mode'] as String
+        : null;
+
+    final errorCodesRaw = vehicleOcr?['errorCodes'];
+    final errorCodes = errorCodesRaw is List
+        ? errorCodesRaw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+        : const <String>[];
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -403,6 +507,109 @@ class _RiderVehicleVerificationScreenState
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (!_isBicycle && (ocrStatus != null || verificationStatus != null)) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: borderGray100),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Estado de análisis',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      () {
+                        final status = ocrStatus ?? verificationStatus;
+                        switch (status) {
+                          case 'processing':
+                            return 'Analizando documentos con Vision…';
+                          case 'approved':
+                            return 'Verificación automática aprobada.';
+                          case 'needs_review':
+                            return 'No se pudo confirmar automáticamente. Revisaremos tus documentos.';
+                          case 'rejected':
+                            return 'Rechazado: la información no coincide o no es legible.';
+                          case 'failed':
+                            return 'Error al analizar. Intenta subir nuevamente.';
+                          case 'submitted':
+                            return 'Documentos enviados. Pendiente de análisis.';
+                          default:
+                            return 'Estado: $status';
+                        }
+                      }(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: textGray900,
+                      ),
+                    ),
+                    if (verificationMode != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Modo: $verificationMode',
+                        style: const TextStyle(color: textGray700),
+                      ),
+                    ],
+                    if (errorCodes.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Detalle: ${errorCodes.join(', ')}',
+                        style: const TextStyle(color: textGray700),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+            if (_saving && _uploadLabel != null) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: borderGray100),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Subiendo ${_uploadLabel!}…',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    LinearProgressIndicator(
+                      value: _uploadProgress.clamp(0, 1),
+                      color: primaryOrange,
+                      backgroundColor: backgroundGray50,
+                      minHeight: 10,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${(_uploadProgress * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: textGray700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -545,26 +752,30 @@ class _RiderVehicleVerificationScreenState
                       spacing: 10,
                       runSpacing: 10,
                       children: [
-                        _LicenseChip(
-                          label: 'B',
-                          selected: _hasB,
-                          onTap: () => setState(() => _hasB = !_hasB),
-                        ),
-                        _LicenseChip(
-                          label: 'C',
-                          selected: _hasC,
-                          onTap: () => setState(() => _hasC = !_hasC),
-                        ),
-                        _LicenseChip(
-                          label: 'A4',
-                          selected: _hasA4,
-                          onTap: () => setState(() => _hasA4 = !_hasA4),
-                        ),
-                        _LicenseChip(
-                          label: 'A5',
-                          selected: _hasA5,
-                          onTap: () => setState(() => _hasA5 = !_hasA5),
-                        ),
+                        if (_licenseChipVisible('B'))
+                          _LicenseChip(
+                            label: 'B',
+                            selected: _hasB,
+                            onTap: () => setState(() => _hasB = !_hasB),
+                          ),
+                        if (_licenseChipVisible('C'))
+                          _LicenseChip(
+                            label: 'C',
+                            selected: _hasC,
+                            onTap: () => setState(() => _hasC = !_hasC),
+                          ),
+                        if (_licenseChipVisible('A4'))
+                          _LicenseChip(
+                            label: 'A4',
+                            selected: _hasA4,
+                            onTap: () => setState(() => _hasA4 = !_hasA4),
+                          ),
+                        if (_licenseChipVisible('A5'))
+                          _LicenseChip(
+                            label: 'A5',
+                            selected: _hasA5,
+                            onTap: () => setState(() => _hasA5 = !_hasA5),
+                          ),
                       ],
                     ),
                   ],

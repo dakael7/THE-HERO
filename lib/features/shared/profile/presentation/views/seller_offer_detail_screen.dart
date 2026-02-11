@@ -16,6 +16,42 @@ class SellerOfferDetailScreen extends ConsumerWidget {
 
   final Offer offer;
 
+  Widget _buildDetailRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: textGray600),
+        const SizedBox(width: 6),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 13, color: textGray600),
+              children: [
+                TextSpan(
+                  text: '$label: ',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: textGray900,
+                  ),
+                ),
+                TextSpan(text: value),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatBool(bool? value) {
+    if (value == null) return '—';
+    return value ? 'Sí' : 'No';
+  }
+
   Color _conditionColor(OfferCondition condition) {
     switch (condition) {
       case OfferCondition.newProduct:
@@ -391,6 +427,83 @@ class SellerOfferDetailScreen extends ConsumerWidget {
           const SizedBox(height: 16),
 
           if (locationWidget != null) locationWidget,
+
+          const Text(
+            'Detalles de la oferta',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: textGray900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: backgroundWhite,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: borderGray100),
+            ),
+            child: Column(
+              children: [
+                _buildDetailRow(
+                  icon: Icons.category_outlined,
+                  label: 'Categoría',
+                  value: offer.category,
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  icon: Icons.sell_outlined,
+                  label: 'Moneda',
+                  value: offer.currency,
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  icon: Icons.inventory_2_outlined,
+                  label: 'Stock',
+                  value: '${offer.availableQty}/${offer.stock}',
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  icon: Icons.scale_outlined,
+                  label: 'Peso',
+                  value: formatWeightKg(offer.weight),
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  icon: Icons.visibility_outlined,
+                  label: 'Estado',
+                  value: offer.status.displayName,
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  icon: Icons.inventory_outlined,
+                  label: 'Disponible',
+                  value: offer.isAvailable ? 'Sí' : 'No',
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  icon: Icons.check_circle_outline,
+                  label: 'Está en buen estado',
+                  value: _formatBool(offer.isInGoodState),
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  icon: Icons.build_outlined,
+                  label: 'Funciona correctamente',
+                  value: _formatBool(offer.worksCorrectly),
+                ),
+                if (offer.pickupSchedule != null) ...[
+                  const SizedBox(height: 12),
+                  _buildDetailRow(
+                    icon: Icons.schedule_outlined,
+                    label: 'Horario de retiro',
+                    value: offer.pickupSchedule!.getScheduleDescription(),
+                  ),
+                ],
+              ],
+            ),
+          ),
 
           // Detalles adicionales
           Row(

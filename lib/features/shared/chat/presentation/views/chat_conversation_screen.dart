@@ -54,6 +54,11 @@ class _ChatConversationScreenState
     _ensureChatFuture = ref
         .read(chatActionsProvider)
         .ensureChatExists(widget.chat);
+
+    // Mark messages as read when opening the conversation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(chatActionsProvider).markMessagesAsRead(widget.chat.chatId);
+    });
   }
 
   @override
@@ -95,9 +100,9 @@ class _ChatConversationScreenState
 
     final contextLabel =
         (widget.chat.orderId != null && widget.chat.orderId!.isNotEmpty)
-        ? 'Orden #${widget.chat.orderId}'
+        ? 'Pedido #${widget.chat.orderId!.length > 8 ? widget.chat.orderId!.substring(0, 8) : widget.chat.orderId}'
         : (widget.chat.offerId != null && widget.chat.offerId!.isNotEmpty)
-        ? 'Oferta #${widget.chat.offerId}'
+        ? 'Oferta #${widget.chat.offerId!.length > 8 ? widget.chat.offerId!.substring(0, 8) : widget.chat.offerId}'
         : (widget.chat.type == ChatType.heroRider
               ? 'Chat con Rider'
               : 'Chat con Vendedor');
@@ -108,10 +113,13 @@ class _ChatConversationScreenState
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(contextLabel),
-            const SizedBox(height: 2),
             Text(
               participantName,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              contextLabel,
               style: const TextStyle(fontSize: 12, color: textGray600),
             ),
           ],
@@ -237,13 +245,30 @@ class _ChatConversationScreenState
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                Text(
-                                  _formatTimestamp(message.sentAt),
-                                  style: const TextStyle(
-                                    color: textGray600,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _formatTimestamp(message.sentAt),
+                                      style: const TextStyle(
+                                        color: textGray600,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    if (isMe) ...[
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        message.isRead
+                                            ? Icons.done_all
+                                            : Icons.done,
+                                        size: 14,
+                                        color: message.isRead
+                                            ? const Color(0xFF0EA5E9)
+                                            : textGray600,
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ],
                             ),

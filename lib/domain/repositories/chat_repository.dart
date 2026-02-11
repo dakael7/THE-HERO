@@ -11,4 +11,8 @@ abstract class ChatRepository {
   });
 
   Future<void> ensureChatExists(Chat chat);
+  Future<void> markMessagesAsRead({
+    required String chatId,
+    required String userId,
+  });
 }

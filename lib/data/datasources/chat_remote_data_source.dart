@@ -5,7 +5,10 @@ import '../models/chat_message_model.dart';
 
 abstract class ChatRemoteDataSource {
   Stream<List<ChatModel>> watchUserChats(String userId);
-  Stream<List<ChatMessageModel>> watchChatMessages(String chatId, {int limit = 50});
+  Stream<List<ChatMessageModel>> watchChatMessages(
+    String chatId, {
+    int limit = 50,
+  });
   Future<void> sendTextMessage({
     required String chatId,
     required String senderId,
@@ -13,13 +16,17 @@ abstract class ChatRemoteDataSource {
   });
 
   Future<void> ensureChatExists(ChatModel chat);
+  Future<void> markMessagesAsRead({
+    required String chatId,
+    required String userId,
+  });
 }
 
 class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   final FirebaseFirestore _firestore;
 
   ChatRemoteDataSourceImpl({required FirebaseFirestore firestore})
-      : _firestore = firestore;
+    : _firestore = firestore;
 
   @override
   Stream<List<ChatModel>> watchUserChats(String userId) async* {
@@ -27,19 +34,12 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         .collection('chats')
         .where('participantIds', arrayContains: userId);
 
-    Stream<List<ChatModel>> streamFromQuery(
-      Query<Map<String, dynamic>> query,
-    ) {
+    Stream<List<ChatModel>> streamFromQuery(Query<Map<String, dynamic>> query) {
       return query.snapshots().map(
-            (snapshot) => snapshot.docs
-                .map(
-                  (doc) => ChatModel.fromJson({
-                    'chatId': doc.id,
-                    ...doc.data(),
-                  }),
-                )
-                .toList(),
-          );
+        (snapshot) => snapshot.docs
+            .map((doc) => ChatModel.fromJson({'chatId': doc.id, ...doc.data()}))
+            .toList(),
+      );
     }
 
     try {
@@ -56,8 +56,10 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   }
 
   @override
-  Stream<List<ChatMessageModel>> watchChatMessages(String chatId,
-      {int limit = 50}) {
+  Stream<List<ChatMessageModel>> watchChatMessages(
+    String chatId, {
+    int limit = 50,
+  }) {
     try {
       return _firestore
           .collection('chats')
@@ -66,12 +68,16 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           .orderBy('sentAt', descending: false)
           .limit(limit)
           .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => ChatMessageModel.fromJson({
+          .map(
+            (snapshot) => snapshot.docs
+                .map(
+                  (doc) => ChatMessageModel.fromJson({
                     'messageId': doc.id,
                     ...doc.data(),
-                  }))
-              .toList());
+                  }),
+                )
+                .toList(),
+          );
     } catch (e) {
       throw Exception('Error al obtener mensajes del chat: $e');
     }
@@ -120,19 +126,62 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     try {
       final chatRef = _firestore.collection('chats').doc(chat.chatId);
       final existing = await chatRef.get();
-      if (existing.exists) return;
 
       final nowServer = FieldValue.serverTimestamp();
       final data = chat.toJson();
 
-      await chatRef.set({
-        ...data,
-        'createdAt': nowServer,
-        'updatedAt': nowServer,
-        'lastMessageAt': nowServer,
-      });
+      if (existing.exists) {
+        // Chat exists, update only participant names and metadata
+        await chatRef.set({
+          'buyerName': data['buyerName'],
+          'riderName': data['riderName'],
+          'updatedAt': nowServer,
+        }, SetOptions(merge: true));
+      } else {
+        // Chat doesn't exist, create it
+        await chatRef.set({
+          ...data,
+          'createdAt': nowServer,
+          'updatedAt': nowServer,
+          'lastMessageAt': nowServer,
+        });
+      }
     } catch (e) {
       throw Exception('Error al crear chat: $e');
+    }
+  }
+
+  @override
+  Future<void> markMessagesAsRead({
+    required String chatId,
+    required String userId,
+  }) async {
+    try {
+      final chatRef = _firestore.collection('chats').doc(chatId);
+      final messagesRef = chatRef.collection('messages');
+
+      // Get all unread messages (messages without readAt that were not sent by current user)
+      final unreadMessages = await messagesRef
+          .where('readAt', isNull: true)
+          .where('senderId', isNotEqualTo: userId)
+          .get();
+
+      if (unreadMessages.docs.isEmpty) return;
+
+      // Update all unread messages with readAt timestamp
+      final batch = _firestore.batch();
+      final nowServer = FieldValue.serverTimestamp();
+
+      for (final doc in unreadMessages.docs) {
+        batch.update(doc.reference, {'readAt': nowServer});
+      }
+
+      // Reset unreadCount in chat document
+      batch.update(chatRef, {'unreadCount': 0, 'updatedAt': nowServer});
+
+      await batch.commit();
+    } catch (e) {
+      throw Exception('Error al marcar mensajes como leídos: $e');
     }
   }
 }

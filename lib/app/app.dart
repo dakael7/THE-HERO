@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants/app_colors.dart';
+import '../core/services/notification_handler.dart';
 import '../features/auth/presentation/views/login_page.dart';
 import '../features/auth/presentation/providers/session_provider.dart';
 import '../features/hero/presentation/views/hero_home_screen.dart';
@@ -16,6 +17,7 @@ class App extends ConsumerWidget {
 
     return MaterialApp(
       title: 'THE HERO',
+      navigatorKey: NotificationHandler().navigatorKey, // For FCM navigation
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: primaryOrange),
         useMaterial3: true,

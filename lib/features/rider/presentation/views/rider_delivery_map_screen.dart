@@ -12,6 +12,7 @@ import '../../../shared/chat/presentation/providers/chat_providers.dart';
 import '../../../shared/chat/presentation/views/chat_conversation_screen.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../domain/services/directions_service.dart';
+import '../providers/rider_location_provider.dart';
 
 final _routeProvider = FutureProvider.autoDispose
     .family<DirectionsRoute, _RouteParams>((ref, params) {
@@ -161,11 +162,17 @@ class _RiderDeliveryMapScreenState
           final pickupLocation = gmap.LatLng(pickupLat, pickupLng);
           final deliveryLocation = gmap.LatLng(deliveryLat, deliveryLng);
 
+          // Watch rider's real-time location from Firestore
+          final riderLocationAsync = ref.watch(
+            riderLocationForOrderProvider(widget.orderId),
+          );
+
           final initialCenter = gmap.LatLng(
             (pickupLat + deliveryLat) / 2,
             (pickupLng + deliveryLng) / 2,
           );
 
+          // Get the main route from pickup to delivery
           final routeAsync = ref.watch(
             _routeProvider(
               _RouteParams(
@@ -184,6 +191,81 @@ class _RiderDeliveryMapScreenState
             orElse: () => <gmap.LatLng>[],
           );
 
+          // Build markers set
+          final markers = <gmap.Marker>{
+            // Pickup marker
+            gmap.Marker(
+              markerId: const gmap.MarkerId('pickup'),
+              position: pickupLocation,
+              icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                gmap.BitmapDescriptor.hueOrange,
+              ),
+              infoWindow: const gmap.InfoWindow(title: 'Recogida'),
+            ),
+            // Delivery marker
+            gmap.Marker(
+              markerId: const gmap.MarkerId('delivery'),
+              position: deliveryLocation,
+              icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                gmap.BitmapDescriptor.hueGreen,
+              ),
+              infoWindow: const gmap.InfoWindow(title: 'Entrega'),
+            ),
+          };
+
+          // Build polylines set
+          final polylines = <gmap.Polyline>{};
+
+          // Add rider marker and route to pickup if rider location is available
+          riderLocationAsync.whenData((riderLoc) {
+            if (riderLoc != null) {
+              // Add rider marker
+              markers.add(
+                gmap.Marker(
+                  markerId: const gmap.MarkerId('rider'),
+                  position: gmap.LatLng(riderLoc.latitude, riderLoc.longitude),
+                  icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                    gmap.BitmapDescriptor.hueAzure,
+                  ),
+                  infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
+                ),
+              );
+
+              // Create route from rider to pickup (if order is not yet picked up)
+              if (order.status == OrderStatus.assigned) {
+                // For simplicity, draw a straight line from rider to pickup
+                // In production, you'd want to fetch the actual route
+                polylines.add(
+                  gmap.Polyline(
+                    polylineId: const gmap.PolylineId('rider_to_pickup'),
+                    points: [
+                      gmap.LatLng(riderLoc.latitude, riderLoc.longitude),
+                      pickupLocation,
+                    ],
+                    width: 4,
+                    color: const Color(0xFF3B82F6), // Blue color
+                    patterns: [
+                      gmap.PatternItem.dash(15),
+                      gmap.PatternItem.gap(10),
+                    ],
+                  ),
+                );
+              }
+            }
+          });
+
+          // Add main route from pickup to delivery
+          if (polylinePoints.isNotEmpty) {
+            polylines.add(
+              gmap.Polyline(
+                polylineId: const gmap.PolylineId('route'),
+                points: polylinePoints,
+                width: 4,
+                color: primaryOrange,
+              ),
+            );
+          }
+
           return Stack(
             children: [
               Positioned.fill(
@@ -194,49 +276,42 @@ class _RiderDeliveryMapScreenState
                   ),
                   onMapCreated: (controller) {
                     _mapController = controller;
-                    if (polylinePoints.isNotEmpty) {
-                      Future.delayed(const Duration(milliseconds: 500), () {
-                        if (_mapController != null) {
-                          _mapController!.animateCamera(
-                            gmap.CameraUpdate.newLatLngBounds(
-                              _calculateBounds(
-                                pickupLocation,
-                                deliveryLocation,
+                    // Adjust camera to show all markers
+                    Future.delayed(const Duration(milliseconds: 500), () {
+                      if (_mapController != null) {
+                        // Calculate bounds to include all points
+                        riderLocationAsync.whenData((riderLoc) {
+                          if (riderLoc != null) {
+                            _mapController!.animateCamera(
+                              gmap.CameraUpdate.newLatLngBounds(
+                                _calculateBoundsForThreePoints(
+                                  gmap.LatLng(
+                                    riderLoc.latitude,
+                                    riderLoc.longitude,
+                                  ),
+                                  pickupLocation,
+                                  deliveryLocation,
+                                ),
+                                80,
                               ),
-                              80,
-                            ),
-                          );
-                        }
-                      });
-                    }
+                            );
+                          } else {
+                            _mapController!.animateCamera(
+                              gmap.CameraUpdate.newLatLngBounds(
+                                _calculateBounds(
+                                  pickupLocation,
+                                  deliveryLocation,
+                                ),
+                                80,
+                              ),
+                            );
+                          }
+                        });
+                      }
+                    });
                   },
-                  polylines: {
-                    if (polylinePoints.isNotEmpty)
-                      gmap.Polyline(
-                        polylineId: const gmap.PolylineId('route'),
-                        points: polylinePoints,
-                        width: 4,
-                        color: primaryOrange,
-                      ),
-                  },
-                  markers: {
-                    gmap.Marker(
-                      markerId: const gmap.MarkerId('pickup'),
-                      position: pickupLocation,
-                      icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                        gmap.BitmapDescriptor.hueOrange,
-                      ),
-                      infoWindow: const gmap.InfoWindow(title: 'Recogida'),
-                    ),
-                    gmap.Marker(
-                      markerId: const gmap.MarkerId('delivery'),
-                      position: deliveryLocation,
-                      icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                        gmap.BitmapDescriptor.hueGreen,
-                      ),
-                      infoWindow: const gmap.InfoWindow(title: 'Entrega'),
-                    ),
-                  },
+                  polylines: polylines,
+                  markers: markers,
                   myLocationEnabled: false,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
@@ -287,6 +362,38 @@ class _RiderDeliveryMapScreenState
       pos1.longitude > pos2.longitude ? pos1.longitude : pos2.longitude,
     );
     return gmap.LatLngBounds(southwest: southwest, northeast: northeast);
+  }
+
+  gmap.LatLngBounds _calculateBoundsForThreePoints(
+    gmap.LatLng pos1,
+    gmap.LatLng pos2,
+    gmap.LatLng pos3,
+  ) {
+    final minLat = [
+      pos1.latitude,
+      pos2.latitude,
+      pos3.latitude,
+    ].reduce((a, b) => a < b ? a : b);
+    final maxLat = [
+      pos1.latitude,
+      pos2.latitude,
+      pos3.latitude,
+    ].reduce((a, b) => a > b ? a : b);
+    final minLng = [
+      pos1.longitude,
+      pos2.longitude,
+      pos3.longitude,
+    ].reduce((a, b) => a < b ? a : b);
+    final maxLng = [
+      pos1.longitude,
+      pos2.longitude,
+      pos3.longitude,
+    ].reduce((a, b) => a > b ? a : b);
+
+    return gmap.LatLngBounds(
+      southwest: gmap.LatLng(minLat, minLng),
+      northeast: gmap.LatLng(maxLat, maxLng),
+    );
   }
 }
 

@@ -7,9 +7,38 @@ const sharp = require('sharp');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const vision = require('@google-cloud/vision');
 admin.initializeApp();
 
+// MercadoPago Functions
+const {createPaymentPreference} = require('./mercadopago/createPaymentPreference');
+const {mercadopagoWebhook} = require('./mercadopago/webhook');
+const {verifyPayment} = require('./mercadopago/verifyPayment');
+
+// Export MercadoPago functions
+exports.createPaymentPreference = createPaymentPreference;
+exports.mercadopagoWebhook = mercadopagoWebhook;
+exports.verifyPayment = verifyPayment;
+
 const STORAGE_REGION = 'southamerica-west1';
+
+const visionClient = new vision.ImageAnnotatorClient();
+
+function isSupportUser(auth) {
+  const allowlistRaw = process.env.SUPPORT_EMAIL_ALLOWLIST || '';
+  const allowlist = allowlistRaw
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  const email = auth?.token?.email ? String(auth.token.email).toLowerCase() : null;
+  if (email && allowlist.includes(email)) return true;
+
+  if (auth?.token?.support === true) return true;
+  if (auth?.token?.admin === true) return true;
+
+  return false;
+}
 
 /**
  * Asigna un pedido a un rider de forma segura
@@ -208,6 +237,96 @@ function getCompatibleVehicles(riderVehicleType) {
       return [];
   }
 }
+
+/**
+ * Aprueba o rechaza una solicitud de verificación de vehículo.
+ *
+ * Seguridad:
+ * - Solo usuarios soporte/admin (allowlist por email o custom claim) pueden ejecutar.
+ *
+ * Entrada:
+ * - { userId: string, requestId: string, decision: 'approved'|'rejected', reason?: string }
+ */
+exports.reviewVehicleVerificationRequest = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Usuario no autenticado');
+  }
+
+  if (!isSupportUser(request.auth)) {
+    throw new HttpsError('permission-denied', 'No autorizado');
+  }
+
+  const userId = request.data?.userId;
+  const requestId = request.data?.requestId;
+  const decision = request.data?.decision;
+  const reason = request.data?.reason;
+
+  if (!userId || !requestId || !decision) {
+    throw new HttpsError('invalid-argument', 'userId, requestId y decision son requeridos');
+  }
+
+  if (!['approved', 'rejected'].includes(decision)) {
+    throw new HttpsError('invalid-argument', 'decision inválida');
+  }
+
+  const reqRef = admin
+    .firestore()
+    .collection('users')
+    .doc(userId)
+    .collection('vehicle_verification_requests')
+    .doc(requestId);
+
+  const userRef = admin.firestore().collection('users').doc(userId);
+  const reviewerId = request.auth.uid;
+
+  await admin.firestore().runTransaction(async (tx) => {
+    const reqSnap = await tx.get(reqRef);
+    if (!reqSnap.exists) {
+      throw new HttpsError('not-found', 'Solicitud no encontrada');
+    }
+
+    const reqData = reqSnap.data() || {};
+    const vehicleType = reqData.vehicleType;
+    if (!vehicleType || typeof vehicleType !== 'string') {
+      throw new HttpsError('failed-precondition', 'vehicleType faltante en solicitud');
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    tx.update(reqRef, {
+      status: decision,
+      updatedAt: now,
+      verification: {
+        verifiedAt: now,
+        verificationMode: 'manual',
+        reason: reason || null,
+        reviewerId,
+      },
+    });
+
+    tx.set(
+      userRef,
+      {
+        riderProfile: {
+          vehicles: {
+            [vehicleType]: {
+              verification: {
+                status: decision,
+                verifiedAt: now,
+                reviewerId,
+                reason: reason || null,
+                requestId,
+              },
+            },
+          },
+        },
+      },
+      { merge: true }
+    );
+  });
+
+  return { success: true };
+});
 
 /**
  * Función para actualizar el estado de un pedido
@@ -429,6 +548,295 @@ exports.processImage1200Webp = onObjectFinalized(
   return null;
 });
 
+function normalizeRut(raw) {
+  if (!raw) return null;
+  const cleaned = String(raw)
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/\./g, '')
+    .replace(/–|—/g, '-')
+    .replace(/[^0-9K-]/g, '');
+
+  const withDash = cleaned.includes('-')
+    ? cleaned
+    : cleaned.length >= 2
+      ? `${cleaned.slice(0, -1)}-${cleaned.slice(-1)}`
+      : cleaned;
+
+  const match = withDash.match(/^(\d{7,8})-([0-9K])$/);
+  if (!match) return null;
+  return `${match[1]}-${match[2]}`;
+}
+
+function computeRutDv(body) {
+  let sum = 0;
+  let multiplier = 2;
+
+  for (let i = body.length - 1; i >= 0; i -= 1) {
+    sum += parseInt(body[i], 10) * multiplier;
+    multiplier = multiplier === 7 ? 2 : multiplier + 1;
+  }
+
+  const remainder = 11 - (sum % 11);
+  if (remainder === 11) return '0';
+  if (remainder === 10) return 'K';
+  return String(remainder);
+}
+
+function isValidRutDv(rut) {
+  const normalized = normalizeRut(rut);
+  if (!normalized) return false;
+  const [body, dv] = normalized.split('-');
+  return computeRutDv(body) === dv;
+}
+
+function extractRutCandidates(text) {
+  if (!text) return [];
+  const normalizedText = String(text)
+    .toUpperCase()
+    .replace(/\./g, '')
+    .replace(/\s+/g, ' ');
+
+  const candidates = new Set();
+
+  const patterns = [
+    /\b\d{1,2}(?:\.?\d{3}){2}-[0-9K]\b/g,
+    /\b\d{7,8}-[0-9K]\b/g,
+    /\b\d{7,8}[0-9K]\b/g,
+  ];
+
+  for (const re of patterns) {
+    const matches = normalizedText.match(re) || [];
+    for (const m of matches) {
+      const n = normalizeRut(m);
+      if (n) candidates.add(n);
+    }
+  }
+
+  return Array.from(candidates);
+}
+
+async function runVisionOcrForGcsUri({gcsUri, mimeType}) {
+  if (mimeType === 'application/pdf') {
+    const [result] = await visionClient.documentTextDetection({
+      image: {source: {imageUri: gcsUri}},
+    });
+    return result?.fullTextAnnotation?.text || '';
+  }
+
+  const [result] = await visionClient.documentTextDetection({
+    image: {source: {imageUri: gcsUri}},
+  });
+  return result?.fullTextAnnotation?.text || '';
+}
+
+exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
+  {region: STORAGE_REGION},
+  async (event) => {
+    const object = event.data;
+    const filePath = object.name;
+    const contentType = object.contentType || '';
+
+    if (!filePath) return null;
+    if (!filePath.startsWith('riders/')) return null;
+
+    // Expected path:
+    // riders/{uid}/documents/vehicle_verification/{vehicleType}/{requestId}/...license_front.*
+    const segments = filePath.split('/').filter(Boolean);
+    // 0 riders, 1 uid, 2 documents, 3 vehicle_verification, 4 vehicleType, 5 requestId, ... filename
+    if (segments.length < 7) return null;
+    if (segments[0] !== 'riders') return null;
+    if (segments[2] !== 'documents') return null;
+    if (segments[3] !== 'vehicle_verification') return null;
+
+    const riderId = segments[1];
+    const vehicleType = segments[4];
+    const requestId = segments[5];
+    const fileName = segments[segments.length - 1];
+
+    const isLicenseFront = fileName.toLowerCase().includes('license_front');
+    if (!isLicenseFront) return null;
+
+    const isPdf = contentType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+    const isImage = contentType.startsWith('image/');
+    if (!isPdf && !isImage) return null;
+
+    logger.info('[ocrVehicleVerification] Start', {
+      riderId,
+      vehicleType,
+      requestId,
+      filePath,
+      contentType,
+    });
+
+    const userRef = admin.firestore().collection('users').doc(riderId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      logger.warn('[ocrVehicleVerification] user not found', { riderId });
+      return null;
+    }
+
+    const userData = userSnap.data() || {};
+    const declaredRut = userData?.identity?.documentId;
+    const declaredNormalized = normalizeRut(declaredRut);
+
+    const reqRef = userRef
+      .collection('vehicle_verification_requests')
+      .doc(requestId);
+
+    const gcsUri = `gs://${object.bucket}/${filePath}`;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    // Mark processing
+    await userRef.set(
+      {
+        riderProfile: {
+          vehicles: {
+            [vehicleType]: {
+              ocr: {
+                status: 'processing',
+                filePath,
+                contentType,
+                processedAt: now,
+              },
+            },
+          },
+        },
+      },
+      { merge: true }
+    );
+
+    try {
+      const text = await runVisionOcrForGcsUri({
+        gcsUri,
+        mimeType: isPdf ? 'application/pdf' : contentType,
+      });
+
+      const candidates = extractRutCandidates(text);
+      const extractedRut = candidates.length > 0 ? candidates[0] : null;
+      const extractedNormalized = normalizeRut(extractedRut);
+      const dvValid = extractedRut ? isValidRutDv(extractedRut) : false;
+      const matchDeclared =
+        extractedNormalized && declaredNormalized
+          ? extractedNormalized === declaredNormalized
+          : false;
+
+      const errors = [];
+      let verificationStatus = 'needs_review';
+
+      if (!declaredRut) {
+        errors.push('missing_declared_rut');
+      }
+
+      if (!extractedRut) {
+        errors.push('rut_not_found');
+        verificationStatus = 'rejected';
+      } else if (!dvValid) {
+        errors.push('rut_dv_invalid');
+        verificationStatus = 'rejected';
+      } else if (declaredRut && !matchDeclared) {
+        errors.push('rut_mismatch_declared');
+        verificationStatus = 'needs_review';
+      } else if (declaredRut && matchDeclared && dvValid) {
+        verificationStatus = 'approved';
+      }
+
+      await userRef.set(
+        {
+          riderProfile: {
+            vehicles: {
+              [vehicleType]: {
+                ocr: {
+                  status: verificationStatus,
+                  filePath,
+                  contentType,
+                  processedAt: now,
+                  extractedRut,
+                  dvValid,
+                  matchDeclared,
+                  rutCandidates: candidates.slice(0, 5),
+                  errorCodes: errors,
+                },
+                verification: {
+                  status: verificationStatus,
+                  verifiedAt: verificationStatus === 'approved' ? now : null,
+                  requestId,
+                  mode: 'ocr',
+                },
+              },
+            },
+          },
+        },
+        { merge: true }
+      );
+
+      // Update request doc if exists
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: verificationStatus,
+          ocr: {
+            extractedRut,
+            dvValid,
+            matchDeclared,
+            errorCodes: errors,
+            processedAt: now,
+          },
+        },
+        { merge: true }
+      );
+
+      logger.info('[ocrVehicleVerification] Done', {
+        riderId,
+        vehicleType,
+        requestId,
+        verificationStatus,
+      });
+    } catch (error) {
+      logger.error('[ocrVehicleVerification] OCR failed', {
+        riderId,
+        vehicleType,
+        requestId,
+        filePath,
+        error,
+      });
+
+      await userRef.set(
+        {
+          riderProfile: {
+            vehicles: {
+              [vehicleType]: {
+                ocr: {
+                  status: 'failed',
+                  filePath,
+                  contentType,
+                  processedAt: now,
+                  errorCodes: ['ocr_error'],
+                },
+              },
+            },
+          },
+        },
+        { merge: true }
+      );
+
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: 'failed',
+          ocr: {
+            errorCodes: ['ocr_error'],
+            processedAt: now,
+          },
+        },
+        { merge: true }
+      );
+    }
+
+    return null;
+  }
+);
+
 function getIsoWeekKey(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -550,3 +958,529 @@ function buildDownloadUrl(bucketName, filePath) {
   const encodedPath = encodeURIComponent(filePath);
   return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media`;
 }
+
+// ==========================================
+// PUSH NOTIFICATIONS (FCM)
+// ==========================================
+
+/**
+ * Helper: Send FCM notification to user(s)
+ * @param {string|string[]} userIds - Single user ID or array of user IDs
+ * @param {Object} notification - { title, body, imageUrl? }
+ * @param {Object} data - Custom data payload
+ * @returns {Promise<void>}
+ */
+async function sendNotificationToUsers(userIds, notification, data = {}) {
+  try {
+    const ids = Array.isArray(userIds) ? userIds : [userIds];
+    const userTokensMap = new Map(); // Map userId -> tokens[]
+
+    // Get FCM tokens for all users
+    for (const userId of ids) {
+      const userDoc = await admin.firestore().collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        if (userData.fcmTokens && Array.isArray(userData.fcmTokens)) {
+          userTokensMap.set(userId, userData.fcmTokens);
+        }
+      }
+    }
+
+    if (userTokensMap.size === 0) {
+      console.log('No FCM tokens found for users:', ids);
+      return;
+    }
+
+    // Collect all tokens
+    const allTokens = [];
+    userTokensMap.forEach((tokens) => {
+      allTokens.push(...tokens);
+    });
+
+    if (allTokens.length === 0) {
+      console.log('No FCM tokens to send to');
+      return;
+    }
+
+    // Build FCM message
+    const message = {
+      notification: {
+        title: notification.title,
+        body: notification.body,
+      },
+      data: {
+        ...data,
+        // Ensure all data values are strings
+        ...Object.fromEntries(
+          Object.entries(data).map(([k, v]) => [k, String(v)])
+        ),
+      },
+    };
+
+    if (notification.imageUrl) {
+      message.notification.imageUrl = notification.imageUrl;
+    }
+
+    // Send to all tokens
+    const results = await admin.messaging().sendEachForMulticast({
+      tokens: allTokens,
+      ...message,
+      android: {
+        priority: data.priority === 'high' ? 'high' : 'normal',
+      },
+      apns: {
+        payload: {
+          aps: {
+            contentAvailable: true,
+          },
+        },
+      },
+    });
+
+    console.log(`Sent ${results.successCount} notifications, ${results.failureCount} failed`);
+
+    // Clean up invalid tokens
+    if (results.failureCount > 0) {
+      const invalidTokens = [];
+      results.responses.forEach((response, idx) => {
+        if (!response.success) {
+          const errorCode = response.error?.code;
+          // Remove tokens that are invalid, not registered, or unregistered
+          if (
+            errorCode === 'messaging/invalid-registration-token' ||
+            errorCode === 'messaging/registration-token-not-registered'
+          ) {
+            invalidTokens.push(allTokens[idx]);
+          }
+        }
+      });
+
+      // Remove invalid tokens from user documents
+      if (invalidTokens.length > 0) {
+        console.log(`Cleaning up ${invalidTokens.length} invalid tokens`);
+        
+        for (const [userId, userTokens] of userTokensMap.entries()) {
+          const tokensToRemove = userTokens.filter(token => invalidTokens.includes(token));
+          
+          if (tokensToRemove.length > 0) {
+            await admin.firestore().collection('users').doc(userId).update({
+              fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToRemove),
+            });
+            console.log(`Removed ${tokensToRemove.length} invalid tokens from user ${userId}`);
+          }
+        }
+      }
+    }
+
+    // Save notification to Firestore for each user
+    const batch = admin.firestore().batch();
+    for (const userId of ids) {
+      const notificationRef = admin.firestore().collection('notifications').doc();
+      batch.set(notificationRef, {
+        userId,
+        type: data.type || 'system',
+        title: notification.title,
+        body: notification.body,
+        data,
+        action: data.action,
+        imageUrl: notification.imageUrl || null,
+        priority: data.priority || 'normal',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        read: false,
+      });
+    }
+    await batch.commit();
+  } catch (error) {
+    console.error('Error sending notification:', error);
+    throw error;
+  }
+}
+
+/**
+ * Trigger: Send notification when order status changes
+ * Notifies hero and rider about order status updates
+ */
+exports.notifyOrderStatusChange = onDocumentWritten(
+  {document: 'orders/{orderId}', region: STORAGE_REGION},
+  async (event) => {
+    const before = event.data && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after.exists ? event.data.after.data() : null;
+
+    // Only proceed if status changed
+    if (!after || !before || before.status === after.status) {
+      return;
+    }
+
+    const orderId = event.params.orderId;
+    const heroId = after.heroId;
+    const riderId = after.rider?.assignedRiderId;
+    const newStatus = after.status;
+    const oldStatus = before.status;
+
+    console.log(`Order ${orderId} status changed: ${oldStatus} -> ${newStatus}`);
+
+    // Define notification messages for each status
+    const statusMessages = {
+      // Hero notifications
+      hero: {
+        assigned: {
+          title: '🚴 Rider Asignado',
+          body: 'Un rider ha sido asignado a tu pedido',
+        },
+        picked_up: {
+          title: '📦 Pedido Recogido',
+          body: 'Tu pedido ha sido recogido por el rider',
+        },
+        in_transit: {
+          title: '🚚 En Camino',
+          body: 'Tu pedido está en camino',
+        },
+        delivered: {
+          title: '✅ Pedido Entregado',
+          body: 'Tu pedido ha sido entregado',
+        },
+        canceled: {
+          title: '❌ Pedido Cancelado',
+          body: 'Tu pedido ha sido cancelado',
+        },
+      },
+      // Rider notifications
+      rider: {
+        canceled: {
+          title: '❌ Pedido Cancelado',
+          body: 'El pedido ha sido cancelado',
+        },
+      },
+    };
+
+    // Send notification to hero
+    if (statusMessages.hero[newStatus]) {
+      await sendNotificationToUsers(
+        heroId,
+        statusMessages.hero[newStatus],
+        {
+          type: 'order_status',
+          action: 'open_order',
+          orderId,
+          status: newStatus,
+          priority: 'high',
+        }
+      );
+    }
+
+    // Send notification to rider if assigned
+    if (riderId && statusMessages.rider[newStatus]) {
+      await sendNotificationToUsers(
+        riderId,
+        statusMessages.rider[newStatus],
+        {
+          type: 'order_status',
+          action: 'open_order',
+          orderId,
+          status: newStatus,
+          priority: 'high',
+        }
+      );
+    }
+  }
+);
+
+/**
+ * Trigger: Notify nearby riders when order is queued
+ * Sends notification to riders within a certain radius
+ */
+exports.notifyNearbyRiders = onDocumentWritten(
+  {document: 'orders/{orderId}', region: STORAGE_REGION},
+  async (event) => {
+    const before = event.data && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after.exists ? event.data.after.data() : null;
+
+    // Only proceed if order just became queued
+    if (!after || after.status !== 'queued' || before?.status === 'queued') {
+      return;
+    }
+
+    const orderId = event.params.orderId;
+    const pickupLocation = after.pickup?.location;
+
+    if (!pickupLocation || !pickupLocation.latitude || !pickupLocation.longitude) {
+      console.log('Order has no pickup location, skipping nearby rider notification');
+      return;
+    }
+
+    // Get all active riders
+    const ridersSnapshot = await admin.firestore()
+      .collection('users')
+      .where('roles', 'array-contains', 'rider')
+      .where('riderProfile.isActive', '==', true)
+      .where('riderProfile.isVerified', '==', true)
+      .get();
+
+    if (ridersSnapshot.empty) {
+      console.log('No active riders found');
+      return;
+    }
+
+    // Calculate distance and filter nearby riders (within 10km)
+    const RADIUS_KM = 10;
+    const nearbyRiders = [];
+
+    for (const riderDoc of ridersSnapshot.docs) {
+      const riderData = riderDoc.data();
+      const riderLocation = riderData.riderProfile?.currentLocation;
+
+      if (!riderLocation || !riderLocation.latitude || !riderLocation.longitude) {
+        continue;
+      }
+
+      // Simple distance calculation (Haversine formula)
+      const distance = calculateDistance(
+        pickupLocation.latitude,
+        pickupLocation.longitude,
+        riderLocation.latitude,
+        riderLocation.longitude
+      );
+
+      if (distance <= RADIUS_KM) {
+        nearbyRiders.push({
+          riderId: riderDoc.id,
+          distance,
+        });
+      }
+    }
+
+    if (nearbyRiders.length === 0) {
+      console.log('No nearby riders found');
+      return;
+    }
+
+    console.log(`Found ${nearbyRiders.length} nearby riders for order ${orderId}`);
+
+    // Sort by distance
+    nearbyRiders.sort((a, b) => a.distance - b.distance);
+
+    // Send notification to nearby riders
+    const riderIds = nearbyRiders.map(r => r.riderId);
+    await sendNotificationToUsers(
+      riderIds,
+      {
+        title: '🎯 Nuevo Pedido Cercano',
+        body: `Hay un pedido disponible a ${nearbyRiders[0].distance.toFixed(1)} km de ti`,
+      },
+      {
+        type: 'nearby_order',
+        action: 'open_order',
+        orderId,
+        distance: String(nearbyRiders[0].distance),
+        priority: 'high',
+      }
+    );
+  }
+);
+
+/**
+ * Helper: Calculate distance between two coordinates (Haversine formula)
+ * @param {number} lat1 - Latitude 1
+ * @param {number} lon1 - Longitude 1
+ * @param {number} lat2 - Latitude 2
+ * @param {number} lon2 - Longitude 2
+ * @returns {number} Distance in kilometers
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function toRad(degrees) {
+  return degrees * (Math.PI / 180);
+}
+
+/**
+ * Callable: Send notification from system operator
+ * Allows authorized users to send notifications to specific users or broadcast
+ * 
+ * @param {Object} data - { targetUserIds?: string[], title: string, body: string, type?: string, imageUrl?: string, useTopic?: boolean }
+ */
+exports.sendOperatorNotification = onCall(async (request) => {
+  // Verify user is authorized (support/admin)
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Usuario no autenticado');
+  }
+
+  if (!isSupportUser(request.auth)) {
+    throw new HttpsError('permission-denied', 'No autorizado');
+  }
+
+  const {targetUserIds, title, body, type, imageUrl, targetScreen, useTopic} = request.data;
+
+  if (!title || !body) {
+    throw new HttpsError('invalid-argument', 'title y body son requeridos');
+  }
+
+  let recipients = targetUserIds;
+
+  // If no specific users, broadcast to all users
+  if (!recipients || recipients.length === 0) {
+    if (useTopic) {
+      // Use FCM topic for efficient broadcast
+      const message = {
+        notification: {
+          title,
+          body,
+        },
+        data: {
+          type: type || 'system',
+          action: targetScreen ? 'open_screen' : 'open_notifications',
+          targetScreen: targetScreen || '',
+        },
+        topic: 'all_users',
+      };
+
+      if (imageUrl) {
+        message.notification.imageUrl = imageUrl;
+      }
+
+      await admin.messaging().send(message);
+
+      return {
+        success: true,
+        method: 'topic',
+        message: 'Notificación enviada a todos los usuarios vía topic',
+      };
+    } else {
+      // Paginated broadcast to all users
+      const BATCH_SIZE = 500; // FCM limit is 500 tokens per request
+      let totalSent = 0;
+      let lastDoc = null;
+
+      while (true) {
+        let query = admin.firestore()
+          .collection('users')
+          .limit(BATCH_SIZE);
+
+        if (lastDoc) {
+          query = query.startAfter(lastDoc);
+        }
+
+        const usersSnapshot = await query.get();
+
+        if (usersSnapshot.empty) {
+          break;
+        }
+
+        const batchUserIds = usersSnapshot.docs.map(doc => doc.id);
+        
+        await sendNotificationToUsers(
+          batchUserIds,
+          {title, body, imageUrl},
+          {
+            type: type || 'system',
+            action: targetScreen ? 'open_screen' : 'open_notifications',
+            targetScreen,
+            priority: 'normal',
+          }
+        );
+
+        totalSent += batchUserIds.length;
+        lastDoc = usersSnapshot.docs[usersSnapshot.docs.length - 1];
+
+        if (usersSnapshot.docs.length < BATCH_SIZE) {
+          break;
+        }
+      }
+
+      return {
+        success: true,
+        method: 'paginated',
+        recipientCount: totalSent,
+        message: `Notificación enviada a ${totalSent} usuario(s)`,
+      };
+    }
+  }
+
+  // Send to specific users
+  await sendNotificationToUsers(
+    recipients,
+    {title, body, imageUrl},
+    {
+      type: type || 'system',
+      action: targetScreen ? 'open_screen' : 'open_notifications',
+      targetScreen,
+      priority: 'normal',
+    }
+  );
+
+  return {
+    success: true,
+    method: 'direct',
+    recipientCount: recipients.length,
+    message: `Notificación enviada a ${recipients.length} usuario(s)`,
+  };
+});
+
+/**
+ * Callable: Send broadcast notification using FCM topics
+ * More efficient for mass notifications
+ * 
+ * @param {Object} data - { title: string, body: string, topic?: string, imageUrl?: string }
+ */
+exports.sendBroadcastNotification = onCall(async (request) => {
+  // Verify user is authorized (support/admin)
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Usuario no autenticado');
+  }
+
+  if (!isSupportUser(request.auth)) {
+    throw new HttpsError('permission-denied', 'No autorizado');
+  }
+
+  const {title, body, topic, imageUrl, type, targetScreen} = request.data;
+
+  if (!title || !body) {
+    throw new HttpsError('invalid-argument', 'title y body son requeridos');
+  }
+
+  const targetTopic = topic || 'all_users';
+
+  const message = {
+    notification: {
+      title,
+      body,
+    },
+    data: {
+      type: type || 'system',
+      action: targetScreen ? 'open_screen' : 'open_notifications',
+      targetScreen: targetScreen || '',
+    },
+    topic: targetTopic,
+    android: {
+      priority: 'normal',
+    },
+    apns: {
+      payload: {
+        aps: {
+          contentAvailable: true,
+        },
+      },
+    },
+  };
+
+  if (imageUrl) {
+    message.notification.imageUrl = imageUrl;
+  }
+
+  await admin.messaging().send(message);
+
+  return {
+    success: true,
+    topic: targetTopic,
+    message: `Notificación broadcast enviada al topic '${targetTopic}'`,
+  };
+});

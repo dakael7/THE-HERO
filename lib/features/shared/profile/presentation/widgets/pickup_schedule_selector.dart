@@ -1,19 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/pickup_schedule.dart';
-import '../../../../../domain/entities/concierge_info.dart';
 
 class PickupScheduleSelector extends StatefulWidget {
   final PickupSchedule? initialSchedule;
-  final bool initialUseConcierge;
-  final ConciergeInfo? initialConciergeInfo;
-  final Function(PickupSchedule?, bool, ConciergeInfo?) onChanged;
+  final Function(PickupSchedule?) onChanged;
 
   const PickupScheduleSelector({
     super.key,
     this.initialSchedule,
-    this.initialUseConcierge = false,
-    this.initialConciergeInfo,
     required this.onChanged,
   });
 
@@ -25,10 +20,6 @@ class _PickupScheduleSelectorState extends State<PickupScheduleSelector> {
   late Set<WeekDay> _selectedDays;
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
-  late bool _useConcierge;
-  late TextEditingController _buildingController;
-  late TextEditingController _instructionsController;
-  late TextEditingController _packageNameController;
 
   @override
   void initState() {
@@ -66,29 +57,15 @@ class _PickupScheduleSelectorState extends State<PickupScheduleSelector> {
       _endTime = const TimeOfDay(hour: 18, minute: 0);
     }
 
-    _useConcierge = widget.initialUseConcierge;
-    _buildingController = TextEditingController(
-      text: widget.initialConciergeInfo?.buildingName ?? '',
-    );
-    _instructionsController = TextEditingController(
-      text: widget.initialConciergeInfo?.instructions ?? '',
-    );
-    _packageNameController = TextEditingController(
-      text: widget.initialConciergeInfo?.packageName ?? '',
-    );
   }
 
   @override
   void dispose() {
-    _buildingController.dispose();
-    _instructionsController.dispose();
-    _packageNameController.dispose();
     super.dispose();
   }
 
   void _notifyChanges() {
     PickupSchedule? schedule;
-    ConciergeInfo? conciergeInfo;
 
     if (_selectedDays.isNotEmpty) {
       final timeRange = TimeRange(
@@ -109,17 +86,7 @@ class _PickupScheduleSelectorState extends State<PickupScheduleSelector> {
       );
     }
 
-    if (_useConcierge &&
-        _buildingController.text.trim().isNotEmpty &&
-        _packageNameController.text.trim().isNotEmpty) {
-      conciergeInfo = ConciergeInfo(
-        buildingName: _buildingController.text.trim(),
-        instructions: _instructionsController.text.trim(),
-        packageName: _packageNameController.text.trim(),
-      );
-    }
-
-    widget.onChanged(schedule, _useConcierge, conciergeInfo);
+    widget.onChanged(schedule);
   }
 
   Future<void> _selectTime(bool isStart) async {
@@ -326,79 +293,6 @@ class _PickupScheduleSelectorState extends State<PickupScheduleSelector> {
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        // Concierge option
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: backgroundWhite,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderGray100),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SwitchListTile(
-                value: _useConcierge,
-                onChanged: (value) {
-                  setState(() => _useConcierge = value);
-                  _notifyChanges();
-                },
-                title: const Text(
-                  'Dejar en portería',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: textGray900,
-                  ),
-                ),
-                subtitle: const Text(
-                  'El paquete se dejará en la portería del edificio',
-                  style: TextStyle(fontSize: 12, color: textGray600),
-                ),
-                contentPadding: EdgeInsets.zero,
-                activeThumbColor: primaryOrange,
-              ),
-              if (_useConcierge) ...[
-                const SizedBox(height: 16),
-                const Divider(height: 1, color: borderGray100),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _buildingController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre del edificio',
-                    hintText: 'Ej: Edificio Central',
-                    prefixIcon: Icon(Icons.business),
-                  ),
-                  onChanged: (_) => _notifyChanges(),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _packageNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre del paquete',
-                    hintText: 'Ej: Paquete para Juan Pérez',
-                    prefixIcon: Icon(Icons.inventory_2),
-                  ),
-                  onChanged: (_) => _notifyChanges(),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _instructionsController,
-                  decoration: const InputDecoration(
-                    labelText: 'Instrucciones (opcional)',
-                    hintText: 'Ej: Preguntar por el paquete en recepción',
-                    prefixIcon: Icon(Icons.notes),
-                  ),
-                  maxLines: 2,
-                  onChanged: (_) => _notifyChanges(),
-                ),
-              ],
             ],
           ),
         ),

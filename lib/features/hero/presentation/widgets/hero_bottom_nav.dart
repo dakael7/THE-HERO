@@ -76,7 +76,14 @@ class HeroBottomNav extends ConsumerWidget {
     final int chatCount = ref.watch(
       userChatsProvider.select(
         (async) => async.maybeWhen(
-          data: (chats) => chats.length,
+          data: (chats) {
+            // Sum up unreadCount from all chats
+            int totalUnread = 0;
+            for (final chat in chats) {
+              totalUnread += chat.unreadCount;
+            }
+            return totalUnread;
+          },
           orElse: () => 0,
         ),
       ),
@@ -240,7 +247,10 @@ class HeroBottomNav extends ConsumerWidget {
                       color: primaryOrange.withValues(alpha: 0.20),
                       width: 1.5,
                     )
-                  : Border.all(color: textGray900.withValues(alpha: 0.04), width: 1),
+                  : Border.all(
+                      color: textGray900.withValues(alpha: 0.04),
+                      width: 1,
+                    ),
               gradient: isActive
                   ? LinearGradient(
                       colors: [

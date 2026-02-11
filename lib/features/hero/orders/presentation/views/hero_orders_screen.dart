@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../data/providers/repository_providers.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../payment/payment_processing_screen.dart';
+import '../../../payment/providers/payment_providers.dart';
 import 'hero_order_status_screen.dart';
 
 class HeroOrdersScreen extends ConsumerWidget {
@@ -66,10 +70,12 @@ class HeroOrdersScreen extends ConsumerWidget {
               final sorted = [...orders]
                 ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
-              final active =
-                  sorted.where((o) => !o.status.isCompleted).toList();
-              final completed =
-                  sorted.where((o) => o.status.isCompleted).toList();
+              final active = sorted
+                  .where((o) => !o.status.isCompleted)
+                  .toList();
+              final completed = sorted
+                  .where((o) => o.status.isCompleted)
+                  .toList();
 
               return ListView(
                 padding: const EdgeInsets.all(16),
@@ -109,16 +115,14 @@ class HeroOrdersScreen extends ConsumerWidget {
   }
 }
 
-class _OrderTile extends StatelessWidget {
+class _OrderTile extends ConsumerWidget {
   final Order order;
 
   const _OrderTile({required this.order});
 
   @override
-  Widget build(BuildContext context) {
-    final title = order.items.isNotEmpty
-        ? order.items.first.titleSnapshot
-        : 'Pedido';
+  Widget build(BuildContext context, WidgetRef ref) {
+    final title = 'Pedido HRO-${order.orderId}';
 
     final statusColor = _statusColor(order.status);
 
@@ -155,10 +159,7 @@ class _OrderTile extends StatelessWidget {
                 color: statusColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(
-                _statusIcon(order.status),
-                color: statusColor,
-              ),
+              child: Icon(_statusIcon(order.status), color: statusColor),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -219,6 +220,190 @@ class _OrderTile extends StatelessWidget {
                       ),
                     ],
                   ),
+                  // Show payment and delete buttons for pending payment orders
+                  if (order.status == OrderStatus.pendingPayment) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              try {
+                                // Create payment preference
+                                final paymentNotifier = ref.read(
+                                  paymentNotifierProvider.notifier,
+                                );
+                                await paymentNotifier.createPreference(order);
+
+                                final paymentState = ref.read(
+                                  paymentNotifierProvider,
+                                );
+
+                                if (paymentState.error != null) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Error: ${paymentState.error}',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
+
+                                if (paymentState.initPoint != null &&
+                                    context.mounted) {
+                                  // Navigate to payment processing screen
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => PaymentProcessingScreen(
+                                        initPoint: paymentState.initPoint!,
+                                        orderId: order.orderId,
+                                        preferenceId:
+                                            paymentState.preferenceId ?? '',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Error al procesar pago: $e',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.payment, size: 18),
+                            label: const Text(
+                              'Pagar',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryOrange,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              // Show confirmation dialog
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  icon: const Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Colors.red,
+                                    size: 48,
+                                  ),
+                                  title: const Text(
+                                    'Eliminar orden',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  content: const Text(
+                                    '¿Eliminar esta orden pendiente? Esta acción no se puede deshacer.',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(false),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(true),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.red,
+                                      ),
+                                      child: const Text(
+                                        'Eliminar',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              if (confirmed == true && context.mounted) {
+                                try {
+                                  // Restore stock for all items in the order
+                                  final offersRepository = ref.read(
+                                    offersRepositoryProvider,
+                                  );
+                                  for (final item in order.items) {
+                                    await offersRepository.incrementStock(
+                                      item.offerId,
+                                      item.qty,
+                                    );
+                                  }
+
+                                  // Delete order from Firestore
+                                  await firestore.FirebaseFirestore.instance
+                                      .collection('orders')
+                                      .doc(order.orderId)
+                                      .delete();
+
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Orden eliminada y stock restaurado',
+                                        ),
+                                        backgroundColor: categoryTextGreen,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Error: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              }
+                            },
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            label: const Text(
+                              'Eliminar',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -62,20 +62,20 @@ class ProfileMenuTile extends StatelessWidget {
                   ),
                 ),
                 if (trailingText != null) ...[
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: backgroundGray50,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: borderGray100, width: 1),
+                  const SizedBox(width: 10),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.45,
                     ),
                     child: Text(
                       trailingText!,
-                      style: const TextStyle(
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
                         fontSize: 12,
-                        color: textGray600,
                         fontWeight: FontWeight.w700,
+                        color: enabled ? textGray600 : textGray600.withValues(alpha: 0.6),
                       ),
                     ),
                   ),

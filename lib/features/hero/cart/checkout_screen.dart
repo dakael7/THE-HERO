@@ -4,11 +4,15 @@ import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/config/env.dart';
+import '../../../core/config/mercadopago_config.dart';
 import '../../../core/utils/weight_utils.dart';
 import '../../../features/shared/profile/presentation/providers/profile_provider.dart';
 import '../../../features/shared/profile/presentation/views/location_picker_screen.dart';
 import '../../../domain/entities/user.dart';
 import '../../../domain/providers/orders_usecase_providers.dart';
+import '../payment/widgets/payment_method_selector.dart';
+import '../payment/providers/payment_providers.dart';
+import '../payment/payment_processing_screen.dart';
 import 'cart_provider.dart';
 import 'cart_summary_provider.dart';
 import 'order_builder.dart';
@@ -34,6 +38,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   double? _deliveryLatitude;
   double? _deliveryLongitude;
   ProviderSubscription<AsyncValue<User?>>? _profileSub;
+  PaymentMethod _selectedPaymentMethod = PaymentMethod.mercadopago;
 
   firestore.GeoPoint? _tryParseGeoFromText(String text) {
     final input = text.trim();
@@ -247,25 +252,119 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       final createOrderUseCase = ref.read(createOrderUseCaseProvider);
       final createdOrder = await createOrderUseCase.execute(order);
 
-      final updateStatusUseCase = ref.read(updateOrderStatusUseCaseProvider);
-      await updateStatusUseCase.execute(createdOrder.orderId, 'queued');
+      // Determine payment flow based on method and environment
+      final shouldUseMercadoPago =
+          _selectedPaymentMethod == PaymentMethod.mercadopago &&
+          MercadoPagoConfig.isProduction;
 
-      // Clear cart after successful order creation
-      ref.read(cartProvider.notifier).clear();
+      if (shouldUseMercadoPago) {
+        // Production flow with MercadoPago
+        debugPrint('💳 [Checkout] Using MercadoPago payment flow');
 
-      if (mounted) {
-        await _showPaymentResult(
-          success: true,
-          message:
-              'Orden creada y publicada. Total: \$${createdOrder.amountTotal.toStringAsFixed(0)} CLP',
+        // Set order status to pending_payment
+        final updateStatusUseCase = ref.read(updateOrderStatusUseCaseProvider);
+        await updateStatusUseCase.execute(
+          createdOrder.orderId,
+          'pending_payment',
         );
 
+        // Create payment preference
+        final paymentNotifier = ref.read(paymentNotifierProvider.notifier);
+        await paymentNotifier.createPreference(createdOrder);
+
+        final paymentState = ref.read(paymentNotifierProvider);
+
+        if (paymentState.error != null) {
+          throw Exception(
+            'Error al crear preferencia de pago: ${paymentState.error}',
+          );
+        }
+
+        if (paymentState.initPoint == null) {
+          throw Exception('No se pudo obtener el link de pago');
+        }
+
+        // Clear cart before navigating to payment
+        ref.read(cartProvider.notifier).clear();
+
+        // Show informative dialog before payment
+        if (mounted) {
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              icon: const Icon(
+                Icons.info_outline,
+                color: primaryOrange,
+                size: 48,
+              ),
+              title: const Text(
+                'Orden creada',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              content: const Text(
+                'Tu orden ha sido creada y está pendiente de pago. '
+                'Serás redirigido a MercadoPago para completar el pago. '
+                'Si no completas el pago ahora, podrás hacerlo más tarde desde "Mis pedidos".',
+                textAlign: TextAlign.center,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text(
+                    'Continuar al pago',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: primaryOrange,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Navigate to payment processing screen
         if (mounted) {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
-              builder: (_) => WaitingRiderScreen(orderId: createdOrder.orderId),
+              builder: (_) => PaymentProcessingScreen(
+                initPoint: paymentState.initPoint!,
+                orderId: createdOrder.orderId,
+                preferenceId: paymentState.preferenceId ?? '',
+              ),
             ),
           );
+        }
+      } else {
+        // Sandbox/Development flow OR Cash payment - skip MercadoPago
+        debugPrint(
+          '💵 [Checkout] Skipping MercadoPago (${_selectedPaymentMethod == PaymentMethod.cash ? "Cash payment" : "Sandbox mode"})',
+        );
+
+        final updateStatusUseCase = ref.read(updateOrderStatusUseCaseProvider);
+        await updateStatusUseCase.execute(createdOrder.orderId, 'queued');
+
+        // Clear cart after successful order creation
+        ref.read(cartProvider.notifier).clear();
+
+        if (mounted) {
+          await _showPaymentResult(
+            success: true,
+            message:
+                'Pedido HRO-${createdOrder.orderId} creado y publicado. Total: \$${createdOrder.amountTotal.toStringAsFixed(0)} CLP',
+          );
+
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) =>
+                    WaitingRiderScreen(orderId: createdOrder.orderId),
+              ),
+            );
+          }
         }
       }
 
@@ -291,7 +390,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         'Pickup Geo: ${createdOrder.pickup.geo.latitude}, ${createdOrder.pickup.geo.longitude}',
       );
       debugPrint('Recipient: ${createdOrder.delivery.recipientName}');
-      debugPrint('Status set to queued for riders');
+      debugPrint('Payment Method: ${_selectedPaymentMethod.name}');
+      debugPrint('Using MercadoPago: $shouldUseMercadoPago');
       debugPrint('====================');
     } catch (e) {
       await _showPaymentResult(
@@ -651,6 +751,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             const SizedBox(height: 24),
 
+            // Payment Method Section
+            const Text(
+              'Método de pago',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: textGray900,
+              ),
+            ),
+            const SizedBox(height: 16),
+            PaymentMethodSelector(
+              selectedMethod: _selectedPaymentMethod,
+              onMethodChanged: (method) {
+                setState(() => _selectedPaymentMethod = method);
+              },
+            ),
+            const SizedBox(height: 24),
+
             // Payment Button
             SizedBox(
               width: double.infinity,
@@ -666,26 +784,38 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: const Text(
-                  'Proceder al pago',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 17,
-                    letterSpacing: 0.3,
-                  ),
-                ),
+                child: _isSubmitting
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            backgroundWhite,
+                          ),
+                        ),
+                      )
+                    : const Text(
+                        'Proceder al pago',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              '* El pago aún no está implementado. Esta es una vista previa.',
-              style: TextStyle(
-                fontSize: 12,
-                color: textGray600,
-                fontStyle: FontStyle.italic,
+            if (!MercadoPagoConfig.isProduction)
+              const Text(
+                '⚠️ Modo Sandbox: El pago con MercadoPago está deshabilitado',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textGray600,
+                  fontStyle: FontStyle.italic,
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
           ],
         ),
       ),

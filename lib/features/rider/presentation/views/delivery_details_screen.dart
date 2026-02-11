@@ -337,9 +337,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                widget.order.items.isNotEmpty
-                                    ? widget.order.items.first.titleSnapshot
-                                    : 'Pedido',
+                                'Pedido HRO-${widget.order.orderId}',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
@@ -433,6 +431,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                       thickness: 1,
                       color: borderGray100.withValues(alpha: 0.5),
                     ),
+                    const SizedBox(height: 20),
+
+                    _OrderItemsCard(order: widget.order),
                     const SizedBox(height: 20),
 
                     // Concierge Info Section (if applicable)
@@ -768,7 +769,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       return;
     }
 
-    final riderVehicleType = user.riderProfile!.vehicle.type;
+    final riderVehicleType = user.riderProfile!.activeVehicle.type;
     final riderName = user.identity.fullName;
     final riderPhone = user.contact.phoneNumber;
 
@@ -832,5 +833,140 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
         );
       }
     }
+  }
+}
+
+class _OrderItemsCard extends StatelessWidget {
+  final Order order;
+
+  const _OrderItemsCard({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final items = order.items;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: backgroundGray50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderGray100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Productos',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: textGray900,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              Text(
+                '${order.totalItems} items',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: textGray600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (items.isEmpty)
+            const Text(
+              'Sin productos',
+              style: TextStyle(color: textGray600, fontWeight: FontWeight.w600),
+            )
+          else
+            ...List.generate(items.length, (index) {
+              final item = items[index];
+              final lineTotal = item.unitPriceSnapshot * item.qty;
+
+              return Padding(
+                padding: EdgeInsets.only(bottom: index == items.length - 1 ? 0 : 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: 42,
+                        height: 42,
+                        color: Colors.white,
+                        child: item.imageUrlSnapshot.startsWith('http')
+                            ? CachedNetworkImage(
+                                imageUrl: item.imageUrlSnapshot,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => const Center(
+                                  child: SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: primaryOrange,
+                                    ),
+                                  ),
+                                ),
+                                errorWidget: (context, url, error) => const Icon(
+                                  Icons.image_not_supported_outlined,
+                                  color: textGray600,
+                                  size: 18,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.shopping_bag_outlined,
+                                size: 18,
+                                color: textGray600,
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.titleSnapshot,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: textGray900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${item.qty} x \$${item.unitPriceSnapshot.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: textGray600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '\$${lineTotal.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
   }
 }

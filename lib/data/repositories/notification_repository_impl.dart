@@ -14,4 +14,26 @@ class NotificationRepositoryImpl implements NotificationRepository {
     final models = await _remoteDataSource.getUserNotifications();
     return models.map((m) => m.toEntity()).toList();
   }
+
+  @override
+  Future<void> saveFcmToken(String token) async {
+    await _remoteDataSource.saveFcmToken(token);
+  }
+
+  @override
+  Future<void> markAsRead(String notificationId) async {
+    await _remoteDataSource.markAsRead(notificationId);
+  }
+
+  @override
+  Future<void> deleteNotification(String notificationId) async {
+    await _remoteDataSource.deleteNotification(notificationId);
+  }
+
+  @override
+  Stream<List<AppNotification>> watchUserNotifications() {
+    return _remoteDataSource.watchUserNotifications().map(
+      (models) => models.map((m) => m.toEntity()).toList(),
+    );
+  }
 }

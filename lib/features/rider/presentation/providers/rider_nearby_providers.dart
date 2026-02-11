@@ -50,7 +50,7 @@ class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
     final profile = await ref.watch(profileProvider.future);
     print('👤 [NearbyOrders] Profile loaded: ${profile?.id}');
 
-    final vehicle = profile?.riderProfile?.vehicle;
+    final vehicle = profile?.riderProfile?.activeVehicle;
     print('🚗 [NearbyOrders] Vehicle: ${vehicle?.type.name}');
 
     if (vehicle == null) {

@@ -15,6 +15,8 @@ class ChatModel {
   final String? orderId;
   final String? offerId;
   final String lastMessageText;
+  final String? lastMessageSenderId;
+  final int unreadCount;
   final firestore.Timestamp createdAt;
   final firestore.Timestamp updatedAt;
   final firestore.Timestamp? lastMessageAt;
@@ -32,6 +34,8 @@ class ChatModel {
     this.orderId,
     this.offerId,
     this.lastMessageText = '',
+    this.lastMessageSenderId,
+    this.unreadCount = 0,
     required this.createdAt,
     required this.updatedAt,
     this.lastMessageAt,
@@ -64,6 +68,8 @@ class ChatModel {
       orderId: json['orderId'] as String?,
       offerId: json['offerId'] as String?,
       lastMessageText: json['lastMessageText'] as String? ?? '',
+      lastMessageSenderId: json['lastMessageSenderId'] as String?,
+      unreadCount: (json['unreadCount'] as int?) ?? 0,
       createdAt:
           json['createdAt'] as firestore.Timestamp? ??
           firestore.Timestamp.now(),
@@ -89,6 +95,8 @@ class ChatModel {
       'orderId': orderId,
       'offerId': offerId,
       'lastMessageText': lastMessageText,
+      'lastMessageSenderId': lastMessageSenderId,
+      'unreadCount': unreadCount,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
       'lastMessageAt': lastMessageAt,
@@ -108,6 +116,8 @@ class ChatModel {
       orderId: orderId,
       offerId: offerId,
       lastMessageText: lastMessageText,
+      lastMessageSenderId: lastMessageSenderId,
+      unreadCount: unreadCount,
       createdAt: createdAt.toDate(),
       updatedAt: updatedAt.toDate(),
       lastMessageAt: lastMessageAt?.toDate(),
@@ -128,6 +138,8 @@ class ChatModel {
       orderId: entity.orderId,
       offerId: entity.offerId,
       lastMessageText: entity.lastMessageText,
+      lastMessageSenderId: entity.lastMessageSenderId,
+      unreadCount: entity.unreadCount,
       createdAt: firestore.Timestamp.fromDate(entity.createdAt),
       updatedAt: firestore.Timestamp.fromDate(entity.updatedAt),
       lastMessageAt: entity.lastMessageAt != null

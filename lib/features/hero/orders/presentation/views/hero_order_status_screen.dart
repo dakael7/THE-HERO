@@ -47,7 +47,6 @@ class HeroOrderStatusScreen extends ConsumerWidget {
                   'Necesitas iniciar sesión para ver el estado del pedido.',
             );
           }
-
           final orderAsync = ref.watch(orderByIdProvider(orderId));
           return orderAsync.when(
             loading: () => const Center(
@@ -110,7 +109,7 @@ class _OrderStatusContent extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'Pedido ${order.orderId}',
+                      'Pedido HRO-${order.orderId}',
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
                         color: textGray900,
@@ -189,6 +188,8 @@ class _OrderStatusContent extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        _OrderItemsCard(order: order),
       ],
     );
   }
@@ -217,6 +218,130 @@ class _OrderStatusContent extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _OrderItemsCard extends StatelessWidget {
+  final Order order;
+
+  const _OrderItemsCard({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final items = order.items;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Productos',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: textGray900,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Text(
+                '${order.totalItems} items',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: textGray600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (items.isEmpty)
+            const Text(
+              'Sin productos',
+              style: TextStyle(color: textGray600, fontWeight: FontWeight.w600),
+            )
+          else
+            ...List.generate(items.length, (index) {
+              final item = items[index];
+              final lineTotal = item.unitPriceSnapshot * item.qty;
+
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: index == items.length - 1 ? 0 : 12,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: backgroundGray50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: borderGray100),
+                      ),
+                      child: const Icon(
+                        Icons.shopping_bag_outlined,
+                        size: 18,
+                        color: textGray600,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.titleSnapshot,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: textGray900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${item.qty} x \$${item.unitPriceSnapshot.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: textGray600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '\$${lineTotal.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
     );
   }
 }
@@ -472,6 +597,7 @@ class _HeroChatButton extends ConsumerWidget {
     }
 
     final profileAsync = ref.watch(profileProvider);
+    final riderAsync = ref.watch(userByIdProvider(riderId));
 
     return IconButton(
       tooltip: 'Chat con rider',
@@ -480,6 +606,12 @@ class _HeroChatButton extends ConsumerWidget {
       onPressed: () async {
         final user = profileAsync.value;
         if (user == null) return;
+
+        // Get rider name from user provider
+        final riderName =
+            riderAsync.value?.fullName ??
+            order.rider.riderNameSnapshot ??
+            'Rider';
 
         final chatId = Chat.generateChatId(
           type: ChatType.heroRider,
@@ -493,7 +625,7 @@ class _HeroChatButton extends ConsumerWidget {
           buyerId: order.heroId,
           buyerName: user.fullName,
           riderId: riderId,
-          riderName: order.rider.riderNameSnapshot ?? 'Rider',
+          riderName: riderName,
           orderId: order.orderId,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
@@ -612,7 +744,6 @@ class _DeliveryConfirmationCard extends StatelessWidget {
                   height: 48,
                   child: OutlinedButton(
                     onPressed: () {
-                      // TODO: Show problem report dialog
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Función de reporte en desarrollo'),

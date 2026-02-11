@@ -12,6 +12,7 @@ abstract class OffersRemoteDataSource {
   Stream<List<OfferModel>> getActiveOffers({String? category, int limit = 20});
   Future<void> updateOfferStatus(String offerId, String status);
   Future<void> decrementStock(String offerId, int qty);
+  Future<void> incrementStock(String offerId, int qty);
   Future<String> uploadOfferImage({
     required String heroId,
     required String offerId,
@@ -27,8 +28,8 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
   OffersRemoteDataSourceImpl({
     required FirebaseFirestore firestore,
     required FirebaseStorage storage,
-  })  : _firestore = firestore,
-        _storage = storage;
+  }) : _firestore = firestore,
+       _storage = storage;
 
   @override
   Future<OfferModel> createOffer(OfferModel offer) async {
@@ -76,10 +77,7 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
           .child(offerId)
           .child('${DateTime.now().millisecondsSinceEpoch}.$ext');
 
-      await ref.putData(
-        bytes,
-        SettableMetadata(contentType: contentType),
-      );
+      await ref.putData(bytes, SettableMetadata(contentType: contentType));
       return await ref.getDownloadURL();
     } catch (e) {
       throw Exception('Error al subir imagen: $e');
@@ -127,9 +125,11 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
           .where('heroId', isEqualTo: heroId)
           .orderBy('createdAt', descending: true)
           .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => OfferModel.fromJson(doc.data()))
-              .toList());
+          .map(
+            (snapshot) => snapshot.docs
+                .map((doc) => OfferModel.fromJson(doc.data()))
+                .toList(),
+          );
     } catch (e) {
       throw Exception('Error al obtener ofertas del hero: $e');
     }
@@ -150,9 +150,14 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
           .orderBy('publishedAt', descending: true)
           .limit(limit)
           .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => OfferModel.fromJson(doc.data() as Map<String, dynamic>))
-              .toList());
+          .map(
+            (snapshot) => snapshot.docs
+                .map(
+                  (doc) =>
+                      OfferModel.fromJson(doc.data() as Map<String, dynamic>),
+                )
+                .toList(),
+          );
     } catch (e) {
       throw Exception('Error al obtener ofertas activas: $e');
     }
@@ -208,6 +213,39 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
       });
     } catch (e) {
       throw Exception('Error al decrementar stock: $e');
+    }
+  }
+
+  @override
+  Future<void> incrementStock(String offerId, int qty) async {
+    try {
+      await _firestore.runTransaction((transaction) async {
+        final offerRef = _firestore.collection('offers').doc(offerId);
+        final offerDoc = await transaction.get(offerRef);
+
+        if (!offerDoc.exists) {
+          throw Exception('Oferta no encontrada');
+        }
+
+        final currentQty = offerDoc.data()!['availableQty'] as int;
+        final newQty = currentQty + qty;
+
+        final updateData = {
+          'availableQty': newQty,
+          'orderCount': FieldValue.increment(-1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+
+        // If was sold_out and now has stock, reactivate
+        final currentStatus = offerDoc.data()!['status'] as String?;
+        if (currentStatus == 'sold_out' && newQty > 0) {
+          updateData['status'] = 'active';
+        }
+
+        transaction.update(offerRef, updateData);
+      });
+    } catch (e) {
+      throw Exception('Error al incrementar stock: $e');
     }
   }
 }

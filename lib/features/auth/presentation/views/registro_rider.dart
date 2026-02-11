@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
@@ -21,6 +22,12 @@ class RegisterRiderScreen extends ConsumerStatefulWidget {
 class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+
+  static final Uri _termsAndConditionsUri = Uri.parse(
+    'https://firebasestorage.googleapis.com/v0/b/the-hero-67d93.firebasestorage.app/o/Docs%2FTerminos%20y%20condiciones.pdf?alt=media&token=e8d69aa2-4646-47b8-a296-6f677f10dd44',
+  );
+
+  bool _acceptedTerms = false;
 
   final RegExp passwordRegex = RegExp(
     r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,}$',
@@ -350,6 +357,52 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                             },
                           ),
 
+                          const SizedBox(height: 16),
+
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Checkbox(
+                                value: _acceptedTerms,
+                                activeColor: primaryOrange,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _acceptedTerms = value ?? false;
+                                  });
+                                },
+                              ),
+                              Expanded(
+                                child: Wrap(
+                                  crossAxisAlignment:
+                                      WrapCrossAlignment.center,
+                                  children: [
+                                    const Text(
+                                      'Acepto los ',
+                                      style: TextStyle(color: textGray600),
+                                    ),
+                                    InkWell(
+                                      onTap: () async {
+                                        await launchUrl(
+                                          _termsAndConditionsUri,
+                                          mode: LaunchMode.externalApplication,
+                                        );
+                                      },
+                                      child: const Text(
+                                        'Términos y Condiciones',
+                                        style: TextStyle(
+                                          color: primaryOrange,
+                                          fontWeight: FontWeight.w600,
+                                          decoration:
+                                              TextDecoration.underline,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+
                           const SizedBox(height: 60),
 
                           // --------------------------------------------------
@@ -366,6 +419,21 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                       : () async {
                                           if (_formKey.currentState!
                                               .validate()) {
+                                            if (!_acceptedTerms) {
+                                              ScaffoldMessenger.of(
+                                                buttonContext,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Debes aceptar los Términos y Condiciones para continuar.',
+                                                  ),
+                                                  duration: Duration(
+                                                    milliseconds: 2000,
+                                                  ),
+                                                ),
+                                              );
+                                              return;
+                                            }
                                             // 1. MANEJO DE UPGRADE DE CUENTA (HERO -> RIDER)
                                             if (widget.existingUser != null) {
                                               final user = widget.existingUser!;

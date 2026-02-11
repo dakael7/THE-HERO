@@ -506,7 +506,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Pedido #${order.orderId.substring(0, 10)}',
+                        'Pedido HRO-${order.orderId}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -1160,7 +1160,7 @@ class _OrderListSliver extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Pedido #${n.order.orderId.substring(0, 10)}',
+                        'Pedido HRO-${n.order.orderId}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,

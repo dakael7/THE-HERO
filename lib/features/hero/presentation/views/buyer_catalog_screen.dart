@@ -114,7 +114,7 @@ class BuyerCatalogScreen extends ConsumerWidget {
                         border: Border.all(color: borderGray100),
                         boxShadow: [
                           BoxShadow(
-                            color: textGray900.withOpacity(0.05),
+                            color: textGray900.withValues(alpha: 0.05),
                             blurRadius: 12,
                             offset: const Offset(0, 8),
                           ),
@@ -322,6 +322,76 @@ class OfferDetailScreen extends ConsumerWidget {
 
   final Offer offer;
 
+  Widget _buildOfferImage(
+    String imageUrl, {
+    BoxFit fit = BoxFit.cover,
+  }) {
+    final trimmed = imageUrl.trim();
+    if (trimmed.isEmpty) {
+      return Image.asset('assets/logo_hero.png', fit: BoxFit.contain);
+    }
+
+    final isAsset = trimmed.startsWith('assets/');
+    if (isAsset) {
+      return Image.asset(trimmed, fit: fit);
+    }
+
+    return Image.network(
+      trimmed,
+      fit: fit,
+      errorBuilder: (_, __, ___) {
+        return Image.asset('assets/logo_hero.png', fit: BoxFit.contain);
+      },
+    );
+  }
+
+  void _openFullScreenGallery(
+    BuildContext context, {
+    required List<String> images,
+    int initialIndex = 0,
+  }) {
+    if (images.isEmpty) return;
+    final controller = PageController(initialPage: initialIndex);
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      builder: (context) {
+        return Dialog(
+          insetPadding: EdgeInsets.zero,
+          backgroundColor: Colors.transparent,
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: controller,
+                itemCount: images.length,
+                itemBuilder: (context, index) {
+                  final url = images[index];
+                  return InteractiveViewer(
+                    minScale: 1.0,
+                    maxScale: 4.0,
+                    child: Center(
+                      child: _buildOfferImage(url, fit: BoxFit.contain),
+                    ),
+                  );
+                },
+              ),
+              Positioned(
+                top: 14,
+                right: 14,
+                child: IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  tooltip: 'Cerrar',
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Color _conditionColor(OfferCondition condition) {
     switch (condition) {
       case OfferCondition.newProduct:
@@ -341,7 +411,6 @@ class OfferDetailScreen extends ConsumerWidget {
     final priceText = '\$${offer.price.toStringAsFixed(0)} CLP';
     final coverUrl = offer.coverImageUrl.trim();
     final hasCover = coverUrl.isNotEmpty;
-    final isAsset = hasCover && coverUrl.startsWith('assets/');
     final galleryImages = <String>{
       if (coverUrl.isNotEmpty) coverUrl,
       ...offer.imageUrls,
@@ -449,43 +518,18 @@ class OfferDetailScreen extends ConsumerWidget {
             child: Container(
               color: borderGray100,
               height: 220,
-              child: !hasCover
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 26,
-                            height: 26,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.4,
-                              color: primaryOrange,
-                            ),
-                          ),
-                          SizedBox(height: 10),
-                          Text(
-                            'Procesando imagen...',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: textGray700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : isAsset
-                  ? Image.asset(coverUrl, fit: BoxFit.cover)
-                  : Image.network(
-                      coverUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) {
-                        return Image.asset(
-                          'assets/logo_hero.png',
-                          fit: BoxFit.contain,
-                        );
-                      },
-                    ),
+              child: GestureDetector(
+                onTap: galleryImages.isEmpty
+                    ? null
+                    : () => _openFullScreenGallery(
+                          context,
+                          images: galleryImages,
+                          initialIndex: 0,
+                        ),
+                child: !hasCover
+                    ? Image.asset('assets/logo_hero.png', fit: BoxFit.contain)
+                    : _buildOfferImage(coverUrl, fit: BoxFit.cover),
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -507,24 +551,19 @@ class OfferDetailScreen extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(width: 10),
                 itemBuilder: (context, index) {
                   final imageUrl = galleryImages[index];
-                  final isAssetThumb = imageUrl.startsWith('assets/');
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 140,
-                      color: borderGray100,
-                      child: isAssetThumb
-                          ? Image.asset(imageUrl, fit: BoxFit.cover)
-                          : Image.network(
-                              imageUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) {
-                                return Image.asset(
-                                  'assets/logo_hero.png',
-                                  fit: BoxFit.contain,
-                                );
-                              },
-                            ),
+                  return GestureDetector(
+                    onTap: () => _openFullScreenGallery(
+                      context,
+                      images: galleryImages,
+                      initialIndex: index,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: 140,
+                        color: borderGray100,
+                        child: _buildOfferImage(imageUrl, fit: BoxFit.cover),
+                      ),
                     ),
                   );
                 },
@@ -636,6 +675,10 @@ class OfferDetailScreen extends ConsumerWidget {
                     ? 'Stock: ${offer.availableQty}/${offer.stock}'
                     : 'Sin stock',
               ),
+              _Pill(
+                icon: Icons.scale_outlined,
+                label: 'Peso: ${formatWeightKg(offer.weight)}',
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -658,20 +701,21 @@ class OfferDetailScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
           if (locationWidget != null) ...[locationWidget],
-          Row(
-            children: [
-              const Icon(
-                Icons.local_shipping_outlined,
-                size: 18,
-                color: textGray600,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Peso: ${formatWeightKg(offer.weight)}',
-                style: const TextStyle(fontSize: 13, color: textGray600),
-              ),
-            ],
-          ),
+          if (offer.pickupSchedule != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.schedule_outlined, size: 18, color: textGray600),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Horario de retiro: ${offer.pickupSchedule!.getScheduleDescription()}',
+                    style: const TextStyle(fontSize: 13, color: textGray600),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 20),
           // Questions Section
           const SizedBox(height: 24),

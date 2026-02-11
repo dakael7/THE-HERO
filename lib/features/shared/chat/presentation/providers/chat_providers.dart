@@ -17,8 +17,10 @@ final userChatsProvider = StreamProvider<List<Chat>>((ref) {
   return repo.watchUserChats(user.uid);
 });
 
-final chatMessagesProvider =
-    StreamProvider.family<List<ChatMessage>, String>((ref, chatId) {
+final chatMessagesProvider = StreamProvider.family<List<ChatMessage>, String>((
+  ref,
+  chatId,
+) {
   final auth = ref.watch(firebaseAuthProvider);
   final user = auth.currentUser;
   if (user == null) {
@@ -59,5 +61,14 @@ class ChatActions {
     }
 
     await repo.sendTextMessage(chatId: chatId, senderId: uid, text: text);
+  }
+
+  Future<void> markMessagesAsRead(String chatId) async {
+    final uid = currentUserId;
+    if (uid == null) {
+      throw Exception('Usuario no autenticado');
+    }
+
+    await repo.markMessagesAsRead(chatId: chatId, userId: uid);
   }
 }

@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'app/app.dart';
 import 'app/providers_scope.dart';
 import 'core/firebase/firebase_config.dart';
+import 'core/services/firebase_messaging_background_handler.dart';
+import 'core/services/fcm_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,8 +21,9 @@ void main() async {
     if (mapsImplementation is GoogleMapsFlutterAndroid) {
       if (kReleaseMode) {
         try {
-          await mapsImplementation
-              .initializeWithRenderer(AndroidMapRenderer.legacy);
+          await mapsImplementation.initializeWithRenderer(
+            AndroidMapRenderer.legacy,
+          );
         } on PlatformException catch (e) {
           final msg = (e.message ?? '').toLowerCase();
           if (!msg.contains('renderer already initialized') &&
@@ -32,7 +36,14 @@ void main() async {
     }
   }
 
+  // Initialize Firebase
   await FirebaseConfig.initialize();
+
+  // Set up background message handler for FCM
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+  // Initialize FCM Service
+  await FCMService().initialize();
 
   runApp(const AppProviderScope(child: App()));
 }

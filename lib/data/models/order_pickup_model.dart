@@ -19,8 +19,21 @@ class OrderPickupModel {
   });
 
   factory OrderPickupModel.fromJson(Map<String, dynamic> json) {
+    // Handle both GeoPoint and Map formats
+    GeoPoint geo;
+    final geoData = json['geo'];
+    if (geoData is GeoPoint) {
+      geo = geoData;
+    } else if (geoData is Map) {
+      final lat = (geoData['latitude'] as num?)?.toDouble() ?? 0.0;
+      final lng = (geoData['longitude'] as num?)?.toDouble() ?? 0.0;
+      geo = GeoPoint(lat, lng);
+    } else {
+      geo = const GeoPoint(0, 0);
+    }
+
     return OrderPickupModel(
-      geo: json['geo'] as GeoPoint? ?? const GeoPoint(0, 0),
+      geo: geo,
       geohash: json['geohash'] as String? ?? '',
       addressSnapshot: json['addressSnapshot'] as String? ?? '',
       contactName: json['contactName'] as String? ?? '',
@@ -31,7 +44,7 @@ class OrderPickupModel {
 
   Map<String, dynamic> toJson() {
     return {
-      'geo': geo,
+      'geo': {'latitude': geo.latitude, 'longitude': geo.longitude},
       'geohash': geohash,
       'addressSnapshot': addressSnapshot,
       'contactName': contactName,

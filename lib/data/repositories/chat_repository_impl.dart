@@ -10,7 +10,7 @@ class ChatRepositoryImpl implements ChatRepository {
   final ChatRemoteDataSource _remoteDataSource;
 
   ChatRepositoryImpl({required ChatRemoteDataSource remoteDataSource})
-      : _remoteDataSource = remoteDataSource;
+    : _remoteDataSource = remoteDataSource;
 
   @override
   Stream<List<Chat>> watchUserChats(String userId) {
@@ -58,6 +58,21 @@ class ChatRepositoryImpl implements ChatRepository {
       await _remoteDataSource.ensureChatExists(model);
     } catch (e) {
       throw Exception('Error al crear chat: $e');
+    }
+  }
+
+  @override
+  Future<void> markMessagesAsRead({
+    required String chatId,
+    required String userId,
+  }) async {
+    try {
+      await _remoteDataSource.markMessagesAsRead(
+        chatId: chatId,
+        userId: userId,
+      );
+    } catch (e) {
+      throw Exception('Error al marcar mensajes como leídos: $e');
     }
   }
 }

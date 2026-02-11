@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 
 abstract class AuthLocalDataSource {
@@ -24,7 +25,18 @@ class AuthLocalDataSourceImpl implements AuthLocalDataSource {
   Future<void> saveUser(UserModel user) async {
     try {
       final prefs = await _prefs;
-      final userJson = jsonEncode(user.toJson());
+      final userJson = jsonEncode(
+        user.toJson(),
+        toEncodable: (object) {
+          if (object is Timestamp) {
+            return object.toDate().toIso8601String();
+          }
+          if (object is DateTime) {
+            return object.toIso8601String();
+          }
+          return object.toString();
+        },
+      );
       await prefs.setString(_userKey, userJson);
     } catch (e) {
       throw Exception('Error al guardar usuario localmente: $e');

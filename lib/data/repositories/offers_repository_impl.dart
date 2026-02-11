@@ -8,7 +8,7 @@ class OffersRepositoryImpl implements OffersRepository {
   final OffersRemoteDataSource _remoteDataSource;
 
   OffersRepositoryImpl({required OffersRemoteDataSource remoteDataSource})
-      : _remoteDataSource = remoteDataSource;
+    : _remoteDataSource = remoteDataSource;
 
   @override
   Future<Offer> createOffer(Offer offer) async {
@@ -88,6 +88,15 @@ class OffersRepositoryImpl implements OffersRepository {
       await _remoteDataSource.decrementStock(offerId, qty);
     } catch (e) {
       throw Exception('Error al decrementar stock: $e');
+    }
+  }
+
+  @override
+  Future<void> incrementStock(String offerId, int qty) async {
+    try {
+      await _remoteDataSource.incrementStock(offerId, qty);
+    } catch (e) {
+      throw Exception('Error al incrementar stock: $e');
     }
   }
 

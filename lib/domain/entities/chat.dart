@@ -11,6 +11,8 @@ class Chat {
   final String? orderId;
   final String? offerId;
   final String lastMessageText;
+  final String? lastMessageSenderId;
+  final int unreadCount;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? lastMessageAt;
@@ -27,6 +29,8 @@ class Chat {
     this.orderId,
     this.offerId,
     this.lastMessageText = '',
+    this.lastMessageSenderId,
+    this.unreadCount = 0,
     required this.createdAt,
     required this.updatedAt,
     this.lastMessageAt,
@@ -51,6 +55,8 @@ class Chat {
     String? orderId,
     String? offerId,
     String? lastMessageText,
+    String? lastMessageSenderId,
+    int? unreadCount,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? lastMessageAt,
@@ -67,6 +73,8 @@ class Chat {
       orderId: orderId ?? this.orderId,
       offerId: offerId ?? this.offerId,
       lastMessageText: lastMessageText ?? this.lastMessageText,
+      lastMessageSenderId: lastMessageSenderId ?? this.lastMessageSenderId,
+      unreadCount: unreadCount ?? this.unreadCount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,

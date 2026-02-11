@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:typed_data';
 
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../data/providers/repository_providers.dart';
@@ -11,7 +11,6 @@ import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../../domain/entities/offer_condition.dart';
 import '../../../../../domain/entities/pickup_schedule.dart';
-import '../../../../../domain/entities/concierge_info.dart';
 import '../../../../../features/offers/presentation/providers/offers_provider.dart';
 import '../../../../../features/shared/profile/presentation/providers/profile_provider.dart';
 import '../../../../../core/config/env.dart';
@@ -44,6 +43,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   String _coverAsset = 'assets/logo_hero.png';
   Uint8List? _coverImageBytes;
   String? _coverImageFileName;
+  final List<Uint8List> _additionalImageBytes = [];
+  final List<String> _additionalImageFileNames = [];
   OfferCondition _condition = OfferCondition.newProduct;
   bool? _isInGoodState;
   bool? _worksCorrectly;
@@ -52,8 +53,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   String _weightUnit = 'kg';
   final String _placesApiKey = Env.placesApiKey;
   PickupSchedule? _pickupSchedule;
-  bool _useConcierge = false;
-  ConciergeInfo? _conciergeInfo;
+  bool _submitted = false;
 
   static const _categories = <String>[
     'Electrónicos',
@@ -89,8 +89,6 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       _publishNow = offer.status == OfferStatus.active;
 
       _pickupSchedule = offer.pickupSchedule;
-      _useConcierge = offer.useConcierge;
-      _conciergeInfo = offer.conciergeInfo;
 
       // Prefill ubicación desde la oferta si existe snapshot
       final snapshot = offer.itemLocationSnapshot;
@@ -100,6 +98,100 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         _lngController.text = snapshot.geopoint.longitude.toStringAsFixed(6);
       }
     }
+  }
+
+  Future<void> _pickAdditionalImages() async {
+    try {
+      final picked = await _imagePicker.pickMultiImage(
+        imageQuality: 85,
+        maxWidth: 1600,
+      );
+      if (picked.isEmpty) return;
+
+      final bytesList = <Uint8List>[];
+      final namesList = <String>[];
+      for (final file in picked) {
+        bytesList.add(await file.readAsBytes());
+        namesList.add(file.name);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _additionalImageBytes.addAll(bytesList);
+        _additionalImageFileNames.addAll(namesList);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudieron seleccionar imágenes: $e'),
+          duration: const Duration(milliseconds: 2200),
+        ),
+      );
+    }
+  }
+
+  Widget _buildAdditionalImagesPreview() {
+    if (_additionalImageBytes.isEmpty) {
+      return const Text(
+        'Puedes agregar imágenes adicionales (opcional).',
+        style: TextStyle(fontSize: 12, color: textGray600),
+      );
+    }
+
+    return SizedBox(
+      height: 92,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _additionalImageBytes.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          return Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 110,
+                  height: 92,
+                  color: borderGray100,
+                  child: Image.memory(
+                    _additionalImageBytes[index],
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 6,
+                right: 6,
+                child: InkWell(
+                  onTap: _isSaving
+                      ? null
+                      : () {
+                          setState(() {
+                            _additionalImageBytes.removeAt(index);
+                            _additionalImageFileNames.removeAt(index);
+                          });
+                        },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildCoverPreview() {
@@ -329,6 +421,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       }
     }
 
+    setState(() => _submitted = true);
     if (!_formKey.currentState!.validate()) return;
 
     final isEdit = widget.initialOffer != null;
@@ -360,22 +453,12 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       final notifier = ref.read(offerNotifierProvider.notifier);
 
       final hasNewCover = _coverImageBytes != null;
-      final coverImageUrl = (!isEdit && hasNewCover) ? '' : _coverAsset;
-
-      final existingImageUrls =
-          widget.initialOffer?.imageUrls ?? const <String>[];
-      final mergedExistingImageUrls = <String>{
-        ...existingImageUrls,
-        if (_coverAsset.trim().isNotEmpty) _coverAsset,
-      }.toList();
-
-      final imageUrls = isEdit
-          ? mergedExistingImageUrls
-          : (hasNewCover
-                ? const <String>[]
-                : (coverImageUrl.isNotEmpty
-                      ? <String>[coverImageUrl]
-                      : const <String>[]));
+      final hasNewAdditional = _additionalImageBytes.isNotEmpty;
+      final coverImageUrl = hasNewCover ? '' : _coverAsset;
+      final existingImageUrls = widget.initialOffer?.imageUrls ?? const <String>[];
+      final initialImageUrls = isEdit
+          ? <String>[...existingImageUrls]
+          : (coverImageUrl.trim().isNotEmpty ? <String>[coverImageUrl] : <String>[]);
 
       final locationSnapshot = _buildLocationSnapshot();
       if (_publishNow && locationSnapshot == null) {
@@ -405,7 +488,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         availableQty: availableQty,
         weight: weight,
         coverImageUrl: coverImageUrl,
-        imageUrls: imageUrls,
+        imageUrls: initialImageUrls,
         status: selectedStatus,
         searchKeywords: _buildKeywords(
           _titleController.text.trim(),
@@ -421,30 +504,100 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         itemLocationId: widget.initialOffer?.itemLocationId,
         itemLocationSnapshot: locationSnapshot,
         pickupSchedule: _pickupSchedule,
-        useConcierge: _useConcierge,
-        conciergeInfo: _conciergeInfo,
       );
 
       if (isEdit) {
         final updated = await notifier.updateOffer(offer);
         if (hasNewCover) {
           final repo = ref.read(offersRepositoryProvider);
-          await repo.uploadOfferImage(
+          final url = await repo.uploadOfferImage(
             heroId: user.id,
             offerId: updated.offerId,
             bytes: _coverImageBytes!,
             fileName: _coverImageFileName ?? 'cover.jpg',
+          );
+
+          final normalized = url.trim();
+          final nextImageUrls = <String>{
+            ...updated.imageUrls,
+            ...existingImageUrls,
+            if (normalized.isNotEmpty) normalized,
+          }.toList();
+
+          final oldCover = widget.initialOffer?.coverImageUrl.trim() ?? '';
+          if (oldCover.isNotEmpty) {
+            nextImageUrls.removeWhere((e) => e.trim() == oldCover);
+          }
+
+          await notifier.updateOffer(
+            updated.copyWith(
+              coverImageUrl: normalized,
+              imageUrls: nextImageUrls,
+            ),
+          );
+        }
+
+        if (hasNewAdditional) {
+          final repo = ref.read(offersRepositoryProvider);
+          final urls = <String>[];
+          for (var i = 0; i < _additionalImageBytes.length; i++) {
+            final url = await repo.uploadOfferImage(
+              heroId: user.id,
+              offerId: updated.offerId,
+              bytes: _additionalImageBytes[i],
+              fileName: _additionalImageFileNames.elementAt(i),
+            );
+            urls.add(url);
+          }
+
+          await notifier.updateOffer(
+            updated.copyWith(
+              imageUrls: [...updated.imageUrls, ...urls],
+            ),
           );
         }
       } else {
         final created = await notifier.createOffer(offer);
         if (hasNewCover) {
           final repo = ref.read(offersRepositoryProvider);
-          await repo.uploadOfferImage(
+          final url = await repo.uploadOfferImage(
             heroId: user.id,
             offerId: created.offerId,
             bytes: _coverImageBytes!,
             fileName: _coverImageFileName ?? 'cover.jpg',
+          );
+
+          final normalized = url.trim();
+          final nextImageUrls = <String>{
+            ...created.imageUrls,
+            if (normalized.isNotEmpty) normalized,
+          }.toList();
+
+          await notifier.updateOffer(
+            created.copyWith(
+              coverImageUrl: normalized,
+              imageUrls: nextImageUrls,
+            ),
+          );
+        }
+
+        if (hasNewAdditional) {
+          final repo = ref.read(offersRepositoryProvider);
+          final urls = <String>[];
+          for (var i = 0; i < _additionalImageBytes.length; i++) {
+            final url = await repo.uploadOfferImage(
+              heroId: user.id,
+              offerId: created.offerId,
+              bytes: _additionalImageBytes[i],
+              fileName: _additionalImageFileNames.elementAt(i),
+            );
+            urls.add(url);
+          }
+
+          await notifier.updateOffer(
+            created.copyWith(
+              imageUrls: [...created.imageUrls, ...urls],
+            ),
           );
         }
       }
@@ -486,6 +639,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
           padding: const EdgeInsets.all(16),
           child: Form(
             key: _formKey,
+            autovalidateMode:
+                _submitted ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -515,6 +670,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                   child: TextFormField(
                     controller: _descriptionController,
                     maxLines: 4,
+                    textInputAction: TextInputAction.newline,
                     decoration: const InputDecoration(
                       hintText: 'Cuenta el estado y detalles relevantes',
                       helperText:
@@ -543,6 +699,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9.,]'),
+                            ),
+                          ],
                           decoration: const InputDecoration(
                             prefixText: '\$',
                             hintText: '0',
@@ -567,6 +728,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: false,
                           ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
                           decoration: const InputDecoration(
                             hintText: '0',
                             helperText: 'Disponibles para la venta',
@@ -587,12 +751,17 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                   children: [
                     Expanded(
                       child: _FormFieldWrapper(
-                        label: 'Peso (kg)',
+                        label: 'Peso',
                         child: TextFormField(
                           controller: _weightController,
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9.,]'),
+                            ),
+                          ],
                           decoration: const InputDecoration(
                             hintText: '0.5',
                             helperText: 'Peso del producto',
@@ -644,6 +813,17 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                         'Usaremos esta ubicación para calcular la tarifa y el retiro/envío.',
                         style: TextStyle(color: textGray700, fontSize: 12),
                       ),
+                      if (_publishNow) ...[
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Requerido para publicar: dirección + latitud/longitud válidas.',
+                          style: TextStyle(
+                            color: Color(0xFFB45309),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
@@ -827,21 +1007,115 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
 
                 // Pickup Schedule Section
                 const _SectionTitle(title: 'Horarios de retiro'),
+                if (_publishNow)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Recomendado: define horarios para evitar coordinaciones por chat.',
+                      style: TextStyle(color: textGray700, fontSize: 12),
+                    ),
+                  ),
                 PickupScheduleSelector(
                   initialSchedule: _pickupSchedule,
-                  initialUseConcierge: _useConcierge,
-                  initialConciergeInfo: _conciergeInfo,
-                  onChanged: (schedule, useConcierge, conciergeInfo) {
-                    setState(() {
-                      _pickupSchedule = schedule;
-                      _useConcierge = useConcierge;
-                      _conciergeInfo = conciergeInfo;
-                    });
+                  onChanged: (schedule) {
+                    setState(() => _pickupSchedule = schedule);
                   },
                 ),
                 const SizedBox(height: 4),
 
-                const _SectionTitle(title: 'Imagen y publicación'),
+                const _SectionTitle(title: 'Publicación'),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: backgroundWhite,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: borderGray100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SwitchListTile.adaptive(
+                        value: _publishNow,
+                        onChanged: (val) {
+                          setState(() => _publishNow = val);
+                        },
+                        title: const Text(
+                          'Publicar al guardar',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: textGray900,
+                          ),
+                        ),
+                        subtitle: Text(
+                          _publishNow
+                              ? 'La oferta quedará visible (estado activo).'
+                              : 'Se guardará como borrador (no visible).',
+                          style: const TextStyle(color: textGray700, fontSize: 12),
+                        ),
+                        activeThumbColor: primaryOrange,
+                        activeTrackColor: primaryOrange.withValues(alpha: 0.12),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      if (_publishNow) ...[
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Para publicar necesitas:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: textGray900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Row(
+                          children: [
+                            Icon(Icons.check_circle_outline,
+                                size: 16, color: textGray600),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Imagen de portada',
+                                style: TextStyle(color: textGray700, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Row(
+                          children: [
+                            Icon(Icons.check_circle_outline,
+                                size: 16, color: textGray600),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Ubicación válida (mapa o perfil)',
+                                style: TextStyle(color: textGray700, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Row(
+                          children: [
+                            Icon(Icons.check_circle_outline,
+                                size: 16, color: textGray600),
+                            SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Confirmar estado y funcionamiento',
+                                style: TextStyle(color: textGray700, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const _SectionTitle(title: 'Imágenes'),
                 Row(
                   children: [
                     Expanded(
@@ -908,31 +1182,32 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                                 ],
                               ],
                             ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Imágenes adicionales',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: textGray900,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            _buildAdditionalImagesPreview(),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed:
+                                    _isSaving ? null : _pickAdditionalImages,
+                                icon: const Icon(Icons.add_photo_alternate),
+                                label: const Text('Agregar imágenes'),
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
                   ],
-                ),
-                SwitchListTile.adaptive(
-                  value: _publishNow,
-                  onChanged: (val) {
-                    setState(() => _publishNow = val);
-                  },
-                  title: const Text(
-                    'Publicar al guardar',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: textGray900,
-                    ),
-                  ),
-                  subtitle: const Text(
-                    'Si está activado, la oferta quedará visible (estado activo).',
-                    style: TextStyle(color: textGray700, fontSize: 12),
-                  ),
-                  activeThumbColor: primaryOrange,
-                  activeTrackColor: primaryOrange.withValues(alpha: 0.12),
-                  contentPadding: EdgeInsets.zero,
                 ),
                 const SizedBox(height: 12),
                 SizedBox(
@@ -957,7 +1232,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                             ),
                           )
                         : Text(
-                            isEdit ? 'Guardar cambios' : 'Crear oferta',
+                            _publishNow
+                                ? (isEdit
+                                    ? 'Guardar y publicar'
+                                    : 'Crear y publicar')
+                                : (isEdit ? 'Guardar cambios' : 'Guardar borrador'),
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.2,

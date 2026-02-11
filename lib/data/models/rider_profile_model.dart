@@ -7,6 +7,8 @@ import 'verification_model.dart';
 class RiderProfileModel {
   final bool isActive;
   final bool isVerified;
+  final String? activeVehicleType;
+  final Map<String, dynamic> vehicles;
   final VehicleModel vehicle;
   final DocumentsModel documents;
   final LimitsModel limits;
@@ -18,6 +20,8 @@ class RiderProfileModel {
   RiderProfileModel({
     this.isActive = false,
     this.isVerified = false,
+    this.activeVehicleType,
+    this.vehicles = const {},
     required this.vehicle,
     required this.documents,
     required this.limits,
@@ -31,6 +35,8 @@ class RiderProfileModel {
     return RiderProfileModel(
       isActive: json['isActive'] as bool? ?? false,
       isVerified: json['isVerified'] as bool? ?? false,
+      activeVehicleType: json['activeVehicleType'] as String?,
+      vehicles: (json['vehicles'] as Map<String, dynamic>?) ?? const {},
       vehicle: VehicleModel.fromJson(
         json['vehicle'] as Map<String, dynamic>? ?? {},
       ),
@@ -55,6 +61,8 @@ class RiderProfileModel {
     return {
       'isActive': isActive,
       'isVerified': isVerified,
+      'activeVehicleType': activeVehicleType,
+      'vehicles': vehicles,
       'vehicle': vehicle.toJson(),
       'documents': documents.toJson(),
       'limits': limits.toJson(),
@@ -69,6 +77,8 @@ class RiderProfileModel {
     return RiderProfile(
       isActive: isActive,
       isVerified: isVerified,
+      activeVehicleType: activeVehicleType,
+      vehicles: vehicles,
       vehicle: vehicle.toEntity(),
       documents: documents.toEntity(),
       limits: limits.toEntity(),
@@ -83,6 +93,8 @@ class RiderProfileModel {
     return RiderProfileModel(
       isActive: entity.isActive,
       isVerified: entity.isVerified,
+      activeVehicleType: entity.activeVehicleType,
+      vehicles: entity.vehicles,
       vehicle: VehicleModel.fromEntity(entity.vehicle),
       documents: DocumentsModel.fromEntity(entity.documents),
       limits: LimitsModel.fromEntity(entity.limits),

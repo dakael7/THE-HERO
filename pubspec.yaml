@@ -52,7 +52,7 @@ dependencies:
   firebase_auth: ^6.1.2
   cloud_firestore: ^6.1.0
   google_sign_in: ^7.2.0
-  cloud_functions: 6.0.4
+  cloud_functions: ^6.0.4
   firebase_storage: ^13.0.0
   image_picker: ^1.1.2
 
@@ -63,12 +63,15 @@ dependencies:
   flutter_widget_from_html_core: ^0.15.1
   animations: ^2.0.11
   url_launcher: ^6.3.0
+  webview_flutter: ^4.4.2
 
   # Almacenamiento local
   shared_preferences: ^2.3.2
   google_maps_flutter_android: ^2.18.12
   google_maps_flutter_platform_interface: ^2.14.1
   riverpod: ^3.2.0
+  firebase_messaging: any
+  flutter_local_notifications: ^18.0.1
 
 dev_dependencies:
   flutter_test:

@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 
 class HelpCenterScreen extends ConsumerWidget {
   const HelpCenterScreen({super.key});
+
+  static final Uri _riderSiiManualUri = Uri.parse(
+    'https://firebasestorage.googleapis.com/v0/b/the-hero-67d93.firebasestorage.app/o/Docs%2FManual_SII_Rider_THE_HERO_SpA.pdf?alt=media&token=b553a420-4041-4bfe-89ef-a02824cb01e3',
+  );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -126,6 +131,18 @@ class HelpCenterScreen extends ConsumerWidget {
                   content: Text('Ayuda sobre cuenta próximamente'),
                   duration: Duration(milliseconds: 1500),
                 ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          _HelpTile(
+            icon: Icons.description_outlined,
+            title: 'Manual Paso a Paso SII',
+            subtitle: 'Guía para Riders (SII).',
+            onTap: () async {
+              await launchUrl(
+                _riderSiiManualUri,
+                mode: LaunchMode.externalApplication,
               );
             },
           ),

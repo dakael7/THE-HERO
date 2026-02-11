@@ -20,7 +20,11 @@ import 'address_screen.dart';
 import '../../../../rider/presentation/views/rider_earnings_screen.dart';
 import '../../../../rider/presentation/views/rider_vehicle_info_screen.dart';
 import '../../../../rider/presentation/views/rider_delivery_history_screen.dart';
+import '../../../../orders/presentation/providers/orders_provider.dart';
+import '../../../../offers/presentation/providers/offers_provider.dart';
+import '../../../../../domain/providers/favorites_providers.dart';
 import '../../../../../domain/entities/user.dart';
+import '../../../../../domain/entities/order_status.dart';
 import '../../../../../data/providers/network_providers.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -66,7 +70,6 @@ class ProfileScreen extends ConsumerWidget {
               ),
             );
           }
-          final profileState = ref.watch(profileViewModelProvider);
           final double contentTopPadding =
               MediaQuery.of(context).padding.top + kToolbarHeight + 12;
           return RefreshIndicator(
@@ -148,12 +151,61 @@ class ProfileScreen extends ConsumerWidget {
                           isRiderProfile: isRiderProfile,
                         ),
                         const SizedBox(height: 12),
-                        ProfileStatsSection(
-                          publications: profileState.publications,
-                          favorites: profileState.favorites,
-                          purchases: profileState.purchases,
-                        ),
-                        const SizedBox(height: 12),
+                        if (!isRiderProfile) ...[
+                          // Calculate real statistics
+                          Consumer(
+                            builder: (context, ref, child) {
+                              final offersAsync = ref.watch(
+                                myOffersProvider(user.id),
+                              );
+                              final ordersAsync = ref.watch(
+                                myOrdersProvider(user.id),
+                              );
+
+                              final publications = offersAsync.maybeWhen(
+                                data: (offers) => offers
+                                    .where((o) => o.status == 'active')
+                                    .length,
+                                orElse: () => 0,
+                              );
+
+                              final purchases = ordersAsync.maybeWhen(
+                                data: (orders) => orders
+                                    .where(
+                                      (o) => o.status == OrderStatus.delivered,
+                                    )
+                                    .length,
+                                orElse: () => 0,
+                              );
+
+                              final favoritesAsync = ref.watch(
+                                favoritesCountProvider(user.id),
+                              );
+                              final favorites = favoritesAsync.maybeWhen(
+                                data: (count) => count,
+                                orElse: () => 0,
+                              );
+
+                              // Update ViewModel with real data
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                ref
+                                    .read(profileViewModelProvider.notifier)
+                                    .updateStats(
+                                      publications: publications,
+                                      favorites: favorites,
+                                      purchases: purchases,
+                                    );
+                              });
+
+                              return ProfileStatsSection(
+                                publications: publications,
+                                favorites: favorites,
+                                purchases: purchases,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Container(
@@ -221,40 +273,6 @@ class ProfileScreen extends ConsumerWidget {
                                           MaterialPageRoute(
                                             builder: (_) =>
                                                 const RiderVehicleInfoScreen(),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ] else ...[
-                                  Expanded(
-                                    child: _QuickActionButton(
-                                      icon: Icons.shopping_bag_outlined,
-                                      title: 'Productos',
-                                      subtitle: 'Publicados',
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const MyProductsScreen(),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _QuickActionButton(
-                                      icon: Icons.favorite_border,
-                                      title: 'Favoritos',
-                                      subtitle: 'Guardados',
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const FavoritesScreen(),
                                           ),
                                         );
                                       },
@@ -353,10 +371,7 @@ class ProfileScreen extends ConsumerWidget {
               child: Ink(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: borderGray100,
-                    width: 1,
-                  ),
+                  border: Border.all(color: borderGray100, width: 1),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -413,8 +428,9 @@ class ProfileScreen extends ConsumerWidget {
                             if (uid == null) return;
 
                             try {
-                              final firestore =
-                                  ref.read(firebaseFirestoreProvider);
+                              final firestore = ref.read(
+                                firebaseFirestoreProvider,
+                              );
                               await firestore
                                   .collection('users')
                                   .doc(uid)
@@ -457,7 +473,16 @@ class ProfileScreen extends ConsumerWidget {
             ProfileMenuTile(
               icon: Icons.history,
               title: 'Historial de entregas',
-              trailingText: '0',
+              trailingText: () {
+                final ordersAsync = ref.watch(myOrdersProvider(user.id));
+                return ordersAsync.maybeWhen(
+                  data: (orders) => orders
+                      .where((o) => o.status.name == 'delivered')
+                      .length
+                      .toString(),
+                  orElse: () => '-',
+                );
+              }(),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -485,7 +510,16 @@ class ProfileScreen extends ConsumerWidget {
             ProfileMenuTile(
               icon: Icons.shopping_bag_outlined,
               title: 'Mis ofertas',
-              trailingText: '0',
+              trailingText: () {
+                final offersAsync = ref.watch(myOffersProvider(user.id));
+                return offersAsync.maybeWhen(
+                  data: (offers) => offers
+                      .where((o) => o.status == 'active')
+                      .length
+                      .toString(),
+                  orElse: () => '-',
+                );
+              }(),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const MyProductsScreen()),
@@ -496,7 +530,15 @@ class ProfileScreen extends ConsumerWidget {
             ProfileMenuTile(
               icon: Icons.favorite_border,
               title: 'Favoritos',
-              trailingText: '0',
+              trailingText: () {
+                final favoritesAsync = ref.watch(
+                  favoritesCountProvider(user.id),
+                );
+                return favoritesAsync.maybeWhen(
+                  data: (count) => count.toString(),
+                  orElse: () => '-',
+                );
+              }(),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const FavoritesScreen()),
@@ -507,7 +549,13 @@ class ProfileScreen extends ConsumerWidget {
             ProfileMenuTile(
               icon: Icons.receipt_long,
               title: 'Mis pedidos',
-              trailingText: '0',
+              trailingText: () {
+                final ordersAsync = ref.watch(myOrdersProvider(user.id));
+                return ordersAsync.maybeWhen(
+                  data: (orders) => orders.length.toString(),
+                  orElse: () => '-',
+                );
+              }(),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const HeroOrdersScreen()),

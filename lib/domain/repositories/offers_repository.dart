@@ -10,6 +10,7 @@ abstract class OffersRepository {
   Stream<List<Offer>> getActiveOffers({String? category, int limit = 20});
   Future<void> updateOfferStatus(String offerId, String status);
   Future<void> decrementStock(String offerId, int qty);
+  Future<void> incrementStock(String offerId, int qty);
 
   Future<String> uploadOfferImage({
     required String heroId,
