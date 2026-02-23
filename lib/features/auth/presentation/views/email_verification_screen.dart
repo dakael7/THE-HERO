@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
@@ -9,6 +11,7 @@ import 'registro_rider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
 import 'unverified_email_screen.dart';
+import 'login_page.dart';
 import '../../domain/providers/get_current_user_usecase_provider.dart';
 import '../../../../data/providers/network_providers.dart';
 
@@ -30,12 +33,31 @@ class _EmailVerificationScreenState
   bool _isLoading = false;
   bool _accountExists = false;
   bool _obscurePassword = true;
+  bool _navigated = false;
+  bool _acceptedTerms = false;
+
+  static final Uri _termsAndConditionsUri = Uri.parse(
+    'https://theheroprojects.com/privacy-policy',
+  );
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleBackToLogin() async {
+    if (_navigated) return;
+    _navigated = true;
+    try {
+      await ref.read(authNotifierProvider.notifier).signOut();
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (_) => false,
+    );
   }
 
   void _showErrorDialog(String errorMessage) {
@@ -171,6 +193,18 @@ class _EmailVerificationScreenState
   }
 
   Future<void> _submitForm() async {
+    if (!_acceptedTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Debes aceptar los Términos y Condiciones para continuar.',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
@@ -199,7 +233,10 @@ class _EmailVerificationScreenState
                 return;
               }
 
-              if (!currentUser.contact.emailVerified) {
+              final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+              final isEmailVerified = authUser?.emailVerified ?? false;
+
+              if (!isEmailVerified || !currentUser.contact.emailVerified) {
                 if (!context.mounted) return;
                 Navigator.pushReplacement(
                   context,
@@ -338,25 +375,31 @@ class _EmailVerificationScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: textGray900),
-          onPressed: () => Navigator.of(context).pop(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleBackToLogin();
+      },
+      child: Scaffold(
+        backgroundColor: backgroundGray50,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: textGray900),
+            onPressed: _handleBackToLogin,
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _buildLogoSection(),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _buildLogoSection(),
 
                 const SizedBox(height: 30),
 
@@ -492,6 +535,50 @@ class _EmailVerificationScreenState
                   const SizedBox(height: 20),
                 ],
 
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Checkbox(
+                      value: _acceptedTerms,
+                      activeColor: primaryOrange,
+                      onChanged: _isLoading
+                          ? null
+                          : (value) {
+                              setState(() {
+                                _acceptedTerms = value ?? false;
+                              });
+                            },
+                    ),
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text(
+                            'Acepto los ',
+                            style: TextStyle(color: textGray600),
+                          ),
+                          InkWell(
+                            onTap: () async {
+                              await launchUrl(
+                                _termsAndConditionsUri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            },
+                            child: const Text(
+                              'Términos y Condiciones',
+                              style: TextStyle(
+                                color: primaryOrange,
+                                fontWeight: FontWeight.w600,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -617,6 +704,17 @@ class _EmailVerificationScreenState
                   onTap: _isLoading
                       ? null
                       : () async {
+                          if (!_acceptedTerms) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Debes aceptar los Términos y Condiciones para continuar.',
+                                ),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                            return;
+                          }
                           try {
                             final authNotifier = ref.read(
                               authNotifierProvider.notifier,
@@ -635,6 +733,25 @@ class _EmailVerificationScreenState
                                   const SnackBar(
                                     content: Text(
                                       'Error al obtener datos del usuario',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final authUser =
+                                  fb_auth.FirebaseAuth.instance.currentUser;
+                              final isEmailVerified =
+                                  authUser?.emailVerified ?? false;
+
+                              if (!isEmailVerified ||
+                                  !currentUser.contact.emailVerified) {
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => UnverifiedEmailScreen(
+                                      userRole: widget.userRole,
+                                      email: currentUser.email,
                                     ),
                                   ),
                                 );
@@ -710,7 +827,8 @@ class _EmailVerificationScreenState
                     ),
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

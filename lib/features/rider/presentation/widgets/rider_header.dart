@@ -164,68 +164,41 @@ class RiderHeader extends ConsumerWidget {
   }
 
   Widget _buildLogoSection() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: backgroundWhite.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: backgroundWhite.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: backgroundWhite,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Image.asset(
-              'assets/logo_1.png',
-              height: 28,
-              fit: BoxFit.contain,
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Text(
-            'TheHero',
-            style: TextStyle(
-              color: textGray900,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: primaryOrange,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text(
-              'Rider',
-              style: TextStyle(
-                color: backgroundWhite,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
+    const logoAsset = 'assets/logo_1.png';
+    const logoHeight = 60.0;
+    final strokeColor = backgroundWhite.withValues(alpha: 0.60);
+
+    Widget stroke(Offset offset) {
+      return Transform.translate(
+        offset: offset,
+        child: Image.asset(
+          logoAsset,
+          height: logoHeight,
+          fit: BoxFit.contain,
+          color: strokeColor,
+          colorBlendMode: BlendMode.srcIn,
+        ),
+      );
+    }
+
+    return Stack(
+      alignment: Alignment.centerLeft,
+      children: [
+        stroke(const Offset(1.6, 0)),
+        stroke(const Offset(-1.6, 0)),
+        stroke(const Offset(0, 1.6)),
+        stroke(const Offset(0, -1.6)),
+        Image.asset(
+          logoAsset,
+          height: logoHeight,
+          fit: BoxFit.contain,
+        ),
+      ],
     );
   }
 
   Widget _buildNotificationIcon(BuildContext context, WidgetRef ref) {
-    final badgeCount = ref.watch(
-      notificationsProvider.select(
-        (async) => async.maybeWhen(
-          data: (notifications) => notifications.where((n) => !n.read).length,
-          orElse: () => 0,
-        ),
-      ),
-    );
+    final badgeCount = ref.watch(notificationsUnseenCountProvider);
 
     return GestureDetector(
       onTap: () {

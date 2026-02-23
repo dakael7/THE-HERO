@@ -87,6 +87,7 @@ class MapViewModel extends Notifier<MapState> {
             category: offer.category,
             price: offer.price,
             location: loc,
+            offer: offer,
             distanceFromUser: distance,
             imageUrl: offer.coverImageUrl,
           );

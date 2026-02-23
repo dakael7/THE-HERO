@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'dart:io';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/config/mercadopago_config.dart';
 import 'payment_result_screen.dart';
 
-/// Screen to process MercadoPago payment in a WebView
 class PaymentProcessingScreen extends ConsumerStatefulWidget {
   final String initPoint;
   final String orderId;
@@ -25,20 +31,114 @@ class PaymentProcessingScreen extends ConsumerStatefulWidget {
 
 class _PaymentProcessingScreenState
     extends ConsumerState<PaymentProcessingScreen> {
-  late final WebViewController _controller;
+  WebViewController? _controller;
   bool _isLoading = true;
+  bool _canSimulatePayment = false;
+  bool _isSimulating = false;
+
+  Map<String, String> _extractQueryParams(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return const {};
+    return uri.queryParameters.map((k, v) => MapEntry(k, v));
+  }
+
+  Future<void> _openInExternalBrowser() async {
+    final uri = Uri.tryParse(widget.initPoint);
+    if (uri == null) {
+      return;
+    }
+
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
 
   @override
   void initState() {
     super.initState();
-    _initializeWebView();
+    Future.microtask(_initializeWebView);
+    Future.microtask(_loadSimulatorPermissions);
   }
 
-  void _initializeWebView() {
-    _controller = WebViewController()
+  bool get _isSandboxCheckout {
+    return MercadoPagoConfig.isSandbox;
+  }
+
+  Future<void> _loadSimulatorPermissions() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      if (mounted) {
+        setState(() {
+          _canSimulatePayment = _isSandboxCheckout;
+        });
+      }
+    } catch (_) {
+      // Ignore; button will remain hidden.
+    }
+  }
+
+  Future<void> _simulateApprovedPayment() async {
+    if (_isSimulating) return;
+    setState(() => _isSimulating = true);
+
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable(
+        'simulatePaymentApproved',
+      );
+
+      await callable.call({
+        'orderId': widget.orderId,
+        'preferenceId': widget.preferenceId,
+      });
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => PaymentResultScreen(
+            orderId: widget.orderId,
+            resultType: PaymentResultType.success,
+            queryParams: const {},
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo simular el pago: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSimulating = false);
+      }
+    }
+  }
+
+  Future<void> _initializeWebView() async {
+    final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent(
+        'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36',
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
+          onNavigationRequest: (NavigationRequest request) {
+            final uri = Uri.tryParse(request.url);
+            if (uri == null) {
+              return NavigationDecision.navigate;
+            }
+
+            final scheme = uri.scheme.toLowerCase();
+            if (scheme != 'http' && scheme != 'https') {
+              debugPrint('Blocking non-web scheme in WebView: ${request.url}');
+              launchUrl(uri, mode: LaunchMode.externalApplication);
+              return NavigationDecision.prevent;
+            }
+
+            return NavigationDecision.navigate;
+          },
           onPageStarted: (String url) {
             setState(() => _isLoading = true);
             _checkForReturnUrl(url);
@@ -47,25 +147,57 @@ class _PaymentProcessingScreenState
             setState(() => _isLoading = false);
           },
           onWebResourceError: (WebResourceError error) {
-            debugPrint('WebView error: ${error.description}');
+            debugPrint(
+              'WebView error: ${error.errorCode} ${error.errorType} ${error.description}',
+            );
           },
         ),
-      )
-      ..loadRequest(Uri.parse(widget.initPoint));
+      );
+
+    final cookieManager = WebViewCookieManager();
+    await cookieManager.clearCookies();
+    await controller.clearCache();
+
+    if (Platform.isAndroid && WebViewPlatform.instance is AndroidWebViewPlatform) {
+      final androidCookieManager =
+          cookieManager.platform as AndroidWebViewCookieManager;
+      final androidController = controller.platform as AndroidWebViewController;
+      await androidCookieManager.setAcceptThirdPartyCookies(androidController, true);
+    }
+
+    setState(() {
+      _controller = controller;
+    });
+
+    await controller.loadRequest(Uri.parse(widget.initPoint));
   }
 
   void _checkForReturnUrl(String url) {
     // Check if URL matches success, failure, or pending patterns
     if (url.contains('/payment/success')) {
-      _handlePaymentResult(PaymentResultType.success);
+      _handlePaymentResult(
+        PaymentResultType.success,
+        returnUrl: url,
+      );
     } else if (url.contains('/payment/failure')) {
-      _handlePaymentResult(PaymentResultType.failure);
+      _handlePaymentResult(
+        PaymentResultType.failure,
+        returnUrl: url,
+      );
     } else if (url.contains('/payment/pending')) {
-      _handlePaymentResult(PaymentResultType.pending);
+      _handlePaymentResult(
+        PaymentResultType.pending,
+        returnUrl: url,
+      );
     }
   }
 
-  void _handlePaymentResult(PaymentResultType resultType) {
+  void _handlePaymentResult(
+    PaymentResultType resultType, {
+    required String returnUrl,
+  }) {
+    final queryParams = _extractQueryParams(returnUrl);
+
     // Navigate to result screen
     if (mounted) {
       Navigator.of(context).pushReplacement(
@@ -73,6 +205,7 @@ class _PaymentProcessingScreenState
           builder: (_) => PaymentResultScreen(
             orderId: widget.orderId,
             resultType: resultType,
+            queryParams: queryParams,
           ),
         ),
       );
@@ -90,6 +223,25 @@ class _PaymentProcessingScreenState
           'Procesando pago',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.open_in_browser),
+            onPressed: _openInExternalBrowser,
+            tooltip: 'Abrir en navegador',
+          ),
+          if (_canSimulatePayment)
+            IconButton(
+              icon: _isSimulating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_circle_outline),
+              onPressed: _isSimulating ? null : _simulateApprovedPayment,
+              tooltip: 'Aprobar (Sandbox)',
+            ),
+        ],
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () {
@@ -99,7 +251,7 @@ class _PaymentProcessingScreenState
       ),
       body: Stack(
         children: [
-          WebViewWidget(controller: _controller),
+          if (_controller != null) WebViewWidget(controller: _controller!),
           if (_isLoading)
             Container(
               color: backgroundWhite,

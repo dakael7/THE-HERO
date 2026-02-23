@@ -20,11 +20,13 @@ import 'address_screen.dart';
 import '../../../../rider/presentation/views/rider_earnings_screen.dart';
 import '../../../../rider/presentation/views/rider_vehicle_info_screen.dart';
 import '../../../../rider/presentation/views/rider_delivery_history_screen.dart';
+import 'rut_verification_screen.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../offers/presentation/providers/offers_provider.dart';
 import '../../../../../domain/providers/favorites_providers.dart';
 import '../../../../../domain/entities/user.dart';
 import '../../../../../domain/entities/order_status.dart';
+import '../../../../../domain/services/rider_commission_calculator.dart';
 import '../../../../../data/providers/network_providers.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -37,9 +39,31 @@ class ProfileScreen extends ConsumerWidget {
     this.isRiderProfile = false,
   });
 
+  String _rutStatusText(String? status) {
+    switch (status) {
+      case 'approved':
+        return 'Aprobado';
+      case 'submitted':
+        return 'Enviado';
+      case 'processing':
+        return 'Analizando…';
+      case 'needs_review':
+        return 'Pendiente revisión';
+      case 'rejected':
+        return 'Rechazado';
+      case 'failed':
+        return 'Error';
+      case 'pending':
+      case null:
+        return 'Pendiente';
+      default:
+        return 'Pendiente';
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsyncValue = ref.watch(profileProvider);
+    final userAsyncValue = ref.watch(profileStreamProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -201,6 +225,8 @@ class ProfileScreen extends ConsumerWidget {
                                 publications: publications,
                                 favorites: favorites,
                                 purchases: purchases,
+                                publicationsLabel: 'Donaciones',
+                                purchasesLabel: 'Entregas',
                               );
                             },
                           ),
@@ -268,6 +294,24 @@ class ProfileScreen extends ConsumerWidget {
                                       title: 'Vehículo',
                                       subtitle: 'Información',
                                       onTap: () {
+                                        if (!user.isRutVerified) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'Debes verificar tu RUT para acceder a Vehículos.',
+                                              ),
+                                              duration: Duration(seconds: 3),
+                                            ),
+                                          );
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  const RutVerificationScreen(),
+                                            ),
+                                          );
+                                          return;
+                                        }
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
@@ -460,7 +504,21 @@ class ProfileScreen extends ConsumerWidget {
             ProfileMenuTile(
               icon: Icons.attach_money,
               title: 'Mis ganancias',
-              trailingText: '\$0',
+              trailingText: () {
+                final ordersAsync = ref.watch(riderOrdersProvider(user.id));
+                return ordersAsync.maybeWhen(
+                  data: (orders) {
+                    final delivered =
+                        orders.where((o) => o.status.name == 'delivered');
+                    final totalNet = RiderCommissionCalculator
+                        .calculateTotalNetEarnings(
+                      delivered.map((o) => o.deliveryFee).toList(),
+                    );
+                    return '\$${totalNet.toStringAsFixed(0)}';
+                  },
+                  orElse: () => '-',
+                );
+              }(),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -474,7 +532,7 @@ class ProfileScreen extends ConsumerWidget {
               icon: Icons.history,
               title: 'Historial de entregas',
               trailingText: () {
-                final ordersAsync = ref.watch(myOrdersProvider(user.id));
+                final ordersAsync = ref.watch(riderOrdersProvider(user.id));
                 return ordersAsync.maybeWhen(
                   data: (orders) => orders
                       .where((o) => o.status.name == 'delivered')
@@ -496,6 +554,22 @@ class ProfileScreen extends ConsumerWidget {
               icon: Icons.directions_bike,
               title: 'Información del vehículo',
               onTap: () {
+                if (!user.isRutVerified) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Debes verificar tu RUT para acceder a Vehículos.',
+                      ),
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const RutVerificationScreen(),
+                    ),
+                  );
+                  return;
+                }
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const RiderVehicleInfoScreen(),
@@ -505,11 +579,30 @@ class ProfileScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
           ],
+
+          ProfileMenuTile(
+            icon: Icons.badge_outlined,
+            title: user.isRutVerified
+                ? 'RUT verificado'
+                : (user.rutVerificationStatus == 'submitted' ||
+                        user.rutVerificationStatus == 'processing')
+                    ? 'Verificación en curso'
+                    : 'Verificar RUT',
+            trailingText: _rutStatusText(user.rutVerificationStatus),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const RutVerificationScreen(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
           // Hero-specific options
           if (!isRiderProfile) ...[
             ProfileMenuTile(
               icon: Icons.shopping_bag_outlined,
-              title: 'Mis ofertas',
+              title: 'Mis Donaciones',
               trailingText: () {
                 final offersAsync = ref.watch(myOffersProvider(user.id));
                 return offersAsync.maybeWhen(
@@ -566,7 +659,16 @@ class ProfileScreen extends ConsumerWidget {
             ProfileMenuTile(
               icon: Icons.history,
               title: 'Pedidos anteriores',
-              trailingText: '0',
+              trailingText: () {
+                final ordersAsync = ref.watch(myOrdersProvider(user.id));
+                return ordersAsync.maybeWhen(
+                  data: (orders) => orders
+                      .where((o) => o.status.isCompleted)
+                      .length
+                      .toString(),
+                  orElse: () => '-',
+                );
+              }(),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -578,16 +680,20 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: 8),
           ],
           // Common options for both roles
-          ProfileMenuTile(
-            icon: Icons.credit_card,
-            title: 'Métodos de pago',
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PaymentMethodsScreen()),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
+          if (isRiderProfile) ...[
+            ProfileMenuTile(
+              icon: Icons.credit_card,
+              title: 'Método de cobro',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const PaymentMethodsScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
           ProfileMenuTile(
             icon: Icons.person_outline,
             title: 'Datos personales',
@@ -628,7 +734,11 @@ class ProfileScreen extends ConsumerWidget {
             title: 'Centro de ayuda',
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HelpCenterScreen()),
+                MaterialPageRoute(
+                  builder: (_) => HelpCenterScreen(
+                    isRiderProfile: isRiderProfile,
+                  ),
+                ),
               );
             },
           ),
@@ -769,7 +879,7 @@ class PersonalDataScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsyncValue = ref.watch(profileProvider);
+    final userAsyncValue = ref.watch(profileStreamProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,

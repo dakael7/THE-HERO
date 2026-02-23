@@ -1,11 +1,16 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
+import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../../../../core/config/env.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../domain/services/rider_commission_calculator.dart';
 import '../widgets/rider_bottom_nav.dart';
 import '../widgets/rider_header.dart';
 import '../viewmodels/rider_home_viewmodel.dart';
@@ -21,6 +26,8 @@ import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../domain/entities/order_status.dart';
 import '../../domain/entities/nearby_order.dart';
 import 'rider_delivery_map_screen.dart';
+import '../../../shared/profile/presentation/views/rut_verification_screen.dart';
+import '../../../shared/profile/presentation/widgets/rut_verification_cta_banner.dart';
 
 final mapControllerProvider = StateProvider<gmap.GoogleMapController?>(
   (ref) => null,
@@ -31,6 +38,133 @@ class RiderHomeScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<RiderHomeScreen> createState() => _RiderHomeScreenState();
+}
+
+class _ResolvedAddressText extends StatefulWidget {
+  final String snapshot;
+  final GeoPoint geo;
+  final TextStyle style;
+  final int maxLines;
+  final TextOverflow overflow;
+
+  const _ResolvedAddressText({
+    required this.snapshot,
+    required this.geo,
+    required this.style,
+    required this.maxLines,
+    required this.overflow,
+  });
+
+  @override
+  State<_ResolvedAddressText> createState() => _ResolvedAddressTextState();
+}
+
+class _ResolvedAddressTextState extends State<_ResolvedAddressText> {
+  static final Map<String, String> _cache = <String, String>{};
+  String? _resolved;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ResolvedAddressText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapshot != widget.snapshot ||
+        oldWidget.geo.latitude != widget.geo.latitude ||
+        oldWidget.geo.longitude != widget.geo.longitude) {
+      _resolved = null;
+      _loading = false;
+      _resolveIfNeeded();
+    }
+  }
+
+  bool _needsResolve(String v) {
+    final t = v.trim();
+    return t.isEmpty || t.startsWith('Lat:');
+  }
+
+  String _cacheKey() =>
+      '${widget.geo.latitude.toStringAsFixed(6)},${widget.geo.longitude.toStringAsFixed(6)}';
+
+  String _sanitizeAddress(String value) {
+    final trimmed = value.trim();
+
+    final plusCodeAtStart = RegExp(
+      r'^\s*([A-Z0-9]{4,8}\+[A-Z0-9]{2,3})(?:\s+|,\s*)',
+    );
+    final removedLeading = trimmed.replaceFirst(plusCodeAtStart, '').trim();
+
+    final plusCodeAtEnd = RegExp(
+      r'(?:\s+|,\s*)([A-Z0-9]{4,8}\+[A-Z0-9]{2,3})\s*$',
+    );
+    final removedPlusCode = removedLeading.replaceAll(plusCodeAtEnd, '').trim();
+
+    return removedPlusCode.replaceAll(RegExp(r'[\s,]+$'), '').trim();
+  }
+
+  Future<void> _resolveIfNeeded() async {
+    if (!_needsResolve(widget.snapshot)) return;
+
+    final apiKey = Env.placesApiKey;
+    if (apiKey.trim().isEmpty) return;
+
+    final key = _cacheKey();
+    final cached = _cache[key];
+    if (cached != null && cached.trim().isNotEmpty) {
+      setState(() => _resolved = cached);
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final uri = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json'
+        '?latlng=${widget.geo.latitude},${widget.geo.longitude}'
+        '&key=$apiKey',
+      );
+
+      final res = await http.get(uri);
+      if (!mounted) return;
+      if (res.statusCode != 200) return;
+
+      final decoded = json.decode(res.body);
+      if (decoded is! Map<String, dynamic>) return;
+
+      final results = decoded['results'];
+      if (results is! List || results.isEmpty) return;
+
+      final first = results.first;
+      if (first is! Map<String, dynamic>) return;
+
+      final formatted = first['formatted_address'];
+      if (formatted is! String || formatted.trim().isEmpty) return;
+
+      final resolved = _sanitizeAddress(formatted);
+      _cache[key] = resolved;
+      setState(() => _resolved = resolved);
+    } catch (_) {
+      // swallow
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = (_resolved ?? widget.snapshot).trim();
+    return Text(
+      _loading && (text.isEmpty || text.startsWith('Lat:'))
+          ? 'Resolviendo dirección...'
+          : text,
+      style: widget.style,
+      maxLines: widget.maxLines,
+      overflow: widget.overflow,
+    );
+  }
 }
 
 class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
@@ -131,7 +265,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
   }
 
   Widget _buildHomeTab() {
-    final profileAsync = ref.watch(profile.profileProvider);
+    final profileAsync = ref.watch(profile.profileStreamProvider);
 
     return profileAsync.when(
       loading: () => CustomScrollView(
@@ -226,6 +360,17 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
+                        RutVerificationCtaBanner(
+                          user: user,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const RutVerificationScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        if (!user.isRutVerified) const SizedBox(height: 16),
                         RiderHomeMetricsDashboard(
                           totalEarnings: totalEarnings,
                           weeklyEarnings: weeklyEarnings,
@@ -413,7 +558,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
   }
 
   Widget _buildActiveDeliveries() {
-    final profileAsync = ref.watch(profile.profileProvider);
+    final profileAsync = ref.watch(profile.profileStreamProvider);
 
     return profileAsync.when(
       data: (user) {
@@ -576,8 +721,9 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              order.pickup.addressSnapshot,
+                            _ResolvedAddressText(
+                              snapshot: order.pickup.addressSnapshot,
+                              geo: order.pickup.geo,
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -629,8 +775,9 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              order.delivery.addressSnapshot,
+                            _ResolvedAddressText(
+                              snapshot: order.delivery.addressSnapshot,
+                              geo: order.delivery.geo,
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -1091,17 +1238,33 @@ class _OrderListSliver extends ConsumerWidget {
   Widget _buildOrderCard(BuildContext context, NearbyOrder n) {
     final isSelected = selectedOrderId == n.order.orderId;
 
-    // Calculate pickup→delivery distance using Haversine formula
-    final pickupLat = n.order.pickup.geo.latitude;
-    final pickupLng = n.order.pickup.geo.longitude;
-    final deliveryLat = n.order.delivery.geo.latitude;
-    final deliveryLng = n.order.delivery.geo.longitude;
+    final earnings = RiderCommissionCalculator.calculateCommission(
+      deliveryFee: n.order.deliveryFee,
+    );
 
-    final pickupToDeliveryKm = _calculateDistanceKm(
-      pickupLat,
-      pickupLng,
-      deliveryLat,
-      deliveryLng,
+    final pickupPoints = (n.order.pickupStops != null &&
+            n.order.pickupStops!.isNotEmpty)
+        ? n.order.pickupStops!
+            .map((s) => s.geo)
+            .toList(growable: false)
+        : <GeoPoint>[n.order.pickup.geo];
+
+    final deliveryGeo = n.order.delivery.geo;
+
+    double pickupToDeliveryKm = 0.0;
+    for (int i = 0; i < pickupPoints.length - 1; i++) {
+      pickupToDeliveryKm += _calculateDistanceKm(
+        pickupPoints[i].latitude,
+        pickupPoints[i].longitude,
+        pickupPoints[i + 1].latitude,
+        pickupPoints[i + 1].longitude,
+      );
+    }
+    pickupToDeliveryKm += _calculateDistanceKm(
+      pickupPoints.last.latitude,
+      pickupPoints.last.longitude,
+      deliveryGeo.latitude,
+      deliveryGeo.longitude,
     );
 
     // Calculate total distance
@@ -1116,11 +1279,7 @@ class _OrderListSliver extends ConsumerWidget {
       totalDistanceKm = pickupToDeliveryKm;
     }
 
-    // Calculate total weight from all items
-    final totalWeightKg = n.order.items.fold<double>(
-      0.0,
-      (sum, item) => sum + item.totalWeight,
-    );
+    final totalWeightKg = n.order.requirements.weightKg;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1168,7 +1327,7 @@ class _OrderListSliver extends ConsumerWidget {
                         ),
                       ),
                       Text(
-                        '\$${n.order.amountTotal.toStringAsFixed(0)}',
+                        '\$${earnings.netEarnings.toStringAsFixed(0)}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
@@ -1230,8 +1389,9 @@ class _OrderListSliver extends ConsumerWidget {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              n.order.pickup.addressSnapshot,
+                            _ResolvedAddressText(
+                              snapshot: n.order.pickup.addressSnapshot,
+                              geo: n.order.pickup.geo,
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -1283,8 +1443,9 @@ class _OrderListSliver extends ConsumerWidget {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              n.order.delivery.addressSnapshot,
+                            _ResolvedAddressText(
+                              snapshot: n.order.delivery.addressSnapshot,
+                              geo: n.order.delivery.geo,
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -1325,9 +1486,7 @@ class _OrderListSliver extends ConsumerWidget {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        totalWeightKg < 1
-                            ? '${totalWeightKg.toStringAsFixed(1)} kg'
-                            : '${totalWeightKg.toStringAsFixed(0)} kg',
+                        '${totalWeightKg.toStringAsFixed(1)} kg',
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,

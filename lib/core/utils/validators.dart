@@ -28,9 +28,52 @@ class Validators {
     if (value == null || value.isEmpty) {
       return 'El RUT es obligatorio';
     }
-    if (value.length < 7 || value.length > 12) {
+
+    final cleaned = value
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll('.', '')
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll(RegExp(r'[^0-9K-]'), '');
+
+    if (cleaned.isEmpty) {
       return 'El formato de RUT es incorrecto';
     }
+
+    final withDash = cleaned.contains('-')
+        ? cleaned
+        : cleaned.length >= 2
+            ? '${cleaned.substring(0, cleaned.length - 1)}-${cleaned.substring(cleaned.length - 1)}'
+            : cleaned;
+
+    final match = RegExp(r'^(\d{7,8})-([0-9K])$').firstMatch(withDash);
+    if (match == null) {
+      return 'El formato de RUT es incorrecto';
+    }
+
+    final body = match.group(1)!;
+    final dv = match.group(2)!;
+
+    int sum = 0;
+    int multiplier = 2;
+    for (int i = body.length - 1; i >= 0; i--) {
+      sum += int.parse(body[i]) * multiplier;
+      multiplier = multiplier == 7 ? 2 : multiplier + 1;
+    }
+
+    final remainder = 11 - (sum % 11);
+    final expected = remainder == 11
+        ? '0'
+        : remainder == 10
+            ? 'K'
+            : remainder.toString();
+
+    if (expected != dv) {
+      return 'El DV del RUT es incorrecto';
+    }
+
     return null;
   }
 

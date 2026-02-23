@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
+
 import '../../../../core/config/env.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../hero/presentation/views/buyer_catalog_screen.dart';
 import '../providers/map_providers.dart';
 import '../state/map_state.dart';
 import '../widgets/map_controls.dart';
@@ -50,7 +52,7 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
-          'Mapa de Productos',
+          'Mapa de donaciones',
           style: TextStyle(color: textGray900, fontWeight: FontWeight.w900),
         ),
         backgroundColor: Colors.white.withValues(alpha: 0.95),
@@ -449,6 +451,12 @@ class _ProductsListSection extends ConsumerWidget {
             currentZoom,
           ),
         );
+
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => OfferDetailScreen(offer: product.offer),
+          ),
+        );
       },
     );
   }
@@ -585,6 +593,18 @@ class _ProductsMapSectionState extends ConsumerState<_ProductsMapSection> {
                   gmap.BitmapDescriptor.hueOrange,
                 )
               : gmap.BitmapDescriptor.defaultMarker,
+          infoWindow: gmap.InfoWindow(
+            title: product.name,
+            snippet: 'Ver detalles',
+            onTap: () {
+              if (!mounted) return;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => OfferDetailScreen(offer: product.offer),
+                ),
+              );
+            },
+          ),
           onTap: () {
             ref.read(mapViewModelProvider.notifier).selectProduct(product);
             _controller?.animateCamera(

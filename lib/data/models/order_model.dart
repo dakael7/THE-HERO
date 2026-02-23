@@ -3,6 +3,7 @@ import '../../domain/entities/order.dart';
 import '../../domain/entities/order_status.dart';
 import 'order_item_model.dart';
 import 'order_pickup_model.dart';
+import 'order_pickup_stop_model.dart';
 import 'order_delivery_model.dart';
 import 'order_requirements_model.dart';
 import 'order_rider_model.dart';
@@ -21,6 +22,7 @@ class OrderModel {
   final double amountTotal;
   final String currency;
   final OrderPickupModel pickup;
+  final List<OrderPickupStopModel>? pickupStops;
   final OrderDeliveryModel delivery;
   final OrderRequirementsModel requirements;
   final OrderRiderModel rider;
@@ -48,6 +50,7 @@ class OrderModel {
     required this.amountTotal,
     required this.currency,
     required this.pickup,
+    this.pickupStops,
     required this.delivery,
     required this.requirements,
     required this.rider,
@@ -98,6 +101,10 @@ class OrderModel {
       pickup: OrderPickupModel.fromJson(
         json['pickup'] as Map<String, dynamic>? ?? {},
       ),
+      pickupStops: (json['pickupStops'] as List?)
+          ?.whereType<Map>()
+          .map((e) => OrderPickupStopModel.fromJson(e.cast<String, dynamic>()))
+          .toList(),
       delivery: OrderDeliveryModel.fromJson(
         json['delivery'] as Map<String, dynamic>? ?? {},
       ),
@@ -144,6 +151,7 @@ class OrderModel {
       'amountTotal': amountTotal,
       'currency': currency,
       'pickup': pickup.toJson(),
+      'pickupStops': pickupStops?.map((e) => e.toJson()).toList(),
       'delivery': delivery.toJson(),
       'requirements': requirements.toJson(),
       'rider': rider.toJson(),
@@ -176,6 +184,7 @@ class OrderModel {
       amountTotal: amountTotal,
       currency: currency,
       pickup: pickup.toEntity(),
+      pickupStops: pickupStops?.map((e) => e.toEntity()).toList(),
       delivery: delivery.toEntity(),
       requirements: requirements.toEntity(),
       rider: rider.toEntity(),
@@ -208,6 +217,7 @@ class OrderModel {
       amountTotal: entity.amountTotal,
       currency: entity.currency,
       pickup: OrderPickupModel.fromEntity(entity.pickup),
+      pickupStops: entity.pickupStops?.map(OrderPickupStopModel.fromEntity).toList(),
       delivery: OrderDeliveryModel.fromEntity(entity.delivery),
       requirements: OrderRequirementsModel.fromEntity(entity.requirements),
       rider: OrderRiderModel.fromEntity(entity.rider),

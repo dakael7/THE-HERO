@@ -46,8 +46,8 @@ class NotificationRemoteDataSourceImpl implements NotificationRemoteDataSource {
     if (user == null) return;
 
     await _firestore.collection('users').doc(user.uid).set({
-      'fcmTokens': FieldValue.arrayUnion([token]),
-      'lastTokenUpdate': FieldValue.serverTimestamp(),
+      'fcmToken': token,
+      'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 

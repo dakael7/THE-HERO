@@ -45,8 +45,6 @@ class CatalogFilters {
   bool get hasActiveFilters {
     return searchQuery.isNotEmpty ||
         selectedCategory != null ||
-        minPrice != null ||
-        maxPrice != null ||
         sortBy != SortOption.newest;
   }
 
@@ -54,7 +52,6 @@ class CatalogFilters {
     int count = 0;
     if (searchQuery.isNotEmpty) count++;
     if (selectedCategory != null) count++;
-    if (minPrice != null || maxPrice != null) count++;
     if (sortBy != SortOption.newest) count++;
     return count;
   }
@@ -148,14 +145,6 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
         }
       }
 
-      // Price range filter
-      if (filters.minPrice != null && offer.price < filters.minPrice!) {
-        return false;
-      }
-      if (filters.maxPrice != null && offer.price > filters.maxPrice!) {
-        return false;
-      }
-
       return true;
     }).toList();
 
@@ -165,10 +154,10 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
         filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         break;
       case SortOption.priceAsc:
-        filtered.sort((a, b) => a.price.compareTo(b.price));
+        filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         break;
       case SortOption.priceDesc:
-        filtered.sort((a, b) => b.price.compareTo(a.price));
+        filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         break;
       case SortOption.popular:
         filtered.sort((a, b) => b.viewCount.compareTo(a.viewCount));

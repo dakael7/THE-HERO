@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../../../../domain/entities/user.dart';
@@ -7,6 +8,7 @@ import '../widgets/animated_role_button.dart';
 import '../providers/auth_provider.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
+import 'unverified_email_screen.dart';
 import 'email_verification_screen.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../../data/providers/network_providers.dart';
@@ -45,6 +47,25 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         Future.microtask(() async {
           final currentUser = await ref.read(profileProvider.future);
           if (!mounted) return;
+
+          final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+          final isEmailVerified = authUser?.emailVerified ?? false;
+
+          if (currentUser != null &&
+              (!isEmailVerified || !currentUser.contact.emailVerified)) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => UnverifiedEmailScreen(
+                  userRole:
+                      currentUser.isRider ? UserRole.rider : UserRole.hero,
+                  email: currentUser.email,
+                ),
+              ),
+            );
+            return;
+          }
+
           if (currentUser?.isRider == true) {
             final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
             if (uid != null && currentUser?.riderProfile?.isActive != true) {

@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/weight_utils.dart';
+import '../../../../domain/providers/favorites_providers.dart';
 import '../../../../domain/entities/offer.dart';
 import '../../../../domain/entities/offer_condition.dart';
 import '../../../../domain/entities/user.dart';
+import '../../../offers/presentation/providers/offer_comments_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../cart/cart_provider.dart';
 import '../../../offers/presentation/providers/offers_provider.dart';
-import '../../../offers/presentation/providers/offer_comments_provider.dart';
 import '../providers/catalog_filters_provider.dart';
 import '../widgets/catalog_filter_widgets.dart';
 import '../widgets/product_card.dart';
@@ -77,8 +78,6 @@ class BuyerCatalogScreen extends ConsumerWidget {
                 child: Row(
                   children: const [
                     SortOptionsButton(),
-                    SizedBox(width: 8),
-                    PriceRangeFilter(),
                   ],
                 ),
               ),
@@ -149,8 +148,13 @@ class BuyerCatalogScreen extends ConsumerWidget {
                                       colorCondition: _conditionColor(
                                         offer.condition,
                                       ),
-                                      price: offer.price,
+                                      category: offer.category,
+                                      availableQty: offer.availableQty,
+                                      viewCount: offer.viewCount,
+                                      orderCount: offer.orderCount,
                                       weight: offer.weight,
+                                      pickupGeo:
+                                          offer.itemLocationSnapshot?.geopoint,
                                       showShadow: false,
                                       imageUrl: offer.coverImageUrl,
                                       avgRating: offer.avgRating,
@@ -317,10 +321,55 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
-class OfferDetailScreen extends ConsumerWidget {
+class OfferDetailScreen extends ConsumerStatefulWidget {
   const OfferDetailScreen({super.key, required this.offer});
 
   final Offer offer;
+
+  @override
+  ConsumerState<OfferDetailScreen> createState() =>
+      _OfferDetailScreenState();
+}
+
+class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
+  bool _incremented = false;
+  int _optimisticViewsDelta = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeIncrementView();
+    });
+  }
+
+  Future<void> _maybeIncrementView() async {
+    if (!mounted || _incremented) return;
+
+    final userAsync = ref.read(profileProvider);
+    final userId = userAsync.maybeWhen(
+      data: (user) => user?.id,
+      orElse: () => null,
+    );
+
+    // Opcional: no contar vistas del dueño
+    if (userId != null && userId == widget.offer.heroId) {
+      _incremented = true;
+      return;
+    }
+
+    try {
+      await ref.read(incrementViewCountProvider(widget.offer.offerId).future);
+      if (!mounted) return;
+      setState(() {
+        _incremented = true;
+        _optimisticViewsDelta = 1;
+      });
+    } catch (_) {
+      // Si falla, no bloquear UI. Se mantiene el contador original.
+      _incremented = true;
+    }
+  }
 
   Widget _buildOfferImage(
     String imageUrl, {
@@ -406,9 +455,10 @@ class OfferDetailScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final offer = widget.offer;
     final badgeColor = _conditionColor(offer.condition);
-    final priceText = '\$${offer.price.toStringAsFixed(0)} CLP';
+    const priceText = 'Donación';
     final coverUrl = offer.coverImageUrl.trim();
     final hasCover = coverUrl.isNotEmpty;
     final galleryImages = <String>{
@@ -416,7 +466,7 @@ class OfferDetailScreen extends ConsumerWidget {
       ...offer.imageUrls,
     }.toList();
     final soldCount = offer.orderCount;
-    final viewsCount = offer.viewCount;
+    final viewsCount = offer.viewCount + _optimisticViewsDelta;
     final location = offer.itemLocationSnapshot;
     final Widget? locationWidget = location == null
         ? null
@@ -436,7 +486,7 @@ class OfferDetailScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Ubicación del producto',
+                          'Ubicación de la donación',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -506,9 +556,56 @@ class OfferDetailScreen extends ConsumerWidget {
         backgroundColor: primaryYellow,
         foregroundColor: textGray900,
         title: const Text(
-          'Detalle del producto',
+          'Detalles de la donación',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
+        actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              final userAsync = ref.watch(profileProvider);
+              final userId = userAsync.maybeWhen(
+                data: (user) => user?.id,
+                orElse: () => null,
+              );
+
+              final favoriteIdsAsync = userId == null
+                  ? const AsyncValue<List<String>>.data(<String>[])
+                  : ref.watch(favoriteOfferIdsProvider(userId));
+
+              final isFavorite = favoriteIdsAsync.maybeWhen(
+                data: (ids) => ids.contains(offer.offerId),
+                orElse: () => false,
+              );
+
+              return IconButton(
+                tooltip: isFavorite
+                    ? 'Quitar de favoritos'
+                    : 'Agregar a favoritos',
+                onPressed: userId == null
+                    ? null
+                    : () async {
+                        try {
+                          await ref
+                              .read(favoritesNotifierProvider.notifier)
+                              .toggleFavorite(userId, offer.offerId);
+                        } catch (_) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content:
+                                  Text('No se pudo actualizar favoritos'),
+                            ),
+                          );
+                        }
+                      },
+                icon: Icon(
+                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                  color: isFavorite ? const Color(0xFFDC2626) : textGray900,
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -928,9 +1025,10 @@ class OfferDetailScreen extends ConsumerWidget {
                       offerId: offer.offerId,
                       name: offer.title,
                       condition: offer.condition.displayName,
-                      price: offer.price,
+                      price: 0.0,
                       weight: offer.weight,
                       imageUrl: offer.coverImageUrl,
+                      pickupGeo: offer.itemLocationSnapshot?.geopoint,
                     );
               },
               child: Container(

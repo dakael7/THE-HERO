@@ -7,8 +7,9 @@ import '../../../../shared/profile/presentation/providers/profile_provider.dart'
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
-import 'offer_form_screen.dart';
+import 'donation_questions_screen.dart';
 import 'seller_offer_detail_screen.dart';
+import 'rut_verification_screen.dart';
 
 class MyProductsScreen extends ConsumerStatefulWidget {
   const MyProductsScreen({super.key});
@@ -24,7 +25,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
 
   Future<void> _openOfferForm({Offer? offer}) async {
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => OfferFormScreen(initialOffer: offer)),
+      MaterialPageRoute(builder: (_) => DonationQuestionsScreen(initialOffer: offer)),
     );
     if (result == true && mounted) {
       final user = ref.read(profileProvider).value;
@@ -345,9 +346,6 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     final cover = offer.coverImageUrl.trim();
     final hasImage = cover.isNotEmpty;
     final isAsset = cover.startsWith('assets/');
-    final currency = offer.currency.trim().isEmpty
-        ? 'CLP'
-        : offer.currency.trim();
 
     return Material(
       color: backgroundWhite,
@@ -477,7 +475,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                       context: context,
                                       title: 'Archivar publicación',
                                       message:
-                                          'Tu producto dejará de estar visible para los clientes. Puedes reactivarlo cuando quieras.',
+                                          'Tu donación dejará de estar visible para los usuarios. Puedes reactivarla cuando quieras.',
                                       confirmText: 'Archivar',
                                     );
                                     if (!confirmed) break;
@@ -495,7 +493,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                       context: context,
                                       title: 'Eliminar publicación',
                                       message:
-                                          'Esta acción es permanente. ¿Eliminar esta oferta?',
+                                          'Esta acción es permanente. ¿Eliminar esta donación?',
                                       confirmText: 'Eliminar',
                                     );
                                     if (!confirmed) break;
@@ -516,7 +514,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                         context,
                                       ).showSnackBar(
                                         const SnackBar(
-                                          content: Text('Oferta eliminada'),
+                                          content: Text('Donación eliminada'),
                                           duration: Duration(
                                             milliseconds: 1500,
                                           ),
@@ -654,7 +652,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            '\$${offer.price.toStringAsFixed(0)} $currency',
+                            'Donación',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -751,7 +749,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           },
         ),
         title: const Text(
-          'Mis ofertas',
+          'Mis Donaciones',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
@@ -809,7 +807,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Inicia sesión para ver tus productos',
+                      'Inicia sesión para ver tus donaciones',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -819,7 +817,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Necesitas una cuenta para administrar tus publicaciones.',
+                      'Necesitas una cuenta para administrar tus donaciones.',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -850,7 +848,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                       ),
                       const SizedBox(height: 12),
                       const Text(
-                        'No pudimos cargar tus productos',
+                        'No pudimos cargar tus donaciones',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
@@ -1063,7 +1061,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                               height: gapSmall,
                                                             ),
                                                             Text(
-                                                              'Administra stock, precios y visibilidad',
+                                                              'Administra stock y visibilidad',
                                                               maxLines: 2,
                                                               overflow:
                                                                   TextOverflow
@@ -1081,8 +1079,32 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                               height: gapNormal,
                                                             ),
                                                             ElevatedButton.icon(
-                                                              onPressed: () =>
-                                                                  _openOfferForm(),
+                                                              onPressed: () {
+                                                                final user =
+                                                                    ref.read(profileStreamProvider).value;
+                                                                if (user != null &&
+                                                                    !user.isRutVerified) {
+                                                                  ScaffoldMessenger.of(context)
+                                                                      .showSnackBar(
+                                                                    const SnackBar(
+                                                                      content: Text(
+                                                                        'Debes verificar tu RUT para publicar donaciones.',
+                                                                      ),
+                                                                      duration:
+                                                                          Duration(seconds: 3),
+                                                                    ),
+                                                                  );
+                                                                  Navigator.of(context).push(
+                                                                    MaterialPageRoute(
+                                                                      builder: (_) =>
+                                                                          const RutVerificationScreen(),
+                                                                    ),
+                                                                  );
+                                                                  return;
+                                                                }
+
+                                                                _openOfferForm();
+                                                              },
                                                               icon: Icon(
                                                                 Icons
                                                                     .add_circle_outline,
@@ -1092,7 +1114,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                                     buttonIconSize,
                                                               ),
                                                               label: Text(
-                                                                'Publicar producto',
+                                                                'Publicar donación',
                                                                 style: TextStyle(
                                                                   color:
                                                                       primaryOrange,
@@ -1169,7 +1191,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Tus publicaciones',
+                              'Tus donaciones',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
@@ -1207,7 +1229,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                 ),
                                 const SizedBox(height: 14),
                                 const Text(
-                                  'Aún no tienes productos publicados',
+                                  'Aún no tienes donaciones publicadas',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 16,
@@ -1217,7 +1239,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 const Text(
-                                  'Publica tu primer producto para empezar a vender.',
+                                  'Publica tu primera donación para empezar a ayudar.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 13,

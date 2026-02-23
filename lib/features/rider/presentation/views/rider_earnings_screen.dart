@@ -35,11 +35,46 @@ class RiderEarningsScreen extends ConsumerWidget {
             stream: useCase.execute(user.id),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const Center(
+                  child: CircularProgressIndicator(color: primaryOrange),
+                );
               }
 
               if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: textGray600.withValues(alpha: 0.55),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No pudimos cargar tus ganancias',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: textGray900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${snapshot.error}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: textGray600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
               }
 
               final orders = snapshot.data ?? [];
@@ -58,245 +93,225 @@ class RiderEarningsScreen extends ConsumerWidget {
                 deliveryFees,
               );
               final totalNetEarnings = summary['totalNetEarnings'] ?? 0.0;
-              final totalDeliveryFees = summary['totalDeliveryFees'] ?? 0.0;
-              final totalServiceFees = summary['totalServiceFees'] ?? 0.0;
-              final totalTaxDeductions = summary['totalTaxDeductions'] ?? 0.0;
               final deliveryCount = summary['deliveryCount']?.toInt() ?? 0;
+              final avgPerDelivery =
+                  deliveryCount <= 0 ? 0.0 : (totalNetEarnings / deliveryCount);
 
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  // Total Earnings Card
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [primaryOrange, Color(0xFFFF8C42)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+              final completedCountText =
+                  '$deliveryCount entrega${deliveryCount == 1 ? '' : 's'} completada${deliveryCount == 1 ? '' : 's'}';
+
+              return RefreshIndicator(
+                color: primaryOrange,
+                onRefresh: () async {
+                  ref.invalidate(profileProvider);
+                },
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [primaryOrange, Color(0xFFFF8C42)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryOrange.withValues(alpha: 0.28),
+                            blurRadius: 18,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: primaryOrange.withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Ganancias netas',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            '\$${totalNetEarnings.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 44,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              letterSpacing: -1,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            completedCountText,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.92),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _MetricChip(
+                                  icon: Icons.local_shipping_outlined,
+                                  label: 'Entregas',
+                                  value: '$deliveryCount',
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _MetricChip(
+                                  icon: Icons.trending_up,
+                                  label: 'Promedio',
+                                  value: '\$${avgPerDelivery.toStringAsFixed(0)}',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Column(
-                      children: [
-                        const Text(
-                          'Ganancias Netas',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                    const SizedBox(height: 18),
+                    if (completedOrders.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
                             color: backgroundWhite,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: borderGray100),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '\$${totalNetEarnings.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontSize: 48,
-                            fontWeight: FontWeight.w900,
-                            color: backgroundWhite,
-                            letterSpacing: -1,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '$deliveryCount entrega${deliveryCount == 1 ? '' : 's'} completada${deliveryCount == 1 ? '' : 's'}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: backgroundWhite.withValues(alpha: 0.9),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Breakdown Section
-                  const Text(
-                    'Desglose de Comisiones',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: textGray900,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: backgroundWhite,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: textGray900.withValues(alpha: 0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        _buildBreakdownRow(
-                          'Total facturado',
-                          totalDeliveryFees,
-                          color: textGray900,
-                          isBold: true,
-                        ),
-                        const SizedBox(height: 16),
-                        const Divider(height: 1, color: borderGray100),
-                        const SizedBox(height: 16),
-                        _buildBreakdownRow(
-                          'Comisión de servicio',
-                          -totalServiceFees,
-                          color: Colors.red,
-                          subtitle: '\$2,000 por entrega',
-                        ),
-                        const SizedBox(height: 12),
-                        _buildBreakdownRow(
-                          'Descuento (7%)',
-                          -totalTaxDeductions,
-                          color: Colors.red,
-                          subtitle: 'Descuento sobre envío neto',
-                        ),
-                        const SizedBox(height: 16),
-                        const Divider(height: 1, color: borderGray100),
-                        const SizedBox(height: 16),
-                        _buildBreakdownRow(
-                          'Ganancia neta',
-                          totalNetEarnings,
-                          color: Colors.green,
-                          isBold: true,
-                          isLarge: true,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Info Card
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF9E6),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: primaryYellow),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.info_outline,
-                          color: primaryOrange,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                'Estructura de Comisiones',
+                            children: [
+                              Icon(
+                                Icons.history,
+                                size: 56,
+                                color: textGray600.withValues(alpha: 0.55),
+                              ),
+                              const SizedBox(height: 10),
+                              const Text(
+                                'Aún no tienes entregas completadas',
+                                textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
                                   color: textGray900,
                                 ),
                               ),
-                              SizedBox(height: 4),
-                              Text(
-                                'Se aplica una comisión fija de \$2,000 por entrega más un 7% de descuento sobre el envío neto (envío menos comisión).',
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Cuando completes una entrega, aquí verás el resumen de tus ganancias.',
+                                textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: textGray700,
+                                  color: textGray600,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Recent Deliveries
-                  if (completedOrders.isNotEmpty) ...[
-                    const Text(
-                      'Entregas Recientes',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: textGray900,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ...completedOrders.take(10).map((order) {
-                      final commission =
-                          RiderCommissionCalculator.calculateCommission(
-                            deliveryFee: order.deliveryFee,
-                          );
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: backgroundWhite,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: textGray900.withValues(alpha: 0.05),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                      )
+                    else ...[
+                      const Padding(
+                        padding: EdgeInsets.only(left: 4, top: 4, bottom: 10),
+                        child: Text(
+                          'Entregas recientes',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: textGray900,
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Orden #${order.orderId.substring(0, 8)}',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: textGray900,
-                                  ),
-                                ),
-                                Text(
-                                  '\$${commission.netEarnings.toStringAsFixed(0)}',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                              ],
+                      ),
+                      ...completedOrders.take(10).map((order) {
+                        final earnings = RiderCommissionCalculator.calculateCommission(
+                          deliveryFee: order.deliveryFee,
+                        );
+                        final shortId = order.orderId.length <= 8
+                            ? order.orderId
+                            : order.orderId.substring(0, 8);
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: backgroundWhite,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: borderGray100),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 6,
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Tarifa: \$${order.deliveryFee.toStringAsFixed(0)} - Comisión: \$${commission.serviceFee.toStringAsFixed(0)} - Impuestos: \$${commission.taxDeduction.toStringAsFixed(0)}',
+                            leading: Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: primaryOrange.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.check_circle_outline,
+                                color: primaryOrange,
+                              ),
+                            ),
+                            title: Text(
+                              'Orden #$shortId',
                               style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                                color: textGray900,
+                              ),
+                            ),
+                            subtitle: const Text(
+                              'Entregada',
+                              style: TextStyle(
                                 fontSize: 12,
+                                fontWeight: FontWeight.w600,
                                 color: textGray600,
                               ),
                             ),
-                          ],
-                        ),
-                      );
-                    }),
+                            trailing: Text(
+                              '\$${earnings.netEarnings.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
                   ],
-                ],
+                ),
               );
             },
           );
@@ -306,50 +321,58 @@ class RiderEarningsScreen extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildBreakdownRow(
-    String label,
-    double amount, {
-    Color? color,
-    String? subtitle,
-    bool isBold = false,
-    bool isLarge = false,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: isLarge ? 16 : 14,
-                  fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
-                  color: color ?? textGray900,
+class _MetricChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _MetricChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.white),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.90),
+                  ),
                 ),
-              ),
-              if (subtitle != null) ...[
                 const SizedBox(height: 2),
                 Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 11, color: textGray600),
+                  value,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
                 ),
               ],
-            ],
+            ),
           ),
-        ),
-        Text(
-          '\$${amount.abs().toStringAsFixed(0)}',
-          style: TextStyle(
-            fontSize: isLarge ? 20 : 14,
-            fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
-            color: color ?? textGray900,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

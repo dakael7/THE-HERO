@@ -14,11 +14,13 @@ admin.initializeApp();
 const {createPaymentPreference} = require('./mercadopago/createPaymentPreference');
 const {mercadopagoWebhook} = require('./mercadopago/webhook');
 const {verifyPayment} = require('./mercadopago/verifyPayment');
+const {simulatePaymentApproved} = require('./mercadopago/simulatePaymentApproved');
 
 // Export MercadoPago functions
 exports.createPaymentPreference = createPaymentPreference;
 exports.mercadopagoWebhook = mercadopagoWebhook;
 exports.verifyPayment = verifyPayment;
+exports.simulatePaymentApproved = simulatePaymentApproved;
 
 const STORAGE_REGION = 'southamerica-west1';
 
@@ -319,6 +321,83 @@ exports.reviewVehicleVerificationRequest = onCall(async (request) => {
               },
             },
           },
+        },
+      },
+      { merge: true }
+    );
+  });
+
+  return { success: true };
+});
+
+/**
+ * Aprueba o rechaza una solicitud de verificación de RUT.
+ *
+ * Seguridad:
+ * - Solo usuarios soporte/admin (allowlist por email o custom claim) pueden ejecutar.
+ *
+ * Entrada:
+ * - { userId: string, requestId: string, decision: 'approved'|'rejected', reason?: string }
+ */
+exports.reviewRutVerificationRequest = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Usuario no autenticado');
+  }
+
+  if (!isSupportUser(request.auth)) {
+    throw new HttpsError('permission-denied', 'No autorizado');
+  }
+
+  const userId = request.data?.userId;
+  const requestId = request.data?.requestId;
+  const decision = request.data?.decision;
+  const reason = request.data?.reason;
+
+  if (!userId || !requestId || !decision) {
+    throw new HttpsError('invalid-argument', 'userId, requestId y decision son requeridos');
+  }
+
+  if (!['approved', 'rejected'].includes(decision)) {
+    throw new HttpsError('invalid-argument', 'decision inválida');
+  }
+
+  const userRef = admin.firestore().collection('users').doc(userId);
+  const reqRef = userRef.collection('rut_verification_requests').doc(requestId);
+  const reviewerId = request.auth.uid;
+
+  await admin.firestore().runTransaction(async (tx) => {
+    const reqSnap = await tx.get(reqRef);
+    if (!reqSnap.exists) {
+      throw new HttpsError('not-found', 'Solicitud no encontrada');
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    tx.set(
+      reqRef,
+      {
+        status: decision,
+        updatedAt: now,
+        verification: {
+          verifiedAt: now,
+          verificationMode: 'manual',
+          reason: reason || null,
+          reviewerId,
+        },
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      userRef,
+      {
+        rutVerification: {
+          status: decision,
+          verifiedAt: decision === 'approved' ? now : now,
+          reviewerId,
+          reason: reason || null,
+          requestId,
+          mode: 'manual',
         },
       },
       { merge: true }
@@ -837,6 +916,281 @@ exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
   }
 );
 
+exports.ocrRutVerificationOnUpload = onObjectFinalized(
+  {region: STORAGE_REGION},
+  async (event) => {
+    const object = event.data;
+    const filePath = object.name;
+    const contentType = object.contentType || '';
+
+    if (!filePath) return null;
+
+    // Expected path:
+    // users/{uid}/documents/rut_verification/{requestId}/...id_front.*
+    const segments = filePath.split('/').filter(Boolean);
+    // 0 users, 1 uid, 2 documents, 3 rut_verification, 4 requestId, ... filename
+    if (segments.length < 6) return null;
+    if (segments[0] !== 'users') return null;
+    if (segments[2] !== 'documents') return null;
+    if (segments[3] !== 'rut_verification') return null;
+
+    const userId = segments[1];
+    const requestId = segments[4];
+    const fileName = segments[segments.length - 1];
+
+    const isFront = fileName.toLowerCase().includes('id_front');
+    if (!isFront) return null;
+
+    const isPdf = contentType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+    const isImage = contentType.startsWith('image/');
+    if (!isPdf && !isImage) return null;
+
+    logger.info('[ocrRutVerification] Start', {
+      userId,
+      requestId,
+      filePath,
+      contentType,
+    });
+
+    const userRef = admin.firestore().collection('users').doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      logger.warn('[ocrRutVerification] user not found', { userId });
+      return null;
+    }
+
+    const userData = userSnap.data() || {};
+    const declaredRut = userData?.identity?.documentId;
+    const declaredNormalized = normalizeRut(declaredRut);
+
+    const reqRef = userRef.collection('rut_verification_requests').doc(requestId);
+    const gcsUri = `gs://${object.bucket}/${filePath}`;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    // Mark processing
+    await userRef.set(
+      {
+        rutVerification: {
+          status: 'processing',
+          requestId,
+          mode: 'ocr',
+          updatedAt: now,
+        },
+      },
+      { merge: true }
+    );
+
+    await reqRef.set(
+      {
+        updatedAt: now,
+        status: 'processing',
+      },
+      { merge: true }
+    );
+
+    try {
+      const text = await runVisionOcrForGcsUri({
+        gcsUri,
+        mimeType: isPdf ? 'application/pdf' : contentType,
+      });
+
+      const candidates = extractRutCandidates(text);
+      const extractedRut = candidates.length > 0 ? candidates[0] : null;
+      const extractedNormalized = normalizeRut(extractedRut);
+      const dvValid = extractedRut ? isValidRutDv(extractedRut) : false;
+      const matchDeclared =
+        extractedNormalized && declaredNormalized
+          ? extractedNormalized === declaredNormalized
+          : false;
+
+      const errors = [];
+      let verificationStatus = 'needs_review';
+
+      if (!declaredRut) {
+        errors.push('missing_declared_rut');
+      }
+
+      if (!extractedRut) {
+        errors.push('rut_not_found');
+        verificationStatus = 'needs_review';
+      } else if (!dvValid) {
+        errors.push('rut_dv_invalid');
+        verificationStatus = 'needs_review';
+      } else if (declaredRut && !matchDeclared) {
+        errors.push('rut_mismatch_declared');
+        verificationStatus = 'needs_review';
+      } else if (declaredRut && matchDeclared && dvValid) {
+        verificationStatus = 'approved';
+      }
+
+      await userRef.set(
+        {
+          rutVerification: {
+            status: verificationStatus,
+            requestId,
+            mode: 'ocr',
+            verifiedAt: verificationStatus === 'approved' ? now : null,
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              extractedRut,
+              dvValid,
+              matchDeclared,
+              rutCandidates: candidates.slice(0, 5),
+              errorCodes: errors,
+            },
+          },
+        },
+        { merge: true }
+      );
+
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: verificationStatus,
+          ocr: {
+            extractedRut,
+            dvValid,
+            matchDeclared,
+            errorCodes: errors,
+            processedAt: now,
+          },
+        },
+        { merge: true }
+      );
+
+      logger.info('[ocrRutVerification] Done', {
+        userId,
+        requestId,
+        verificationStatus,
+      });
+    } catch (error) {
+      logger.error('[ocrRutVerification] OCR failed', {
+        userId,
+        requestId,
+        filePath,
+        error,
+      });
+
+      await userRef.set(
+        {
+          rutVerification: {
+            status: 'failed',
+            requestId,
+            mode: 'ocr',
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              errorCodes: ['ocr_error'],
+            },
+          },
+        },
+        { merge: true }
+      );
+
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: 'failed',
+          ocr: {
+            errorCodes: ['ocr_error'],
+            processedAt: now,
+          },
+        },
+        { merge: true }
+      );
+    }
+
+    return null;
+  }
+);
+
+/**
+ * Trigger: Notify hero when rider completes a pickup stop
+ * Uses orders/{orderId}.pickupProgress.currentStopIndex (0-based) changes.
+ */
+exports.notifyPickupStopProgress = onDocumentWritten(
+  {document: 'orders/{orderId}', region: STORAGE_REGION},
+  async (event) => {
+    const before = event.data && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after.exists ? event.data.after.data() : null;
+
+    if (!after || !before) {
+      return;
+    }
+
+    const orderId = event.params.orderId;
+    const heroId = after.heroId;
+
+    const beforeIndexRaw = before.pickupProgress && typeof before.pickupProgress.currentStopIndex !== 'undefined'
+      ? before.pickupProgress.currentStopIndex
+      : null;
+    const afterIndexRaw = after.pickupProgress && typeof after.pickupProgress.currentStopIndex !== 'undefined'
+      ? after.pickupProgress.currentStopIndex
+      : null;
+
+    if (afterIndexRaw === null || typeof afterIndexRaw === 'undefined') {
+      return;
+    }
+
+    // Convert to number and ensure it's a progress forward.
+    const beforeIndex = (beforeIndexRaw === null || typeof beforeIndexRaw === 'undefined')
+      ? -1
+      : Number(beforeIndexRaw);
+    const afterIndex = Number(afterIndexRaw);
+
+    if (!Number.isFinite(afterIndex)) {
+      return;
+    }
+
+    // Only notify when index increases.
+    if (afterIndex <= beforeIndex) {
+      return;
+    }
+
+    const totalStops = Array.isArray(after.pickupStops) ? after.pickupStops.length : 0;
+    if (totalStops <= 0) {
+      return;
+    }
+
+    const humanIndex = Math.min(Math.max(afterIndex + 1, 1), totalStops);
+
+    console.log(
+      `Order ${orderId} pickup progress: ${beforeIndex} -> ${afterIndex} (stop ${humanIndex}/${totalStops})`
+    );
+
+    const isLastStop = humanIndex >= totalStops;
+    const ordinal = humanIndex === 1
+      ? 'primer'
+      : humanIndex === 2
+        ? 'segundo'
+        : humanIndex === 3
+          ? 'tercer'
+          : `${humanIndex}°`;
+    const body = isLastStop
+      ? 'El rider ya está en el último punto de recogida. Te avisaremos cuando vaya en camino a la entrega.'
+      : `El rider ya está en el ${ordinal} punto de recogida. Te avisaremos cuando vaya en camino.`;
+
+    await sendNotificationToUsers(
+      heroId,
+      {
+        title: '📦 Tu pedido avanza',
+        body,
+      },
+      {
+        type: 'pickup_progress',
+        action: 'open_order',
+        orderId,
+        pickupStopIndex: String(afterIndex),
+        pickupStopsCount: String(totalStops),
+        priority: 'high',
+      }
+    );
+  }
+);
+
 function getIsoWeekKey(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -980,8 +1334,20 @@ async function sendNotificationToUsers(userIds, notification, data = {}) {
       const userDoc = await admin.firestore().collection('users').doc(userId).get();
       if (userDoc.exists) {
         const userData = userDoc.data();
+        const tokens = [];
+
         if (userData.fcmTokens && Array.isArray(userData.fcmTokens)) {
-          userTokensMap.set(userId, userData.fcmTokens);
+          tokens.push(...userData.fcmTokens);
+        }
+
+        if (userData.fcmToken && typeof userData.fcmToken === 'string') {
+          const t = userData.fcmToken.trim();
+          if (t) tokens.push(t);
+        }
+
+        const uniqueTokens = [...new Set(tokens.filter(Boolean))];
+        if (uniqueTokens.length > 0) {
+          userTokensMap.set(userId, uniqueTokens);
         }
       }
     }

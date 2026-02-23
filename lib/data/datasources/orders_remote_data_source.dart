@@ -28,9 +28,48 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   OrdersRemoteDataSourceImpl({required FirebaseFirestore firestore})
     : _firestore = firestore;
 
+  Future<T> _withRetry<T>(Future<T> Function() action) async {
+    int attempt = 0;
+    int delayMs = 300;
+    while (true) {
+      try {
+        return await action();
+      } on FirebaseException catch (e) {
+        final code = e.code.toLowerCase();
+        final isTransient =
+            code == 'unavailable' || code == 'aborted' || code == 'deadline-exceeded';
+
+        if (!isTransient || attempt >= 3) rethrow;
+
+        await Future.delayed(Duration(milliseconds: delayMs));
+        attempt++;
+        delayMs = (delayMs * 2).clamp(300, 3000);
+      }
+    }
+  }
+
+  Map<String, dynamic> _withOrderId(Map<String, dynamic> data, String docId) {
+    final orderId = (data['orderId'] as String?)?.trim() ?? '';
+    if (orderId.isNotEmpty) return data;
+
+    final copy = Map<String, dynamic>.from(data);
+    copy['orderId'] = docId;
+    return copy;
+  }
+
   @override
   Future<OrderModel> createOrder(OrderModel order) async {
     try {
+      final hasPreGeneratedId = order.orderId.isNotEmpty;
+
+      if (hasPreGeneratedId) {
+        final docRef = _firestore.collection('orders').doc(order.orderId);
+        final createdOrder = order.toJson();
+        createdOrder['orderId'] = docRef.id;
+        await docRef.set(createdOrder);
+        return OrderModel.fromJson(createdOrder);
+      }
+
       final docRef = await _firestore.collection('orders').add(order.toJson());
       final createdOrder = order.toJson();
       createdOrder['orderId'] = docRef.id;
@@ -44,6 +83,9 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   @override
   Future<OrderModel> updateOrder(OrderModel order) async {
     try {
+      if (order.orderId.trim().isEmpty) {
+        throw Exception('orderId inválido');
+      }
       await _firestore
           .collection('orders')
           .doc(order.orderId)
@@ -57,9 +99,13 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   @override
   Future<OrderModel?> getOrderById(String orderId) async {
     try {
+      if (orderId.trim().isEmpty) {
+        throw Exception('orderId inválido');
+      }
       final doc = await _firestore.collection('orders').doc(orderId).get();
       if (!doc.exists) return null;
-      return OrderModel.fromJson(doc.data()!);
+      final data = _withOrderId(doc.data()!, doc.id);
+      return OrderModel.fromJson(data);
     } catch (e) {
       throw Exception('Error al obtener pedido: $e');
     }
@@ -68,6 +114,9 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   @override
   Stream<List<OrderModel>> getOrdersByHero(String heroId) {
     try {
+      if (heroId.trim().isEmpty) {
+        throw Exception('heroId inválido');
+      }
       return _firestore
           .collection('orders')
           .where('heroId', isEqualTo: heroId)
@@ -75,7 +124,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .snapshots()
           .map(
             (snapshot) => snapshot.docs
-                .map((doc) => OrderModel.fromJson(doc.data()))
+                .map((doc) => OrderModel.fromJson(_withOrderId(doc.data(), doc.id)))
                 .toList(),
           );
     } catch (e) {
@@ -86,6 +135,9 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   @override
   Stream<List<OrderModel>> getOrdersByRider(String riderId) {
     try {
+      if (riderId.trim().isEmpty) {
+        throw Exception('riderId inválido');
+      }
       return _firestore
           .collection('orders')
           .where('rider.assignedRiderId', isEqualTo: riderId)
@@ -93,7 +145,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .snapshots()
           .map(
             (snapshot) => snapshot.docs
-                .map((doc) => OrderModel.fromJson(doc.data()))
+                .map((doc) => OrderModel.fromJson(_withOrderId(doc.data(), doc.id)))
                 .toList(),
           );
     } catch (e) {
@@ -116,7 +168,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .snapshots()
           .map(
             (snapshot) => snapshot.docs
-                .map((doc) => OrderModel.fromJson(doc.data()))
+                .map((doc) => OrderModel.fromJson(_withOrderId(doc.data(), doc.id)))
                 .toList(),
           );
     } catch (e) {
@@ -127,6 +179,9 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   @override
   Future<void> updateOrderStatus(String orderId, String status) async {
     try {
+      if (orderId.trim().isEmpty) {
+        throw Exception('orderId inválido');
+      }
       final updateData = {
         'status': status,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -164,39 +219,44 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     String riderPhone,
   ) async {
     try {
-      await _firestore.runTransaction((transaction) async {
-        final orderRef = _firestore.collection('orders').doc(orderId);
-        final orderDoc = await transaction.get(orderRef);
+      if (orderId.trim().isEmpty) {
+        throw Exception('orderId inválido');
+      }
+      if (riderId.trim().isEmpty) {
+        throw Exception('riderId inválido');
+      }
+      await _withRetry(() async {
+        await _firestore.runTransaction((transaction) async {
+          final orderRef = _firestore.collection('orders').doc(orderId);
+          final orderDoc = await transaction.get(orderRef);
 
-        if (!orderDoc.exists) {
-          throw Exception('Pedido no encontrado');
-        }
+          if (!orderDoc.exists) {
+            throw Exception('Pedido no encontrado');
+          }
 
-        final orderData = orderDoc.data()!;
-        if (orderData['status'] != 'queued') {
-          throw Exception('Pedido ya no está disponible');
-        }
+          final orderData = orderDoc.data()!;
+          if (orderData['status'] != 'queued') {
+            throw Exception('Pedido ya no está disponible');
+          }
 
-        if (orderData['rider']['assignedRiderId'] != null) {
-          throw Exception('Pedido ya tiene rider asignado');
-        }
+          if (orderData['rider']['assignedRiderId'] != null) {
+            throw Exception('Pedido ya tiene rider asignado');
+          }
 
-        // Build the complete rider object for the update
-        // This is necessary because Firestore rules validate request.resource.data.rider
-        // and dot notation updates don't reconstruct the full object
-        final riderUpdate = {
-          'assignedRiderId': riderId,
-          'assignedAt': FieldValue.serverTimestamp(),
-          'vehicleTypeSnapshot': vehicleType,
-          'riderNameSnapshot': riderName,
-          'riderPhoneSnapshot': riderPhone,
-        };
+          final riderUpdate = {
+            'assignedRiderId': riderId,
+            'assignedAt': FieldValue.serverTimestamp(),
+            'vehicleTypeSnapshot': vehicleType,
+            'riderNameSnapshot': riderName,
+            'riderPhoneSnapshot': riderPhone,
+          };
 
-        transaction.update(orderRef, {
-          'status': 'assigned',
-          'rider': riderUpdate,
-          'timestamps.assignedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
+          transaction.update(orderRef, {
+            'status': 'assigned',
+            'rider': riderUpdate,
+            'timestamps.assignedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
         });
       });
     } catch (e) {
@@ -211,12 +271,111 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     String canceledBy,
   ) async {
     try {
-      await _firestore.collection('orders').doc(orderId).update({
-        'status': 'canceled',
-        'cancelReason': reason,
-        'canceledBy': canceledBy,
-        'timestamps.canceledAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+      await _firestore.runTransaction((transaction) async {
+        final orderRef = _firestore.collection('orders').doc(orderId);
+        final orderSnap = await transaction.get(orderRef);
+
+        if (!orderSnap.exists) {
+          throw Exception('Pedido no encontrado');
+        }
+
+        final data = orderSnap.data() ?? <String, dynamic>{};
+        final currentStatus = (data['status'] as String?) ?? '';
+        final alreadyRestored = data['stockRestored'] == true;
+
+        final shouldTryReleaseReservation =
+            currentStatus == 'pending_payment' ||
+            currentStatus == 'pendingPayment' ||
+            currentStatus == 'pendingpayment';
+
+        if (!alreadyRestored) {
+          if (shouldTryReleaseReservation) {
+            final reservationRef = _firestore
+                .collection('stockReservations')
+                .doc(orderId);
+            final reservationSnap = await transaction.get(reservationRef);
+            if (reservationSnap.exists) {
+              final reservation = reservationSnap.data() ?? <String, dynamic>{};
+              final reservationStatus = reservation['status'] as String?;
+              final itemsRaw = reservation['items'] as List<dynamic>?;
+
+              if (reservationStatus == 'reserved' && itemsRaw != null) {
+                for (final raw in itemsRaw) {
+                  if (raw is! Map) continue;
+                  final offerId = raw['offerId'] as String?;
+                  final qty = raw['qty'] as int?;
+                  if (offerId == null || offerId.isEmpty) continue;
+                  final qtyInt = (qty == null || qty <= 0) ? 1 : qty;
+
+                  final offerRef =
+                      _firestore.collection('offers').doc(offerId);
+                  final offerSnap = await transaction.get(offerRef);
+                  if (!offerSnap.exists) continue;
+                  final offerData = offerSnap.data() ?? <String, dynamic>{};
+                  final currentQty = (offerData['availableQty'] as int?) ?? 0;
+                  final newQty = currentQty + qtyInt;
+
+                  final update = <String, Object?>{
+                    'availableQty': newQty,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                  };
+
+                  final offerStatus = offerData['status'] as String?;
+                  if (offerStatus == 'sold_out' && newQty > 0) {
+                    update['status'] = 'active';
+                  }
+
+                  transaction.update(offerRef, update);
+                }
+
+                transaction.update(reservationRef, {
+                  'status': 'released',
+                  'releasedAt': FieldValue.serverTimestamp(),
+                });
+              }
+            }
+          } else {
+            final itemsRaw = data['items'] as List<dynamic>?;
+            if (itemsRaw != null) {
+              for (final raw in itemsRaw) {
+                if (raw is! Map) continue;
+                final offerId = raw['offerId'] as String?;
+                final qty = raw['qty'] as int?;
+                if (offerId == null || offerId.isEmpty) continue;
+                final qtyInt = (qty == null || qty <= 0) ? 1 : qty;
+
+                final offerRef = _firestore.collection('offers').doc(offerId);
+                final offerSnap = await transaction.get(offerRef);
+                if (!offerSnap.exists) continue;
+                final offerData = offerSnap.data() ?? <String, dynamic>{};
+                final currentQty = (offerData['availableQty'] as int?) ?? 0;
+                final newQty = currentQty + qtyInt;
+
+                final update = <String, Object?>{
+                  'availableQty': newQty,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                };
+
+                final offerStatus = offerData['status'] as String?;
+                if (offerStatus == 'sold_out' && newQty > 0) {
+                  update['status'] = 'active';
+                }
+
+                transaction.update(offerRef, update);
+              }
+            }
+          }
+        }
+
+        transaction.update(orderRef, {
+          'status': 'canceled',
+          'cancelReason': reason,
+          'canceledBy': canceledBy,
+          'timestamps.canceledAt': FieldValue.serverTimestamp(),
+          'stockRestored': true,
+          'stockRestoredAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       });
     } catch (e) {
       throw Exception('Error al cancelar pedido: $e');

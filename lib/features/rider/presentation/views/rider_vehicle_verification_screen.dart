@@ -50,11 +50,6 @@ class _RiderVehicleVerificationScreenState
   Uint8List? _licenseBack;
   String? _licenseBackName;
 
-  Uint8List? _idCardFront;
-  String? _idCardFrontName;
-  Uint8List? _idCardBack;
-  String? _idCardBackName;
-
   Uint8List? _circulationPermit;
   String? _circulationPermitName;
 
@@ -204,15 +199,13 @@ class _RiderVehicleVerificationScreenState
 
     return _licenseFront != null &&
         _licenseBack != null &&
-        _idCardFront != null &&
-        _idCardBack != null &&
         _circulationPermit != null;
   }
 
   Future<void> _submit() async {
     if (_saving) return;
 
-    final user = ref.read(profileProvider).value;
+    final user = ref.read(profileStreamProvider).value;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -323,8 +316,6 @@ class _RiderVehicleVerificationScreenState
         'documents': {
           'licenseFrontUrl': null,
           'licenseBackUrl': null,
-          'idCardFrontUrl': null,
-          'idCardBackUrl': null,
           'circulationPermitUrl': null,
         },
         'status': 'submitted',
@@ -332,8 +323,6 @@ class _RiderVehicleVerificationScreenState
 
       String? licenseFrontUrl;
       String? licenseBackUrl;
-      String? idCardFrontUrl;
-      String? idCardBackUrl;
       String? circulationPermitUrl;
 
       if (!_isBicycle) {
@@ -353,22 +342,6 @@ class _RiderVehicleVerificationScreenState
           fileName: _licenseBackName ?? 'license_back.jpg',
           fieldName: 'license_back',
         );
-        idCardFrontUrl = await _uploadBytes(
-          storage: storage,
-          userId: user.id,
-          requestId: requestId,
-          bytes: _idCardFront!,
-          fileName: _idCardFrontName ?? 'id_front.jpg',
-          fieldName: 'id_front',
-        );
-        idCardBackUrl = await _uploadBytes(
-          storage: storage,
-          userId: user.id,
-          requestId: requestId,
-          bytes: _idCardBack!,
-          fileName: _idCardBackName ?? 'id_back.jpg',
-          fieldName: 'id_back',
-        );
         circulationPermitUrl = await _uploadBytes(
           storage: storage,
           userId: user.id,
@@ -382,8 +355,6 @@ class _RiderVehicleVerificationScreenState
           'updatedAt': firestore.Timestamp.fromDate(DateTime.now()),
           'documents.licenseFrontUrl': licenseFrontUrl,
           'documents.licenseBackUrl': licenseBackUrl,
-          'documents.idCardFrontUrl': idCardFrontUrl,
-          'documents.idCardBackUrl': idCardBackUrl,
           'documents.circulationPermitUrl': circulationPermitUrl,
         });
       }
@@ -407,8 +378,6 @@ class _RiderVehicleVerificationScreenState
           'riderProfile.vehicles.${widget.vehicleType.name}.documents': {
             'licenseFrontUrl': licenseFrontUrl,
             'licenseBackUrl': licenseBackUrl,
-            'idCardFrontUrl': idCardFrontUrl,
-            'idCardBackUrl': idCardBackUrl,
             'circulationPermitUrl': circulationPermitUrl,
           },
         'riderProfile.vehicles.${widget.vehicleType.name}.submittedLicense': {
@@ -466,7 +435,7 @@ class _RiderVehicleVerificationScreenState
   @override
   Widget build(BuildContext context) {
     final required = _requiredLicenseClassesFor(widget.vehicleType);
-    final profileAsync = ref.watch(profileProvider);
+    final profileAsync = ref.watch(profileStreamProvider);
     final user = profileAsync.value;
     final riderProfile = user?.riderProfile;
 
@@ -821,30 +790,6 @@ class _RiderVehicleVerificationScreenState
                         onPicked: (b, n) {
                           _licenseBack = b;
                           _licenseBackName = n;
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _DocUploadTile(
-                      title: 'Cédula (frente)',
-                      selected: _idCardFront != null,
-                      onTap: () => _pickImage(
-                        label: 'cédula (frente)',
-                        onPicked: (b, n) {
-                          _idCardFront = b;
-                          _idCardFrontName = n;
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _DocUploadTile(
-                      title: 'Cédula (reverso)',
-                      selected: _idCardBack != null,
-                      onTap: () => _pickImage(
-                        label: 'cédula (reverso)',
-                        onPicked: (b, n) {
-                          _idCardBack = b;
-                          _idCardBackName = n;
                         },
                       ),
                     ),

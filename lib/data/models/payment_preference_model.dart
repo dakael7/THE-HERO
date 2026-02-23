@@ -44,13 +44,35 @@ class PaymentPreferenceModel {
 
   /// Convert from JSON (Firebase Functions response)
   factory PaymentPreferenceModel.fromJson(Map<String, dynamic> json) {
+    final preferenceIdRaw = json['preferenceId'] ?? json['id'];
+    final initPointRaw = json['initPoint'] ?? json['init_point'];
+    final sandboxInitPointRaw =
+        json['sandboxInitPoint'] ?? json['sandbox_init_point'];
+    final orderIdRaw = json['orderId'];
+
+    final preferenceId = preferenceIdRaw?.toString().trim();
+    final initPoint = initPointRaw?.toString().trim();
+    final sandboxInitPoint = sandboxInitPointRaw?.toString().trim();
+    final orderId = orderIdRaw?.toString().trim();
+
+    if (preferenceId == null || preferenceId.isEmpty) {
+      throw const FormatException('Missing preferenceId in createPaymentPreference response');
+    }
+    if (initPoint == null || initPoint.isEmpty) {
+      throw const FormatException('Missing initPoint in createPaymentPreference response');
+    }
+    if (sandboxInitPoint == null || sandboxInitPoint.isEmpty) {
+      throw const FormatException('Missing sandboxInitPoint in createPaymentPreference response');
+    }
+    if (orderId == null || orderId.isEmpty) {
+      throw const FormatException('Missing orderId in createPaymentPreference response');
+    }
+
     return PaymentPreferenceModel(
-      preferenceId: json['preferenceId'] as String? ?? json['id'] as String,
-      initPoint: json['initPoint'] as String? ?? json['init_point'] as String,
-      sandboxInitPoint:
-          json['sandboxInitPoint'] as String? ??
-          json['sandbox_init_point'] as String,
-      orderId: json['orderId'] as String,
+      preferenceId: preferenceId,
+      initPoint: initPoint,
+      sandboxInitPoint: sandboxInitPoint,
+      orderId: orderId,
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'] as String)
           : DateTime.now(),

@@ -20,7 +20,7 @@ final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   return useCase.execute(heroId);
 });
 
-final riderOrdersProvider = StreamProvider.family<List<Order>, String>((
+final riderOrdersProvider = StreamProvider.autoDispose.family<List<Order>, String>((
   ref,
   riderId,
 ) {
@@ -34,7 +34,7 @@ final riderOrdersProvider = StreamProvider.family<List<Order>, String>((
   return useCase.execute(riderId);
 });
 
-final orderByIdProvider = StreamProvider.family<Order?, String>((ref, orderId) {
+final orderByIdProvider = StreamProvider.autoDispose.family<Order?, String>((ref, orderId) {
   final auth = ref.watch(firebaseAuthProvider);
   final currentUid = auth.currentUser?.uid;
   if (currentUid == null) {
@@ -110,8 +110,8 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
         throw Exception('Debes completar tu perfil de rider.');
       }
 
-      final canAccept = riderProfile.canAcceptDeliveries == true;
       final isActive = riderProfile.isActive == true;
+      final isVerified = riderProfile.isVerified == true;
 
       // Business rule: bicycle riders can accept without full verification flow.
       if (riderVehicleType == VehicleType.bicycle) {
@@ -121,7 +121,13 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
           );
         }
       } else {
-        if (!canAccept) {
+        if (!isActive) {
+          throw Exception(
+            'Debes activar tu perfil de rider para aceptar pedidos',
+          );
+        }
+
+        if (!isVerified) {
           throw Exception('Rider no verificado para aceptar pedidos');
         }
       }

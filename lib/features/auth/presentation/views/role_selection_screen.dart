@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/user.dart';
 import '../../../hero/presentation/views/hero_home_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
+import 'unverified_email_screen.dart';
 import '../providers/auth_provider.dart';
 
 class RoleSelectionScreen extends ConsumerWidget {
@@ -51,6 +53,19 @@ class RoleSelectionScreen extends ConsumerWidget {
                       .read(authNotifierProvider.notifier)
                       .saveLastRole('hero');
                   if (context.mounted) {
+                    final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+                    final isEmailVerified = authUser?.emailVerified ?? false;
+                    if (!isEmailVerified || !user.contact.emailVerified) {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (_) => UnverifiedEmailScreen(
+                            userRole: UserRole.hero,
+                            email: user.email,
+                          ),
+                        ),
+                      );
+                      return;
+                    }
                     Navigator.of(context).pushReplacement(
                       MaterialPageRoute(
                         builder: (context) => const HeroHomeScreen(),
@@ -71,6 +86,19 @@ class RoleSelectionScreen extends ConsumerWidget {
                       .read(authNotifierProvider.notifier)
                       .saveLastRole('rider');
                   if (context.mounted) {
+                    final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+                    final isEmailVerified = authUser?.emailVerified ?? false;
+                    if (!isEmailVerified || !user.contact.emailVerified) {
+                      Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (_) => UnverifiedEmailScreen(
+                            userRole: UserRole.rider,
+                            email: user.email,
+                          ),
+                        ),
+                      );
+                      return;
+                    }
                     Navigator.of(context).pushReplacement(
                       MaterialPageRoute(
                         builder: (context) => const RiderHomeScreen(),

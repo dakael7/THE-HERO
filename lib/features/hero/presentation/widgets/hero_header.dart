@@ -256,52 +256,44 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
   }
 
   Widget _buildLogoSection() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: backgroundWhite.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: backgroundWhite.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: backgroundWhite,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Image.asset(
-              'assets/logo_1.png',
-              height: 28,
-              fit: BoxFit.contain,
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Text(
-            'TheHero',
-            style: TextStyle(
-              color: textGray900,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
+    const logoAsset = 'assets/logo_1.png';
+    const logoHeight = 60.0;
+    final strokeColor = backgroundWhite.withValues(alpha: 0.60);
+
+    Widget stroke(Offset offset) {
+      return Transform.translate(
+        offset: offset,
+        child: Image.asset(
+          logoAsset,
+          height: logoHeight,
+          fit: BoxFit.contain,
+          color: strokeColor,
+          colorBlendMode: BlendMode.srcIn,
+        ),
+      );
+    }
+
+    return Stack(
+      alignment: Alignment.centerLeft,
+      children: [
+        // Uniform subtle stroke around the transparent PNG
+        stroke(const Offset(1.6, 0)),
+        stroke(const Offset(-1.6, 0)),
+        stroke(const Offset(0, 1.6)),
+        stroke(const Offset(0, -1.6)),
+
+        // Main logo
+        Image.asset(
+          logoAsset,
+          height: logoHeight,
+          fit: BoxFit.contain,
+        ),
+      ],
     );
   }
 
   Widget _buildNotificationIcon() {
-    final badgeCount = ref.watch(
-      notificationsProvider.select(
-        (async) => async.maybeWhen(
-          data: (notifications) => notifications.where((n) => !n.read).length,
-          orElse: () => 0,
-        ),
-      ),
-    );
+    final badgeCount = ref.watch(notificationsUnseenCountProvider);
 
     return GestureDetector(
       onTap: () {
@@ -516,6 +508,7 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
   late final AnimationController _panelController;
   late final Animation<double> _panelOpacity;
   late final Animation<Offset> _panelOffset;
+  bool? _lastShowRecent;
 
   Color _conditionColor(OfferCondition condition) {
     switch (condition) {
@@ -566,22 +559,29 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
     final offersAsync = ref.watch(filteredOffersProvider);
     final showRecent = searchState.query.trim().isEmpty;
 
-    if (showRecent) {
-      _panelController.forward();
-    } else {
-      _panelController.reverse();
+    if (_lastShowRecent != showRecent) {
+      _lastShowRecent = showRecent;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (showRecent) {
+          _panelController.forward();
+        } else {
+          _panelController.reverse();
+        }
+      });
     }
 
     final isMobile = ResponsiveUtils.isMobile(context);
 
     final topPadding = isMobile ? 8.0 : 12.0;
+    final headerClearance = isMobile ? 28.0 : 32.0;
 
     return Container(
       color: backgroundGray50,
       padding: EdgeInsets.only(
         left: 16,
         right: 16,
-        top: topPadding,
+        top: topPadding + headerClearance,
         bottom: 16,
       ),
       child: AnimatedSwitcher(
@@ -707,16 +707,14 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                 children: [
                   // Filters section
                   const CategoryFilterChips(),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       SortOptionsButton(),
-                      SizedBox(width: 8),
-                      PriceRangeFilter(),
                     ],
                   ),
                   const ActiveFiltersIndicator(),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
 
                   // Results section
                   Expanded(
@@ -750,10 +748,11 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                           key: const ValueKey('results'),
                           itemCount: offers.length,
                           separatorBuilder: (_, _) =>
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 8),
                           itemBuilder: (context, index) {
                             final offer = offers[index];
                             return GestureDetector(
+                              key: ValueKey('offer_${offer.offerId}'),
                               onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -781,8 +780,13 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                                   colorCondition: _conditionColor(
                                     offer.condition,
                                   ),
-                                  price: offer.price,
+                                  category: offer.category,
+                                  availableQty: offer.availableQty,
+                                  viewCount: offer.viewCount,
+                                  orderCount: offer.orderCount,
                                   weight: offer.weight,
+                                  pickupGeo:
+                                      offer.itemLocationSnapshot?.geopoint,
                                   showShadow: false,
                                   imageUrl: offer.coverImageUrl,
                                   avgRating: offer.avgRating,

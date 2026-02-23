@@ -5,7 +5,13 @@ import '../../../../../core/constants/app_colors.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 
 class HelpCenterScreen extends ConsumerWidget {
-  const HelpCenterScreen({super.key});
+  final bool isRiderProfile;
+
+  const HelpCenterScreen({super.key, this.isRiderProfile = false});
+
+  static final Uri _termsAndConditionsUri = Uri.parse(
+    'https://theheroprojects.com/privacy-policy',
+  );
 
   static final Uri _riderSiiManualUri = Uri.parse(
     'https://firebasestorage.googleapis.com/v0/b/the-hero-67d93.firebasestorage.app/o/Docs%2FManual_SII_Rider_THE_HERO_SpA.pdf?alt=media&token=b553a420-4041-4bfe-89ef-a02824cb01e3',
@@ -107,20 +113,22 @@ class HelpCenterScreen extends ConsumerWidget {
             },
           ),
           const SizedBox(height: 8),
-          _HelpTile(
-            icon: Icons.payments_outlined,
-            title: 'Pagos',
-            subtitle: 'Métodos, cobros y reembolsos.',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Ayuda sobre pagos próximamente'),
-                  duration: Duration(milliseconds: 1500),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
+          if (isRiderProfile) ...[
+            _HelpTile(
+              icon: Icons.payments_outlined,
+              title: 'Pagos',
+              subtitle: 'Métodos, cobros y reembolsos.',
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Ayuda sobre pagos próximamente'),
+                    duration: Duration(milliseconds: 1500),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
           _HelpTile(
             icon: Icons.verified_user_outlined,
             title: 'Cuenta',
@@ -136,16 +144,29 @@ class HelpCenterScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           _HelpTile(
-            icon: Icons.description_outlined,
-            title: 'Manual Paso a Paso SII',
-            subtitle: 'Guía para Riders (SII).',
+            icon: Icons.gavel_outlined,
+            title: 'Términos y condiciones',
+            subtitle: 'Lee las condiciones de uso.',
             onTap: () async {
               await launchUrl(
-                _riderSiiManualUri,
+                _termsAndConditionsUri,
                 mode: LaunchMode.externalApplication,
               );
             },
           ),
+          const SizedBox(height: 8),
+          if (isRiderProfile)
+            _HelpTile(
+              icon: Icons.description_outlined,
+              title: 'Manual Paso a Paso SII',
+              subtitle: 'Guía para Riders (SII).',
+              onTap: () async {
+                await launchUrl(
+                  _riderSiiManualUri,
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+            ),
         ],
       ),
     );

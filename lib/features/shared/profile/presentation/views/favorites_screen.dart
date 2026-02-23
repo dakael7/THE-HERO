@@ -89,7 +89,10 @@ class FavoritesScreen extends ConsumerWidget {
                                 : offer.condition == OfferCondition.excellent
                                 ? Colors.blue
                                 : Colors.orange,
-                            price: offer.price,
+                            category: offer.category,
+                            availableQty: offer.availableQty,
+                            viewCount: offer.viewCount,
+                            orderCount: offer.orderCount,
                             weight: offer.weight,
                             imageUrl: offer.coverImageUrl,
                             avgRating: offer.avgRating,

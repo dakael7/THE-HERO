@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/utils/price_formatter.dart';
 import '../../../../../core/utils/weight_utils.dart';
+import '../../../../../data/providers/repository_providers.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../../domain/entities/offer_condition.dart';
 import '../../../../offers/presentation/providers/offer_comments_provider.dart';
-import '../../../../../data/providers/repository_providers.dart';
 import '../providers/profile_provider.dart';
-import './offer_form_screen.dart';
+import 'donation_questions_screen.dart';
 
 class SellerOfferDetailScreen extends ConsumerWidget {
   const SellerOfferDetailScreen({super.key, required this.offer});
@@ -99,7 +101,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final badgeColor = _conditionColor(offer.condition);
     final statusColor = _statusColor(offer.status);
-    final priceText = '\$${offer.price.toStringAsFixed(0)} CLP';
+    const priceText = 'Donación';
     final coverUrl = offer.coverImageUrl.trim();
     final hasCover = coverUrl.isNotEmpty;
     final isAsset = hasCover && coverUrl.startsWith('assets/');
@@ -109,7 +111,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
     }.toList();
 
     // Calcular ingresos (precio * cantidad vendida)
-    final revenue = offer.price * offer.orderCount;
+    final revenue = 0.0;
     final location = offer.itemLocationSnapshot;
     final Widget? locationWidget = location == null
         ? null
@@ -208,7 +210,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => OfferFormScreen(initialOffer: offer),
+                  builder: (_) => DonationQuestionsScreen(initialOffer: offer),
                 ),
               );
             },
@@ -397,7 +399,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                 _StatRow(
                   icon: Icons.attach_money,
                   label: 'Ingresos generados',
-                  value: '\$${revenue.toStringAsFixed(0)} CLP',
+                  value: '\$${formatPriceCL(revenue)} CLP',
                   color: const Color(0xFF10B981),
                 ),
               ],

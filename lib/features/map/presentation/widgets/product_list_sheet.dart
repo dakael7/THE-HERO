@@ -52,7 +52,7 @@ class ProductListSheet extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'Productos Cercanos',
+                  'Donaciones cercanas',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
@@ -270,21 +270,12 @@ class ProductListSheet extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Text(
-                            '\$${product.price.toStringAsFixed(0)}',
-                            style: const TextStyle(
+                          const Text(
+                            'Donación',
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w900,
                               color: primaryOrange,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'CLP',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: textGray600,
                             ),
                           ),
                         ],

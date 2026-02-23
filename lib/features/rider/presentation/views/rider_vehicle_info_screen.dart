@@ -42,7 +42,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
 
   @override
   Widget build(BuildContext context) {
-    final profileAsync = ref.watch(profileProvider);
+    final profileAsync = ref.watch(profileStreamProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -73,8 +73,8 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
           if (user == null) {
             return const Center(child: Text('Sesión requerida'));
           }
-
           final riderProfile = user.riderProfile;
+          final rutVerified = user.isRutVerified;
 
           if (!_bootstrappedVehicles) {
             _bootstrappedVehicles = true;
@@ -157,7 +157,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
           final activeTypeRaw = (riderProfile as dynamic)?.activeVehicleType as String?;
           final currentType = activeTypeRaw != null
               ? VehicleType.fromString(activeTypeRaw)
-              : user.riderProfile?.vehicle.type;
+              : riderProfile?.vehicle.type;
           final selectedType = _selected ?? currentType ?? VehicleType.bicycle;
 
           String? vehicleVerificationStatus(VehicleType type) {
@@ -283,6 +283,17 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                           onPressed: _saving
                               ? null
                               : () async {
+                                  if (!rutVerified) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Debes verificar tu RUT para verificar vehículos.',
+                                        ),
+                                        duration: Duration(seconds: 3),
+                                      ),
+                                    );
+                                    return;
+                                  }
                                   if (!canSaveSelected) {
                                     _showInfoDialog(
                                       context,
@@ -334,6 +345,17 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       enabled: true,
                       onTap: () => setState(() => _selected = VehicleType.motorcycle),
                       onPrimaryAction: () async {
+                        if (!rutVerified) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Debes verificar tu RUT para verificar vehículos.',
+                              ),
+                              duration: Duration(seconds: 3),
+                            ),
+                          );
+                          return;
+                        }
                         if (isVehicleVerified(VehicleType.motorcycle)) {
                           _showInfoDialog(
                             context,
@@ -368,6 +390,17 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       enabled: true,
                       onTap: () => setState(() => _selected = VehicleType.car),
                       onPrimaryAction: () async {
+                        if (!rutVerified) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Debes verificar tu RUT para verificar vehículos.',
+                              ),
+                              duration: Duration(seconds: 3),
+                            ),
+                          );
+                          return;
+                        }
                         if (isVehicleVerified(VehicleType.car)) {
                           _showInfoDialog(
                             context,
@@ -402,6 +435,17 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       enabled: true,
                       onTap: () => setState(() => _selected = VehicleType.truck),
                       onPrimaryAction: () async {
+                        if (!rutVerified) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Debes verificar tu RUT para verificar vehículos.',
+                              ),
+                              duration: Duration(seconds: 3),
+                            ),
+                          );
+                          return;
+                        }
                         if (isVehicleVerified(VehicleType.truck)) {
                           _showInfoDialog(
                             context,
@@ -443,8 +487,21 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
     setState(() => _saving = true);
     try {
       final firestore = ref.read(firebaseFirestoreProvider);
-      final profile = ref.read(profileProvider).value;
+      final profile = ref.read(profileStreamProvider).value;
       final riderProfile = profile?.riderProfile;
+      final rutVerified = profile?.isRutVerified ?? false;
+
+      if (!rutVerified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Debes verificar tu RUT para verificar vehículos.',
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
 
       Map<String, dynamic>? vehicleEntryMap(VehicleType type) {
         final rp = riderProfile as dynamic;
@@ -595,7 +652,10 @@ class _VehicleOptionTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -633,7 +693,6 @@ class _VehicleOptionTile extends StatelessWidget {
                               ],
                             ),
                           ),
-                          const Spacer(),
                           if (primaryActionLabel != null && onPrimaryAction != null)
                             TextButton(
                               onPressed: onPrimaryAction,

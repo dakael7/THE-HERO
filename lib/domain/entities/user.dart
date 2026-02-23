@@ -14,6 +14,8 @@ class User {
   final UserStatus status;
   final HeroProfile? heroProfile;
   final RiderProfile? riderProfile;
+  final String? verificationStatus;
+  final String? rutVerificationStatus;
 
   User({
     required this.id,
@@ -24,6 +26,8 @@ class User {
     required this.status,
     this.heroProfile,
     this.riderProfile,
+    this.verificationStatus,
+    this.rutVerificationStatus,
   });
 
   String get fullName => identity.fullName;
@@ -38,6 +42,11 @@ class User {
   bool get isRider => roles.contains(UserRole.rider);
   bool get hasMultipleRoles => roles.length > 1;
 
+  bool get isRutVerified {
+    final v = (rutVerificationStatus ?? verificationStatus)?.trim().toLowerCase();
+    return v == 'verified' || v == 'aprobado' || v == 'approved';
+  }
+
   bool get canActAsHero => isHero && heroProfile != null && heroProfile!.isActive;
 
   bool get canActAsRider => isRider && riderProfile != null && riderProfile!.canAcceptDeliveries;
@@ -51,6 +60,8 @@ class User {
     UserStatus? status,
     HeroProfile? heroProfile,
     RiderProfile? riderProfile,
+    String? verificationStatus,
+    String? rutVerificationStatus,
   }) {
     return User(
       id: id ?? this.id,
@@ -61,6 +72,8 @@ class User {
       status: status ?? this.status,
       heroProfile: heroProfile ?? this.heroProfile,
       riderProfile: riderProfile ?? this.riderProfile,
+      verificationStatus: verificationStatus ?? this.verificationStatus,
+      rutVerificationStatus: rutVerificationStatus ?? this.rutVerificationStatus,
     );
   }
 }

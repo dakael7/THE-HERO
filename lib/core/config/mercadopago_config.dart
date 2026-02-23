@@ -3,10 +3,10 @@ class MercadoPagoConfig {
   // Public Key - safe to include in frontend code
   // This is your TEST public key from MercadoPago
   static const String publicKey =
-      'APP_USR-34d6868f-93e3-4b9e-b3e5-c0823abe79e5';
+      'APP_USR-ad68e92c-e71f-4c0a-b531-3575d71b5ed6';
 
   // Environment - use 'sandbox' for testing, 'production' for live
-  static const String environment = 'production';
+  static const String environment = 'sandbox';
 
   static bool get isSandbox => environment.toLowerCase() == 'sandbox';
   static bool get isProduction => environment.toLowerCase() == 'production';

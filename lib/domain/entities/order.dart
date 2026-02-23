@@ -1,5 +1,6 @@
 import 'order_item.dart';
 import 'order_pickup.dart';
+import 'order_pickup_stop.dart';
 import 'order_delivery.dart';
 import 'order_requirements.dart';
 import 'order_rider.dart';
@@ -19,6 +20,7 @@ class Order {
   final double amountTotal;
   final String currency;
   final OrderPickup pickup;
+  final List<OrderPickupStop>? pickupStops;
   final OrderDelivery delivery;
   final OrderRequirements requirements;
   final OrderRider rider;
@@ -46,6 +48,7 @@ class Order {
     required this.amountTotal,
     required this.currency,
     required this.pickup,
+    this.pickupStops,
     required this.delivery,
     required this.requirements,
     required this.rider,
@@ -81,6 +84,7 @@ class Order {
     double? amountTotal,
     String? currency,
     OrderPickup? pickup,
+    List<OrderPickupStop>? pickupStops,
     OrderDelivery? delivery,
     OrderRequirements? requirements,
     OrderRider? rider,
@@ -108,6 +112,7 @@ class Order {
       amountTotal: amountTotal ?? this.amountTotal,
       currency: currency ?? this.currency,
       pickup: pickup ?? this.pickup,
+      pickupStops: pickupStops ?? this.pickupStops,
       delivery: delivery ?? this.delivery,
       requirements: requirements ?? this.requirements,
       rider: rider ?? this.rider,

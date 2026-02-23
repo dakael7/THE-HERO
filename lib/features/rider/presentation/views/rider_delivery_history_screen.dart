@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../domain/services/rider_commission_calculator.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
@@ -76,7 +77,9 @@ class RiderDeliveryHistoryScreen extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   final order = delivered[index];
                   final orderId = order.orderId;
-                  final fee = order.deliveryFee;
+                  final earnings = RiderCommissionCalculator.calculateCommission(
+                    deliveryFee: order.deliveryFee,
+                  );
 
                   return Container(
                     padding: const EdgeInsets.all(14),
@@ -134,7 +137,7 @@ class RiderDeliveryHistoryScreen extends ConsumerWidget {
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          '\$${fee.toStringAsFixed(0)}',
+                          '\$${earnings.netEarnings.toStringAsFixed(0)}',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w900,

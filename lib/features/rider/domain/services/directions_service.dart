@@ -28,71 +28,231 @@ class DirectionsService {
   final String apiKey;
 
   DirectionsService({String? apiKey})
-      : apiKey = apiKey ?? const String.fromEnvironment('GOOGLE_MAPS_API_KEY');
+      : apiKey = apiKey ??
+            (const String.fromEnvironment(
+                      'GOOGLE_DIRECTIONS_API_KEY',
+                      defaultValue: '',
+                    ).trim().isNotEmpty
+                ? const String.fromEnvironment('GOOGLE_DIRECTIONS_API_KEY')
+                : (const String.fromEnvironment('PLACES_API_KEY', defaultValue: '')
+                            .trim()
+                            .isNotEmpty
+                        ? const String.fromEnvironment('PLACES_API_KEY')
+                        : const String.fromEnvironment('GOOGLE_MAPS_API_KEY')));
 
   Future<DirectionsRoute> getRoute({
     required double pickupLat,
     required double pickupLng,
     required double deliveryLat,
     required double deliveryLng,
+    double? waypointLat,
+    double? waypointLng,
+    List<DirectionsPoint>? waypoints,
   }) async {
     if (apiKey.isEmpty) {
-      return _fallbackRoute(pickupLat, pickupLng, deliveryLat, deliveryLng);
+      // ignore: avoid_print
+      print(
+        '⚠️ Directions fallback (no apiKey) '
+        'origin=$pickupLat,$pickupLng '
+        'waypoint=${(waypointLat != null && waypointLng != null) ? '$waypointLat,$waypointLng' : '-'} '
+        'destination=$deliveryLat,$deliveryLng',
+      );
+      return _fallbackRoute(
+        pickupLat,
+        pickupLng,
+        deliveryLat,
+        deliveryLng,
+        waypointLat: waypointLat,
+        waypointLng: waypointLng,
+      );
     }
 
-    final uri = Uri.parse(
-      'https://maps.googleapis.com/maps/api/directions/json'
-      '?origin=$pickupLat,$pickupLng'
-      '&destination=$deliveryLat,$deliveryLng'
-      '&mode=driving'
-      '&key=$apiKey',
-    );
+    final singleWaypoint = (waypointLat != null && waypointLng != null)
+        ? DirectionsPoint(latitude: waypointLat, longitude: waypointLng)
+        : null;
 
-    try {
+    final mergedWaypoints = <DirectionsPoint>[];
+    if (waypoints != null && waypoints.isNotEmpty) {
+      mergedWaypoints.addAll(waypoints);
+    }
+    if (singleWaypoint != null) {
+      mergedWaypoints.add(singleWaypoint);
+    }
+
+    // Google Directions API: waypoint limits depend on plan. Keep a conservative cap.
+    final cappedWaypoints =
+        mergedWaypoints.length > 23 ? mergedWaypoints.take(23).toList() : mergedWaypoints;
+    final hasWaypoint = cappedWaypoints.isNotEmpty;
+
+    Uri _buildUri({required String mode, required bool useViaWaypoint}) {
+      final waypointParam = !hasWaypoint
+          ? ''
+          : (() {
+              final wp = cappedWaypoints
+                  .map(
+                    (p) =>
+                        '${useViaWaypoint ? 'via:' : ''}${p.latitude},${p.longitude}',
+                  )
+                  .join('|');
+              return '&waypoints=$wp';
+            })();
+
+      return Uri.parse(
+        'https://maps.googleapis.com/maps/api/directions/json'
+        '?origin=$pickupLat,$pickupLng'
+        '&destination=$deliveryLat,$deliveryLng'
+        '$waypointParam'
+        '&mode=$mode'
+        '&alternatives=false'
+        '&language=es'
+        '&region=ve'
+        '&key=$apiKey',
+      );
+    }
+
+    Future<DirectionsRoute?> _try({required String mode, required bool useViaWaypoint}) async {
+      final uri = _buildUri(mode: mode, useViaWaypoint: useViaWaypoint);
       final res = await http.get(uri);
       if (res.statusCode != 200) {
-        return _fallbackRoute(pickupLat, pickupLng, deliveryLat, deliveryLng);
+        // ignore: avoid_print
+        print(
+          '⚠️ Directions HTTP ${res.statusCode} mode=$mode via=$useViaWaypoint '
+          'origin=$pickupLat,$pickupLng '
+          'waypoint=${hasWaypoint ? '$waypointLat,$waypointLng' : '-'} '
+          'destination=$deliveryLat,$deliveryLng',
+        );
+        return null;
       }
 
       final data = json.decode(res.body) as Map<String, dynamic>;
+      final status = data['status']?.toString();
+      if (status != null && status != 'OK') {
+        final message = data['error_message']?.toString();
+        // ignore: avoid_print
+        print(
+          '⚠️ Directions API status=$status mode=$mode via=$useViaWaypoint '
+          'origin=$pickupLat,$pickupLng '
+          'waypoint=${hasWaypoint ? '${cappedWaypoints.length} stops' : '-'} '
+          'destination=$deliveryLat,$deliveryLng '
+          'message=${message ?? ''}',
+        );
+        return null;
+      }
+
       final routes = (data['routes'] as List?) ?? [];
       if (routes.isEmpty) {
-        return _fallbackRoute(pickupLat, pickupLng, deliveryLat, deliveryLng);
+        return null;
       }
 
       final route = routes.first as Map<String, dynamic>;
       final legs = (route['legs'] as List?) ?? [];
-      final leg = legs.isNotEmpty ? legs.first as Map<String, dynamic> : <String, dynamic>{};
+      final totalDistanceMeters = legs
+          .map((l) => (l as Map<String, dynamic>)['distance']?['value'] as num?)
+          .whereType<num>()
+          .fold<double>(0.0, (sum, v) => sum + v.toDouble());
+      final totalDurationSeconds = legs
+          .map((l) => (l as Map<String, dynamic>)['duration']?['value'] as num?)
+          .whereType<num>()
+          .fold<int>(0, (sum, v) => sum + v.toInt());
 
-      final distanceMeters = (leg['distance']?['value'] as num?)?.toDouble();
-      final durationSeconds = (leg['duration']?['value'] as num?)?.toInt();
       final overview = (route['overview_polyline']?['points'] as String?) ?? '';
       final decoded = overview.isNotEmpty ? _decodePolyline(overview) : <DirectionsPoint>[];
-
       if (decoded.isEmpty) {
-        return _fallbackRoute(pickupLat, pickupLng, deliveryLat, deliveryLng);
+        return null;
       }
+
+      // ignore: avoid_print
+      print(
+        '✅ Directions OK mode=$mode via=$useViaWaypoint '
+        'origin=$pickupLat,$pickupLng '
+        'waypoint=${hasWaypoint ? '${cappedWaypoints.length} stops' : '-'} '
+        'destination=$deliveryLat,$deliveryLng '
+        'points=${decoded.length}',
+      );
 
       return DirectionsRoute(
         path: decoded,
-        distanceMeters: distanceMeters ??
-            Distance().as(
-              LengthUnit.Meter,
-              LatLng(pickupLat, pickupLng),
-              LatLng(deliveryLat, deliveryLng),
-            ),
-        durationSeconds: durationSeconds ??
-            (Distance().as(
-                      LengthUnit.Meter,
-                      LatLng(pickupLat, pickupLng),
-                      LatLng(deliveryLat, deliveryLng),
-                    ) /
-                    8.3)
-                .round(),
+        distanceMeters: totalDistanceMeters > 0
+            ? totalDistanceMeters
+            : (() {
+                final d = Distance();
+                if (hasWaypoint) {
+                  final points = <LatLng>[LatLng(pickupLat, pickupLng)];
+                  for (final wp in cappedWaypoints) {
+                    points.add(LatLng(wp.latitude, wp.longitude));
+                  }
+                  points.add(LatLng(deliveryLat, deliveryLng));
+                  var sum = 0.0;
+                  for (var i = 0; i < points.length - 1; i++) {
+                    sum += d.as(LengthUnit.Meter, points[i], points[i + 1]);
+                  }
+                  return sum;
+                }
+                return d.as(
+                  LengthUnit.Meter,
+                  LatLng(pickupLat, pickupLng),
+                  LatLng(deliveryLat, deliveryLng),
+                );
+              })(),
+        durationSeconds: totalDurationSeconds > 0
+            ? totalDurationSeconds
+            : (() {
+                final d = Distance();
+                final meters = hasWaypoint
+                    ? (() {
+                        final points = <LatLng>[LatLng(pickupLat, pickupLng)];
+                        for (final wp in cappedWaypoints) {
+                          points.add(LatLng(wp.latitude, wp.longitude));
+                        }
+                        points.add(LatLng(deliveryLat, deliveryLng));
+                        var sum = 0.0;
+                        for (var i = 0; i < points.length - 1; i++) {
+                          sum += d.as(LengthUnit.Meter, points[i], points[i + 1]);
+                        }
+                        return sum;
+                      })()
+                    : d.as(
+                        LengthUnit.Meter,
+                        LatLng(pickupLat, pickupLng),
+                        LatLng(deliveryLat, deliveryLng),
+                      );
+                return (meters / 8.3).round();
+              })(),
       );
-    } catch (_) {
-      return _fallbackRoute(pickupLat, pickupLng, deliveryLat, deliveryLng);
     }
+
+    try {
+      // When using waypoints, ZERO_RESULTS is common with strict 'via:'.
+      // Try progressively looser requests.
+      final attempts = <({String mode, bool via})>[
+        (mode: 'driving', via: true),
+        (mode: 'driving', via: false),
+      ];
+
+      for (final a in attempts) {
+        final route = await _try(mode: a.mode, useViaWaypoint: a.via);
+        if (route != null) return route;
+        if (!hasWaypoint) break;
+      }
+    } catch (_) {
+      // fallthrough
+    }
+
+    // ignore: avoid_print
+    print(
+      '⚠️ Directions fallback (api failed) '
+      'origin=$pickupLat,$pickupLng '
+      'waypoint=${(waypointLat != null && waypointLng != null) ? '$waypointLat,$waypointLng' : '-'} '
+      'destination=$deliveryLat,$deliveryLng',
+    );
+    return _fallbackRoute(
+      pickupLat,
+      pickupLng,
+      deliveryLat,
+      deliveryLng,
+      waypointLat: waypointLat,
+      waypointLng: waypointLng,
+    );
   }
 
   DirectionsRoute _fallbackRoute(
@@ -100,20 +260,53 @@ class DirectionsService {
     double pickupLng,
     double deliveryLat,
     double deliveryLng,
+    {
+    double? waypointLat,
+    double? waypointLng,
+  }
   ) {
     final distanceCalc = Distance();
-    final distanceMeters = distanceCalc.as(
-      LengthUnit.Meter,
-      LatLng(pickupLat, pickupLng),
-      LatLng(deliveryLat, deliveryLng),
-    );
+    final wLat = waypointLat;
+    final wLng = waypointLng;
+    final hasWaypoint = wLat != null && wLng != null;
+
+    final segments = <List<DirectionsPoint>>[];
+    if (hasWaypoint) {
+      segments.add(
+        [
+          DirectionsPoint(latitude: pickupLat, longitude: pickupLng),
+          DirectionsPoint(latitude: wLat, longitude: wLng),
+        ],
+      );
+      segments.add(
+        [
+          DirectionsPoint(latitude: wLat, longitude: wLng),
+          DirectionsPoint(latitude: deliveryLat, longitude: deliveryLng),
+        ],
+      );
+    } else {
+      segments.add(
+        [
+          DirectionsPoint(latitude: pickupLat, longitude: pickupLng),
+          DirectionsPoint(latitude: deliveryLat, longitude: deliveryLng),
+        ],
+      );
+    }
+
+    final distanceMeters = segments.fold<double>(0.0, (sum, seg) {
+      final a = seg.first;
+      final b = seg.last;
+      return sum +
+          distanceCalc.as(
+            LengthUnit.Meter,
+            LatLng(a.latitude, a.longitude),
+            LatLng(b.latitude, b.longitude),
+          );
+    });
     final durationSeconds = (distanceMeters / 8.3).round();
 
     return DirectionsRoute(
-      path: [
-        DirectionsPoint(latitude: pickupLat, longitude: pickupLng),
-        DirectionsPoint(latitude: deliveryLat, longitude: deliveryLng),
-      ],
+      path: segments.expand((s) => s).toList(),
       distanceMeters: distanceMeters,
       durationSeconds: durationSeconds,
     );

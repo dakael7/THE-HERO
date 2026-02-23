@@ -21,42 +21,61 @@ class _PickupScheduleSelectorState extends State<PickupScheduleSelector> {
   late TimeOfDay _startTime;
   late TimeOfDay _endTime;
 
-  @override
-  void initState() {
-    super.initState();
-
-    // Initialize from initial schedule or use defaults
-    if (widget.initialSchedule != null) {
-      _selectedDays = widget.initialSchedule!.availableDays.toSet();
-      final firstDay = widget.initialSchedule!.availableDays.first;
-      final timeRange = widget.initialSchedule!.timeRanges[firstDay];
+  void _applyInitialSchedule(PickupSchedule? schedule) {
+    if (schedule != null && schedule.availableDays.isNotEmpty) {
+      _selectedDays = schedule.availableDays.toSet();
+      final firstDay = schedule.availableDays.first;
+      final timeRange = schedule.timeRanges[firstDay];
       if (timeRange != null) {
         final startParts = timeRange.start.split(':');
         final endParts = timeRange.end.split(':');
         _startTime = TimeOfDay(
-          hour: int.parse(startParts[0]),
-          minute: int.parse(startParts[1]),
+          hour: int.tryParse(startParts.first) ?? 9,
+          minute:
+              startParts.length > 1 ? (int.tryParse(startParts[1]) ?? 0) : 0,
         );
         _endTime = TimeOfDay(
-          hour: int.parse(endParts[0]),
-          minute: int.parse(endParts[1]),
+          hour: int.tryParse(endParts.first) ?? 18,
+          minute: endParts.length > 1 ? (int.tryParse(endParts[1]) ?? 0) : 0,
         );
       } else {
         _startTime = const TimeOfDay(hour: 9, minute: 0);
         _endTime = const TimeOfDay(hour: 18, minute: 0);
       }
-    } else {
-      _selectedDays = {
-        WeekDay.monday,
-        WeekDay.tuesday,
-        WeekDay.wednesday,
-        WeekDay.thursday,
-        WeekDay.friday,
-      };
-      _startTime = const TimeOfDay(hour: 9, minute: 0);
-      _endTime = const TimeOfDay(hour: 18, minute: 0);
+      return;
     }
 
+    _selectedDays = {
+      WeekDay.monday,
+      WeekDay.tuesday,
+      WeekDay.wednesday,
+      WeekDay.thursday,
+      WeekDay.friday,
+    };
+    _startTime = const TimeOfDay(hour: 9, minute: 0);
+    _endTime = const TimeOfDay(hour: 18, minute: 0);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Initialize from initial schedule or use defaults
+    _applyInitialSchedule(widget.initialSchedule);
+  }
+
+  @override
+  void didUpdateWidget(covariant PickupScheduleSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final oldJson = oldWidget.initialSchedule?.toJson();
+    final newJson = widget.initialSchedule?.toJson();
+
+    if (oldJson.toString() == newJson.toString()) return;
+
+    setState(() {
+      _applyInitialSchedule(widget.initialSchedule);
+    });
   }
 
   @override

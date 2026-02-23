@@ -1,4 +1,5 @@
 import '../../entities/order.dart';
+import '../../entities/order_status.dart';
 import '../../repositories/orders_repository.dart';
 import '../../repositories/offers_repository.dart';
 
@@ -15,8 +16,13 @@ class CreateOrderUseCase {
   Future<Order> execute(Order order) async {
     final createdOrder = await _ordersRepository.createOrder(order);
 
-    for (final item in order.items) {
-      await _offersRepository.decrementStock(item.offerId, item.qty);
+    // Only decrement stock immediately for orders that are already operational.
+    // For MercadoPago orders (pending payment), stock is decremented server-side
+    // after payment approval.
+    if (order.status != OrderStatus.pendingPayment) {
+      for (final item in order.items) {
+        await _offersRepository.decrementStock(item.offerId, item.qty);
+      }
     }
 
     return createdOrder;

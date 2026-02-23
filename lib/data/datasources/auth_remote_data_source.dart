@@ -58,6 +58,32 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }) : _firebaseAuth = firebaseAuth,
        _firestore = firestore;
 
+  String _normalizeRutForStorage(String raw) {
+    final cleaned = raw
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll('.', '')
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll(RegExp(r'[^0-9K-]'), '');
+
+    if (cleaned.isEmpty) return raw.trim();
+
+    final withDash = cleaned.contains('-')
+        ? cleaned
+        : cleaned.length >= 2
+            ? '${cleaned.substring(0, cleaned.length - 1)}-${cleaned.substring(cleaned.length - 1)}'
+            : cleaned;
+
+    final match = RegExp(r'^(\d{7,8})-([0-9K])$').firstMatch(withDash);
+    if (match == null) {
+      return raw.trim();
+    }
+
+    return '${match.group(1)}-${match.group(2)}';
+  }
+
   Future<void> _sendVerificationEmail(User user) async {
     try {
       await user.sendEmailVerification();
@@ -70,6 +96,24 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'contact.emailVerified': true,
       });
     }
+  }
+
+  Future<void> _assertRutNotRegistered({
+    required String normalizedRut,
+    String? ignoreUserId,
+  }) async {
+    final snapshot = await _firestore
+        .collection('users')
+        .where('identity.documentId', isEqualTo: normalizedRut)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isEmpty) return;
+
+    final existingId = snapshot.docs.first.id;
+    if (ignoreUserId != null && existingId == ignoreUserId) return;
+
+    throw Exception('Este RUT ya está registrado.');
   }
 
   @override
@@ -155,6 +199,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Nombre y apellido son obligatorios.');
       }
 
+      final normalizedRut = _normalizeRutForStorage(rut);
+
       final userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -165,6 +211,15 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Error al crear usuario');
       }
 
+      try {
+        await _assertRutNotRegistered(normalizedRut: normalizedRut);
+      } catch (e) {
+        try {
+          await user.delete();
+        } catch (_) {}
+        rethrow;
+      }
+
       await _sendVerificationEmail(user);
 
       final now = DateTime.now().toIso8601String();
@@ -172,7 +227,14 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'identity': {
           'firstName': firstName,
           'lastName': lastName,
-          'documentId': rut,
+          'documentId': normalizedRut,
+        },
+        'rutVerification': {
+          'status': 'pending',
+          'requestId': null,
+          'submittedAt': null,
+          'verifiedAt': null,
+          'mode': null,
         },
         'contact': {
           'email': email.toLowerCase(),
@@ -229,6 +291,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Nombre y apellido son obligatorios.');
       }
 
+      final normalizedRut = _normalizeRutForStorage(rut);
+
       final userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -239,6 +303,15 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         throw Exception('Error al crear usuario');
       }
 
+      try {
+        await _assertRutNotRegistered(normalizedRut: normalizedRut);
+      } catch (e) {
+        try {
+          await user.delete();
+        } catch (_) {}
+        rethrow;
+      }
+
       await _sendVerificationEmail(user);
 
       final now = DateTime.now().toIso8601String();
@@ -246,7 +319,14 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'identity': {
           'firstName': firstName,
           'lastName': lastName,
-          'documentId': rut,
+          'documentId': normalizedRut,
+        },
+        'rutVerification': {
+          'status': 'pending',
+          'requestId': null,
+          'submittedAt': null,
+          'verifiedAt': null,
+          'mode': null,
         },
         'contact': {
           'email': email.toLowerCase(),
@@ -392,6 +472,13 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           'lastName': lastName,
           'documentId': '',
         },
+        'rutVerification': {
+          'status': 'pending',
+          'requestId': null,
+          'submittedAt': null,
+          'verifiedAt': null,
+          'mode': null,
+        },
         'contact': {
           'email': email.toLowerCase(),
           'phoneNumber': '',
@@ -471,7 +558,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String phone,
   }) async {
     try {
+      if (firstName.isEmpty || lastName.isEmpty) {
+        throw Exception('Nombre y apellido son obligatorios.');
+      }
+
       final now = DateTime.now().toIso8601String();
+      final normalizedRut = _normalizeRutForStorage(rut);
+
+      await _assertRutNotRegistered(
+        normalizedRut: normalizedRut,
+        ignoreUserId: uid,
+      );
 
       final riderProfileData = {
         'isActive': false,
@@ -492,7 +589,14 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       await _firestore.collection('users').doc(uid).update({
         'identity.firstName': firstName,
         'identity.lastName': lastName,
-        'identity.documentId': rut,
+        'identity.documentId': normalizedRut,
+        'rutVerification': {
+          'status': 'pending',
+          'requestId': null,
+          'submittedAt': null,
+          'verifiedAt': null,
+          'mode': null,
+        },
         'contact.phoneNumber': phone,
         'status.lastUpdated': now,
         'roles': FieldValue.arrayUnion(['rider']),
@@ -519,7 +623,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String phone,
   }) async {
     try {
+      if (firstName.isEmpty || lastName.isEmpty) {
+        throw Exception('Nombre y apellido son obligatorios.');
+      }
+
       final now = DateTime.now().toIso8601String();
+      final normalizedRut = _normalizeRutForStorage(rut);
+
+      await _assertRutNotRegistered(
+        normalizedRut: normalizedRut,
+        ignoreUserId: uid,
+      );
 
       final heroProfileData = {
         'isActive': true,
@@ -531,7 +645,14 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       await _firestore.collection('users').doc(uid).update({
         'identity.firstName': firstName,
         'identity.lastName': lastName,
-        'identity.documentId': rut,
+        'identity.documentId': normalizedRut,
+        'rutVerification': {
+          'status': 'pending',
+          'requestId': null,
+          'submittedAt': null,
+          'verifiedAt': null,
+          'mode': null,
+        },
         'contact.phoneNumber': phone,
         'status.lastUpdated': now,
         'roles': FieldValue.arrayUnion(['hero']),

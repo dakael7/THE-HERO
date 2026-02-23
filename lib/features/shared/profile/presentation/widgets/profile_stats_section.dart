@@ -5,12 +5,18 @@ class ProfileStatsSection extends StatelessWidget {
   final int publications;
   final int favorites;
   final int purchases;
+  final String publicationsLabel;
+  final String favoritesLabel;
+  final String purchasesLabel;
 
   const ProfileStatsSection({
     super.key,
     required this.publications,
     required this.favorites,
     required this.purchases,
+    this.publicationsLabel = 'Publicaciones',
+    this.favoritesLabel = 'Favoritos',
+    this.purchasesLabel = 'Compras',
   });
 
   @override
@@ -38,15 +44,15 @@ class ProfileStatsSection extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _ProfileStatItem(
-              label: 'Publicaciones',
+              label: publicationsLabel,
               value: publications.toString(),
             ),
             _ProfileStatItem(
-              label: 'Favoritos',
+              label: favoritesLabel,
               value: favorites.toString(),
             ),
             _ProfileStatItem(
-              label: 'Compras',
+              label: purchasesLabel,
               value: purchases.toString(),
             ),
           ],

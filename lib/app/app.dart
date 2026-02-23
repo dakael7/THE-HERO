@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 
 import '../core/constants/app_colors.dart';
 import '../core/services/notification_handler.dart';
+import '../domain/entities/user.dart';
 import '../features/auth/presentation/views/login_page.dart';
 import '../features/auth/presentation/providers/session_provider.dart';
+import '../features/auth/presentation/views/unverified_email_screen.dart';
 import '../features/hero/presentation/views/hero_home_screen.dart';
 import '../features/rider/presentation/views/rider_home_screen.dart';
 
@@ -75,6 +78,16 @@ class App extends ConsumerWidget {
       data: (user) {
         if (user == null) {
           return const LoginPage();
+        }
+
+        final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+        final isEmailVerified = authUser?.emailVerified ?? false;
+
+        if (!isEmailVerified || !user.contact.emailVerified) {
+          return UnverifiedEmailScreen(
+            userRole: user.isRider ? UserRole.rider : UserRole.hero,
+            email: user.email,
+          );
         }
 
         // Navegar directamente según el perfil que tenga el usuario

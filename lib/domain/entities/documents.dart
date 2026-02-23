@@ -16,11 +16,10 @@ class Documents {
     if (vehicleType == VehicleType.bicycle) {
       return true;
     }
-    return idCardUrl.isNotEmpty && 
-           licenseUrl != null && 
-           licenseUrl!.isNotEmpty &&
-           padronUrl != null && 
-           padronUrl!.isNotEmpty;
+    return licenseUrl != null &&
+        licenseUrl!.isNotEmpty &&
+        padronUrl != null &&
+        padronUrl!.isNotEmpty;
   }
 
   Documents copyWith({

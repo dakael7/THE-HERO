@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import '../../../domain/entities/order.dart';
 import '../../../domain/entities/order_pickup.dart';
+import '../../../domain/entities/order_pickup_stop.dart';
 import '../../../domain/entities/order_delivery.dart';
 import '../../../domain/entities/order_requirements.dart';
 import '../../../domain/entities/order_rider.dart';
@@ -19,10 +20,12 @@ class OrderBuilder {
   /// This creates a local preview of the order before submission.
   /// The orderId will be empty and should be set by Firestore when creating the order.
   static Order buildOrderFromCart({
+    String orderId = '',
     required List<CartItem> cartItems,
     required CartSummary cartSummary,
     required String heroId,
     required OrderDelivery delivery,
+    OrderStatus status = OrderStatus.pendingPayment,
     String pickupAddress = '',
     firestore.GeoPoint? pickupGeo,
     String pickupGeohash = '',
@@ -65,6 +68,29 @@ class OrderBuilder {
       instructions: pickupInstructions,
     );
 
+    final pickupStops = <OrderPickupStop>[];
+    final byKey = <String, Set<String>>{};
+    for (final item in cartItems) {
+      final geo = item.pickupGeo;
+      if (geo == null) continue;
+      if (geo.latitude == 0.0 && geo.longitude == 0.0) continue;
+      final key = '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
+      (byKey[key] ??= <String>{}).add(item.offerId);
+    }
+
+    for (final entry in byKey.entries) {
+      final parts = entry.key.split(',');
+      final lat = double.tryParse(parts.first) ?? 0.0;
+      final lng = double.tryParse(parts.length > 1 ? parts[1] : '') ?? 0.0;
+      pickupStops.add(
+        OrderPickupStop(
+          geo: firestore.GeoPoint(lat, lng),
+          addressSnapshot: '',
+          offerIds: entry.value.toList(),
+        ),
+      );
+    }
+
     // Create order requirements
     final requirements = OrderRequirements(
       weightKg: totalWeight,
@@ -80,7 +106,7 @@ class OrderBuilder {
 
     // Build the order
     return Order(
-      orderId: '', // Will be set by Firestore
+      orderId: orderId,
       heroId: heroId,
       items: orderItems,
       subtotal: cartSummary.subtotal,
@@ -90,10 +116,11 @@ class OrderBuilder {
       amountTotal: cartSummary.total,
       currency: 'CLP',
       pickup: pickup,
+      pickupStops: pickupStops.isEmpty ? null : pickupStops,
       delivery: delivery,
       requirements: requirements,
       rider: rider,
-      status: OrderStatus.created,
+      status: status,
       timestamps: timestamps,
       updatedAt: now,
       version: 1,

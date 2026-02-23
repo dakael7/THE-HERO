@@ -1,14 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../data/providers/repository_providers.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 import '../providers/notifications_provider.dart';
 
-class NotificationsScreen extends ConsumerWidget {
+const _notificationsLastSeenKey = 'notifications_last_seen_at_ms';
+
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotificationsScreen> createState() =>
+      _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  bool _didMarkSeen = false;
+  final Set<String> _removedNotificationIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_markAllAsSeen);
+  }
+
+  Future<void> _markAllAsSeen() async {
+    if (_didMarkSeen) return;
+    _didMarkSeen = true;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        _notificationsLastSeenKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      ref.invalidate(notificationsLastSeenProvider);
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final asyncNotifications = ref.watch(notificationsProvider);
 
     return Scaffold(
@@ -36,7 +71,11 @@ class NotificationsScreen extends ConsumerWidget {
       ),
       body: asyncNotifications.when(
         data: (notifications) {
-          if (notifications.isEmpty) {
+          final visible = notifications
+              .where((n) => !_removedNotificationIds.contains(n.id))
+              .toList();
+
+          if (visible.isEmpty) {
             return const Center(
               child: Text('No tienes avisos por ahora'),
             );
@@ -44,17 +83,55 @@ class NotificationsScreen extends ConsumerWidget {
 
           return ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: notifications.length,
+            itemCount: visible.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
-              final item = notifications[index];
-              return _NotificationCard(
-                title: item.title,
-                subtitle: item.body,
-                time: item.createdAt.toLocal().toString(),
-                icon: item.read
-                    ? Icons.notifications_none_outlined
-                    : Icons.notifications_active_outlined,
+              final item = visible[index];
+              return Dismissible(
+                key: ValueKey(item.id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  alignment: Alignment.centerRight,
+                  child: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.white,
+                  ),
+                ),
+                onDismissed: (_) async {
+                  setState(() {
+                    _removedNotificationIds.add(item.id);
+                  });
+
+                  try {
+                    final repo = ref.read(notificationRepositoryProvider);
+                    await repo.deleteNotification(item.id);
+                    ref.invalidate(notificationsProvider);
+                  } catch (e) {
+                    if (mounted) {
+                      setState(() {
+                        _removedNotificationIds.remove(item.id);
+                      });
+                    }
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('No se pudo eliminar: $e'),
+                      ),
+                    );
+                    ref.invalidate(notificationsProvider);
+                  }
+                },
+                child: _NotificationCard(
+                  title: item.title,
+                  subtitle: item.body,
+                  time: item.createdAt.toLocal().toString(),
+                  icon: Icons.notifications_none_outlined,
+                ),
               );
             },
           );

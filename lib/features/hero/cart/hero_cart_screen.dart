@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/price_formatter.dart';
 import '../../../core/utils/weight_utils.dart';
 import 'cart_provider.dart';
 import 'cart_item.dart';
-import 'cart_summary_provider.dart';
 import 'checkout_screen.dart';
+import '../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../shared/profile/presentation/views/rut_verification_screen.dart';
 
 class HeroCartScreen extends ConsumerWidget {
   const HeroCartScreen({super.key});
@@ -14,7 +16,6 @@ class HeroCartScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cartItems = ref.watch(cartProvider);
-    final summary = ref.watch(cartSummaryProvider);
     final totalItems = cartItems.fold<int>(
       0,
       (sum, item) => sum + item.quantity,
@@ -93,111 +94,6 @@ class HeroCartScreen extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: const [
-                            Icon(
-                              Icons.receipt_long,
-                              color: textGray700,
-                              size: 18,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Resumen de pago',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: textGray900,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFFF2E5), Color(0xFFFFFFFF)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: borderGray100),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 12,
-                          ),
-                          child: Column(
-                            children: [
-                              _buildSummaryRow(
-                                'Subtotal (Donación):',
-                                _formatPrice(summary.subtotal),
-                                fontSize: 13,
-                              ),
-                              const SizedBox(height: 8),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildSummaryRow(
-                                    'Envío:',
-                                    _formatPrice(summary.shippingCost),
-                                    fontSize: 13,
-                                  ),
-                                  if (summary.shippingBreakdown != null) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      summary.shippingBreakdown!,
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: textGray600,
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              _buildSummaryRow(
-                                'Comisión de servicio:',
-                                _formatPrice(summary.serviceFee),
-                                fontSize: 13,
-                              ),
-                              const SizedBox(height: 8),
-                              _buildSummaryRow(
-                                'Impuestos (IVA 19%):',
-                                _formatPrice(summary.tax),
-                                fontSize: 13,
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                                child: Container(
-                                  height: 1,
-                                  color: borderGray100,
-                                ),
-                              ),
-                              _buildSummaryRow(
-                                'Total:',
-                                _formatPrice(summary.total),
-                                isBold: true,
-                                fontSize: 17,
-                              ),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  '* Peso total: ${formatWeightKg(summary.totalWeight)}',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: textGray600,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -212,6 +108,24 @@ class HeroCartScreen extends ConsumerWidget {
                               ),
                             ),
                             onPressed: () {
+                              final user = ref.read(profileStreamProvider).value;
+                              if (user != null && !user.isRutVerified) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Debes verificar tu RUT para proceder al pago.',
+                                    ),
+                                    duration: Duration(seconds: 3),
+                                  ),
+                                );
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const RutVerificationScreen(),
+                                  ),
+                                );
+                                return;
+                              }
                               Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) => const CheckoutScreen(),
@@ -234,35 +148,6 @@ class HeroCartScreen extends ConsumerWidget {
                 ),
               ],
             ),
-    );
-  }
-
-  Widget _buildSummaryRow(
-    String label,
-    String value, {
-    bool isBold = false,
-    double fontSize = 14,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
-            color: textGray900,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
-            color: textGray900,
-          ),
-        ),
-      ],
     );
   }
 
@@ -383,7 +268,7 @@ class _CartItemTile extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '\$${item.price.toStringAsFixed(0)}',
+                        '\$${formatPriceCL(item.price)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14,
@@ -482,8 +367,4 @@ class _QtyButton extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatPrice(double value) {
-  return '\u001e${value.toStringAsFixed(0)}'.replaceFirst('\u001e', r'$');
 }

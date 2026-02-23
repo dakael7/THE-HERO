@@ -159,8 +159,6 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
                               final product = entry.value;
                               final isLast =
                                   index == searchState.results.length - 1;
-                              final price =
-                                  (product['price'] as double?) ?? 45990.0;
                               final weight =
                                   (product['weight'] as double?) ?? 0.5;
                               return Column(
@@ -175,7 +173,16 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
                                       name: product['name'],
                                       condition: product['condition'],
                                       colorCondition: product['colorCondition'],
-                                      price: price,
+                                      category:
+                                          (product['category'] as String?) ??
+                                          'Donación',
+                                      availableQty:
+                                          (product['availableQty'] as int?) ??
+                                          1,
+                                      viewCount:
+                                          (product['viewCount'] as int?) ?? 0,
+                                      orderCount:
+                                          (product['orderCount'] as int?) ?? 0,
                                       weight: weight,
                                       showShadow: false,
                                     ),

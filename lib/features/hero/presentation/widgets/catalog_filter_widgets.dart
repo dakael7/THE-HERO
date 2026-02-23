@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/price_parser.dart';
 import '../providers/catalog_filters_provider.dart';
 
 /// Search bar widget for catalog
@@ -270,8 +271,8 @@ class _PriceRangeFilterState extends ConsumerState<PriceRangeFilter> {
           ),
           ElevatedButton(
             onPressed: () {
-              final min = double.tryParse(_minController.text);
-              final max = double.tryParse(_maxController.text);
+              final min = parseLocalizedPrice(_minController.text);
+              final max = parseLocalizedPrice(_maxController.text);
 
               ref
                   .read(catalogFiltersProvider.notifier)

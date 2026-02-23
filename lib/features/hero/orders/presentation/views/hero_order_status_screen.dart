@@ -47,6 +47,7 @@ class HeroOrderStatusScreen extends ConsumerWidget {
                   'Necesitas iniciar sesión para ver el estado del pedido.',
             );
           }
+
           final orderAsync = ref.watch(orderByIdProvider(orderId));
           return orderAsync.when(
             loading: () => const Center(
@@ -68,6 +69,190 @@ class HeroOrderStatusScreen extends ConsumerWidget {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+class _PickupStopsSummary extends StatelessWidget {
+  final Order order;
+  const _PickupStopsSummary({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final stops = order.pickupStops;
+    if (stops == null || stops.isEmpty) {
+      return _row(
+        'Recogida',
+        order.pickup.addressSnapshot.isNotEmpty
+            ? order.pickup.addressSnapshot
+            : 'Sin dirección',
+      );
+    }
+
+    return _row(
+      'Recogidas',
+      '${stops.length} punto${stops.length == 1 ? '' : 's'}',
+    );
+  }
+
+  Widget _row(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: textGray700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: textGray900,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PickupStopsCard extends StatelessWidget {
+  final Order order;
+  const _PickupStopsCard({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final stops = order.pickupStops;
+    if (stops == null || stops.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final itemsByOfferId = {for (final i in order.items) i.offerId: i};
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Puntos de recogida',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: textGray900,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Text(
+                '${stops.length}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: textGray600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...List.generate(stops.length, (index) {
+            final stop = stops[index];
+            final offerTitles = stop.offerIds
+                .map((id) => itemsByOfferId[id]?.titleSnapshot)
+                .whereType<String>()
+                .where((e) => e.trim().isNotEmpty)
+                .toList();
+            final titles = offerTitles.isEmpty
+                ? 'Artículos: ${stop.offerIds.length}'
+                : offerTitles.take(2).join(' · ');
+
+            return Padding(
+              padding:
+                  EdgeInsets.only(bottom: index == stops.length - 1 ? 0 : 12),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: backgroundGray50,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: borderGray100),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: primaryOrange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${index + 1}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: primaryOrange,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            stop.addressSnapshot.trim().isNotEmpty
+                                ? stop.addressSnapshot
+                                : 'Lat: ${stop.geo.latitude.toStringAsFixed(5)}, Lng: ${stop.geo.longitude.toStringAsFixed(5)}',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: textGray900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            titles,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: textGray600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -172,6 +357,8 @@ class _OrderStatusContent extends StatelessWidget {
             children: [
               _row('Total', '\$${order.amountTotal.toStringAsFixed(0)} CLP'),
               const SizedBox(height: 8),
+              _PickupStopsSummary(order: order),
+              const SizedBox(height: 8),
               _row(
                 'Entrega',
                 order.delivery.addressSnapshot.isNotEmpty
@@ -189,6 +376,8 @@ class _OrderStatusContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        _PickupStopsCard(order: order),
+        if ((order.pickupStops?.isNotEmpty ?? false)) const SizedBox(height: 16),
         _OrderItemsCard(order: order),
       ],
     );

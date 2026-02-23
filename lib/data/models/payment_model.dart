@@ -78,20 +78,38 @@ class PaymentModel {
 
   /// Convert from Firestore document
   factory PaymentModel.fromFirestore(Map<String, dynamic> data, String id) {
+    final orderId = data['orderId']?.toString() ?? '';
+    final preferenceId = (data['preferenceId']?.toString().trim().isNotEmpty ?? false)
+        ? data['preferenceId']!.toString().trim()
+        : id;
+
+    final statusRaw = data['status']?.toString();
+    final status = statusRaw != null && statusRaw.isNotEmpty
+        ? PaymentStatusExtension.fromString(statusRaw)
+        : PaymentStatus.pending;
+
+    final amountNum = data['amount'];
+    final amount = amountNum is num ? amountNum.toDouble() : 0.0;
+
+    final createdAtRaw = data['createdAt'];
+    final createdAt = createdAtRaw is Timestamp
+        ? createdAtRaw.toDate()
+        : DateTime.now();
+
     return PaymentModel(
       id: id,
-      orderId: data['orderId'] as String,
-      preferenceId: data['preferenceId'] as String,
-      paymentId: data['paymentId'] as String?,
-      status: PaymentStatusExtension.fromString(data['status'] as String),
-      amount: (data['amount'] as num).toDouble(),
+      orderId: orderId,
+      preferenceId: preferenceId,
+      paymentId: data['paymentId']?.toString(),
+      status: status,
+      amount: amount,
       currency: data['currency'] as String? ?? 'CLP',
       paymentMethod: data['paymentMethod'] != null
-          ? PaymentMethodExtension.fromString(data['paymentMethod'] as String)
+          ? PaymentMethodExtension.fromString(data['paymentMethod'].toString())
           : null,
-      paymentMethodId: data['paymentMethodId'] as String?,
-      statusDetail: data['statusDetail'] as String?,
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      paymentMethodId: data['paymentMethodId']?.toString(),
+      statusDetail: data['statusDetail']?.toString(),
+      createdAt: createdAt,
       approvedAt: data['approvedAt'] != null
           ? (data['approvedAt'] as Timestamp).toDate()
           : null,
@@ -123,25 +141,44 @@ class PaymentModel {
 
   /// Convert from JSON (for API responses)
   factory PaymentModel.fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString() ?? '';
+    final orderId = json['orderId']?.toString() ?? '';
+    final preferenceId = (json['preferenceId']?.toString().trim().isNotEmpty ?? false)
+        ? json['preferenceId']!.toString().trim()
+        : id;
+
+    final statusRaw = json['status']?.toString();
+    final status = statusRaw != null && statusRaw.isNotEmpty
+        ? PaymentStatusExtension.fromString(statusRaw)
+        : PaymentStatus.pending;
+
+    final amountRaw = json['amount'];
+    final amount = amountRaw is num ? amountRaw.toDouble() : 0.0;
+
+    final createdAtRaw = json['createdAt']?.toString();
+    final createdAt = createdAtRaw != null && createdAtRaw.isNotEmpty
+        ? DateTime.parse(createdAtRaw)
+        : DateTime.now();
+
     return PaymentModel(
-      id: json['id'] as String,
-      orderId: json['orderId'] as String,
-      preferenceId: json['preferenceId'] as String,
-      paymentId: json['paymentId'] as String?,
-      status: PaymentStatusExtension.fromString(json['status'] as String),
-      amount: (json['amount'] as num).toDouble(),
+      id: id,
+      orderId: orderId,
+      preferenceId: preferenceId,
+      paymentId: json['paymentId']?.toString(),
+      status: status,
+      amount: amount,
       currency: json['currency'] as String? ?? 'CLP',
       paymentMethod: json['paymentMethod'] != null
-          ? PaymentMethodExtension.fromString(json['paymentMethod'] as String)
+          ? PaymentMethodExtension.fromString(json['paymentMethod'].toString())
           : null,
-      paymentMethodId: json['paymentMethodId'] as String?,
-      statusDetail: json['statusDetail'] as String?,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      paymentMethodId: json['paymentMethodId']?.toString(),
+      statusDetail: json['statusDetail']?.toString(),
+      createdAt: createdAt,
       approvedAt: json['approvedAt'] != null
-          ? DateTime.parse(json['approvedAt'] as String)
+          ? DateTime.parse(json['approvedAt'].toString())
           : null,
       updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'] as String)
+          ? DateTime.parse(json['updatedAt'].toString())
           : null,
       metadata: json['metadata'] as Map<String, dynamic>?,
     );

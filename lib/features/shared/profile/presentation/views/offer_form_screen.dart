@@ -1,12 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/utils/currency_input_formatter.dart';
+import '../../../../../core/utils/price_parser.dart';
 import '../../../../../data/providers/repository_providers.dart';
 import '../../../../../domain/entities/address.dart';
+import '../../../../../domain/entities/user.dart';
+import '../../../../auth/presentation/views/unverified_email_screen.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../../domain/entities/offer_condition.dart';
@@ -19,8 +24,17 @@ import '../widgets/pickup_schedule_selector.dart';
 
 class OfferFormScreen extends ConsumerStatefulWidget {
   final Offer? initialOffer;
+  final bool? initialIsInGoodState;
+  final bool? initialWorksCorrectly;
+  final bool hideConditionQuestions;
 
-  const OfferFormScreen({super.key, this.initialOffer});
+  const OfferFormScreen({
+    super.key,
+    this.initialOffer,
+    this.initialIsInGoodState,
+    this.initialWorksCorrectly,
+    this.hideConditionQuestions = false,
+  });
 
   @override
   ConsumerState<OfferFormScreen> createState() => _OfferFormScreenState();
@@ -40,11 +54,12 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
 
   static const _currency = 'CLP';
   String _category = 'Electrónicos';
-  String _coverAsset = 'assets/logo_hero.png';
+  String _coverAsset = '';
   Uint8List? _coverImageBytes;
   String? _coverImageFileName;
   final List<Uint8List> _additionalImageBytes = [];
   final List<String> _additionalImageFileNames = [];
+  int? _hoveredAdditionalIndex;
   OfferCondition _condition = OfferCondition.newProduct;
   bool? _isInGoodState;
   bool? _worksCorrectly;
@@ -76,13 +91,24 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     if (offer != null) {
       _titleController.text = offer.title;
       _descriptionController.text = offer.description;
-      _priceController.text = offer.price.toStringAsFixed(0);
+      final cents = (offer.price * 100).round();
+      _priceController.text = CurrencyInputFormatter().formatEditUpdate(
+        const TextEditingValue(text: ''),
+        TextEditingValue(text: cents.toString()),
+      ).text;
       _stockController.text = offer.stock.toString();
       _weightController.text = offer.weight.toStringAsFixed(2);
       _category = offer.category;
       _condition = offer.condition;
       _isInGoodState = offer.isInGoodState;
       _worksCorrectly = offer.worksCorrectly;
+
+      if (widget.initialIsInGoodState != null) {
+        _isInGoodState = widget.initialIsInGoodState;
+      }
+      if (widget.initialWorksCorrectly != null) {
+        _worksCorrectly = widget.initialWorksCorrectly;
+      }
       if (offer.coverImageUrl.isNotEmpty) {
         _coverAsset = offer.coverImageUrl;
       }
@@ -97,22 +123,124 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         _latController.text = snapshot.geopoint.latitude.toStringAsFixed(6);
         _lngController.text = snapshot.geopoint.longitude.toStringAsFixed(6);
       }
+    } else {
+      _priceController.text = '0,00';
+      _isInGoodState = widget.initialIsInGoodState;
+      _worksCorrectly = widget.initialWorksCorrectly;
     }
+  }
+
+  Widget _buildMainImagePreview() {
+    final hoveredIndex = _hoveredAdditionalIndex;
+    if (hoveredIndex != null &&
+        hoveredIndex >= 0 &&
+        hoveredIndex < _additionalImageBytes.length) {
+      return Image.memory(
+        _additionalImageBytes[hoveredIndex],
+        fit: BoxFit.cover,
+      );
+    }
+
+    return _buildCoverPreview();
+  }
+
+  Widget _buildGalleryThumb({required int index}) {
+    final hasImage = index < _additionalImageBytes.length;
+    final selected = _hoveredAdditionalIndex == index;
+
+    final child = hasImage
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.memory(
+              _additionalImageBytes[index],
+              fit: BoxFit.cover,
+            ),
+          )
+        : Container(
+            decoration: BoxDecoration(
+              color: backgroundGray50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: borderGray100,
+                width: 1,
+              ),
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.add_a_photo_outlined,
+                size: 20,
+                color: textGray600,
+              ),
+            ),
+          );
+
+    return MouseRegion(
+      onEnter: (_) {
+        if (!hasImage) return;
+        setState(() => _hoveredAdditionalIndex = index);
+      },
+      onExit: (_) {
+        if (!mounted) return;
+        if (_hoveredAdditionalIndex == index) {
+          setState(() => _hoveredAdditionalIndex = null);
+        }
+      },
+      child: InkWell(
+        onTap: _isSaving
+            ? null
+            : () {
+                if (!hasImage) {
+                  _pickAdditionalImages();
+                  return;
+                }
+                setState(() => _hoveredAdditionalIndex = index);
+              },
+        onLongPress: (!_isSaving && hasImage)
+            ? () {
+                setState(() {
+                  _additionalImageBytes.removeAt(index);
+                  _additionalImageFileNames.removeAt(index);
+                  if (_hoveredAdditionalIndex == index) {
+                    _hoveredAdditionalIndex = null;
+                  }
+                });
+              }
+            : null,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? primaryOrange : borderGray100,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: child,
+        ),
+      ),
+    );
   }
 
   Future<void> _pickAdditionalImages() async {
     try {
-      final picked = await _imagePicker.pickMultiImage(
+      final remaining = 4 - _additionalImageBytes.length;
+      if (remaining <= 0) return;
+
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.camera,
         imageQuality: 85,
         maxWidth: 1600,
       );
-      if (picked.isEmpty) return;
+      if (picked == null) return;
 
       final bytesList = <Uint8List>[];
       final namesList = <String>[];
-      for (final file in picked) {
-        bytesList.add(await file.readAsBytes());
-        namesList.add(file.name);
+
+      if (remaining > 0) {
+        bytesList.add(await picked.readAsBytes());
+        namesList.add(picked.name);
       }
 
       if (!mounted) return;
@@ -129,69 +257,6 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         ),
       );
     }
-  }
-
-  Widget _buildAdditionalImagesPreview() {
-    if (_additionalImageBytes.isEmpty) {
-      return const Text(
-        'Puedes agregar imágenes adicionales (opcional).',
-        style: TextStyle(fontSize: 12, color: textGray600),
-      );
-    }
-
-    return SizedBox(
-      height: 92,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _additionalImageBytes.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          return Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  width: 110,
-                  height: 92,
-                  color: borderGray100,
-                  child: Image.memory(
-                    _additionalImageBytes[index],
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 6,
-                right: 6,
-                child: InkWell(
-                  onTap: _isSaving
-                      ? null
-                      : () {
-                          setState(() {
-                            _additionalImageBytes.removeAt(index);
-                            _additionalImageFileNames.removeAt(index);
-                          });
-                        },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(
-                      Icons.close,
-                      size: 16,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
   }
 
   Widget _buildCoverPreview() {
@@ -214,8 +279,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     return Image.network(
       cover,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) {
-        return Image.asset('assets/logo_hero.png', fit: BoxFit.contain);
+      errorBuilder: (_, __, _) {
+        return const Center(
+          child: Icon(Icons.image, color: textGray600, size: 44),
+        );
       },
     );
   }
@@ -223,7 +290,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   Future<void> _pickCoverImage() async {
     try {
       final picked = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
+        source: ImageSource.camera,
         imageQuality: 85,
         maxWidth: 1600,
       );
@@ -339,7 +406,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   }
 
   Future<void> _save() async {
-    final userAsync = ref.read(profileProvider);
+    final userAsync = ref.read(profileStreamProvider);
     if (!userAsync.hasValue || userAsync.value == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -350,7 +417,40 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     }
     final user = userAsync.value!;
 
-    Address? _buildLocationSnapshot() {
+    if (_publishNow && !user.isRutVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debes verificar tu RUT para publicar donaciones.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (_publishNow) {
+      final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+      final isEmailVerified = authUser?.emailVerified ?? false;
+      if (!isEmailVerified || !user.contact.emailVerified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Debes verificar tu correo para publicar una oferta'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => UnverifiedEmailScreen(
+              userRole: UserRole.hero,
+              email: user.email,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    Address? buildLocationSnapshot() {
       final addressText = _addressController.text.trim();
       if (addressText.isNotEmpty) {
         final lat = double.tryParse(_latController.text.trim());
@@ -403,9 +503,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       }
 
       final hasCoverImage =
-          _coverImageBytes != null ||
-          (_coverAsset.trim().isNotEmpty &&
-              _coverAsset != 'assets/logo_hero.png');
+          _coverImageBytes != null || _coverAsset.trim().isNotEmpty;
 
       if (!hasCoverImage) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -426,9 +524,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
 
     final isEdit = widget.initialOffer != null;
     final now = DateTime.now();
-    final price = double.tryParse(_priceController.text.trim()) ?? 0;
+    final price = 0.0;
     final stock = int.tryParse(_stockController.text.trim()) ?? 0;
-    final weightInput = double.tryParse(_weightController.text.trim()) ?? 0.5;
+    final weightInput = parseLocalizedPrice(_weightController.text) ?? 0.5;
     final weight = _weightUnit == 'g' ? (weightInput / 1000) : weightInput;
 
     // Mantener cantidad vendida al editar: reserved = stockInicial - disponible
@@ -460,7 +558,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
           ? <String>[...existingImageUrls]
           : (coverImageUrl.trim().isNotEmpty ? <String>[coverImageUrl] : <String>[]);
 
-      final locationSnapshot = _buildLocationSnapshot();
+      final locationSnapshot = buildLocationSnapshot();
       if (_publishNow && locationSnapshot == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -665,6 +763,114 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                     },
                   ),
                 ),
+                const _SectionTitle(title: 'Imágenes'),
+                _FormFieldWrapper(
+                  label: 'Imagen',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                height: 160,
+                                width: double.infinity,
+                                color: borderGray100,
+                                child: _buildMainImagePreview(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          SizedBox(
+                            width: 132,
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: AspectRatio(
+                                        aspectRatio: 1,
+                                        child: _buildGalleryThumb(index: 0),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: AspectRatio(
+                                        aspectRatio: 1,
+                                        child: _buildGalleryThumb(index: 1),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: AspectRatio(
+                                        aspectRatio: 1,
+                                        child: _buildGalleryThumb(index: 2),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: AspectRatio(
+                                        aspectRatio: 1,
+                                        child: _buildGalleryThumb(index: 3),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _isSaving ? null : _pickCoverImage,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: primaryOrange,
+                                foregroundColor: backgroundWhite,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'Tomar portada',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_coverImageBytes != null) ...[
+                            const SizedBox(width: 10),
+                            TextButton(
+                              onPressed: _isSaving
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _coverImageBytes = null;
+                                        _coverImageFileName = null;
+                                      });
+                                    },
+                              child: const Text('Quitar portada'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
                 _FormFieldWrapper(
                   label: 'Descripción',
                   child: TextFormField(
@@ -693,36 +899,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                   children: [
                     Expanded(
                       child: _FormFieldWrapper(
-                        label: 'Precio (CLP)',
-                        child: TextFormField(
-                          controller: _priceController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.,]'),
-                            ),
-                          ],
-                          decoration: const InputDecoration(
-                            prefixText: '\$',
-                            hintText: '0',
-                            helperText: 'Solo números, usa CLP',
-                          ),
-                          validator: (value) {
-                            final parsed = double.tryParse(value ?? '');
-                            if (parsed == null || parsed <= 0) {
-                              return 'El precio debe ser mayor a 0';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _FormFieldWrapper(
-                        label: 'Stock',
+                        label: 'Cantidad disponible',
                         child: TextFormField(
                           controller: _stockController,
                           keyboardType: const TextInputType.numberWithOptions(
@@ -733,7 +910,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                           ],
                           decoration: const InputDecoration(
                             hintText: '0',
-                            helperText: 'Disponibles para la venta',
+                            helperText: 'Cantidad disponible para donar',
                           ),
                           validator: (value) {
                             final parsed = int.tryParse(value ?? '');
@@ -747,6 +924,70 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: const Text(
+                    '¿Tienes varios del mismo artículo?\n'
+                    '• Si quieres entregarlos todos juntos, deja la cantidad en 1\n'
+                    '• Si quieres ayudar a más personas, pon la cantidad que desees publicar (cada uno se entregará por separado)',
+                    style: TextStyle(
+                      color: const Color(0xFF1D4ED8),
+                      fontSize: 12,
+                      height: 1.35,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFED7AA)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.inventory_2_outlined,
+                          size: 22, color: Color(0xFFEA580C)),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '¡Importante!',
+                              style: TextStyle(
+                                color: Color(0xFFEA580C),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
+                            SizedBox(height: 6),
+                            Text(
+                              'Asegúrate de cubrir y proteger bien tu artículo con plástico de burbujas, papel o cartón para evitar que se rompa durante el envío. El rider solo transporta, no embala.',
+                              style: TextStyle(
+                                color: Color(0xFF9A3412),
+                                fontSize: 12,
+                                height: 1.35,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 Row(
                   children: [
                     Expanded(
@@ -758,16 +999,14 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                             decimal: true,
                           ),
                           inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.,]'),
-                            ),
+                            CurrencyInputFormatter(),
                           ],
                           decoration: const InputDecoration(
                             hintText: '0.5',
                             helperText: 'Peso del producto',
                           ),
                           validator: (value) {
-                            final parsed = double.tryParse(value ?? '');
+                            final parsed = parseLocalizedPrice(value);
                             if (parsed == null || parsed <= 0) {
                               return 'Ingresa un peso válido';
                             }
@@ -933,76 +1172,78 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                     },
                   ),
                 ),
-                const SizedBox(height: 6),
-                const Text(
-                  '¿Está en buen estado?',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: textGray900,
+                if (!widget.hideConditionQuestions) ...[
+                  const SizedBox(height: 6),
+                  const Text(
+                    '¿Está en buen estado?',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: textGray900,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _buildYesNoOption(
-                      label: 'Sí',
-                      selected: _isInGoodState == true,
-                      yes: true,
-                      onTap: _isSaving
-                          ? () {}
-                          : () {
-                              setState(() => _isInGoodState = true);
-                            },
-                    ),
-                    const SizedBox(width: 12),
-                    _buildYesNoOption(
-                      label: 'No',
-                      selected: _isInGoodState == false,
-                      yes: false,
-                      onTap: _isSaving
-                          ? () {}
-                          : () {
-                              setState(() => _isInGoodState = false);
-                            },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  '¿Funciona correctamente?',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: textGray900,
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _buildYesNoOption(
+                        label: 'Sí',
+                        selected: _isInGoodState == true,
+                        yes: true,
+                        onTap: _isSaving
+                            ? () {}
+                            : () {
+                                setState(() => _isInGoodState = true);
+                              },
+                      ),
+                      const SizedBox(width: 12),
+                      _buildYesNoOption(
+                        label: 'No',
+                        selected: _isInGoodState == false,
+                        yes: false,
+                        onTap: _isSaving
+                            ? () {}
+                            : () {
+                                setState(() => _isInGoodState = false);
+                              },
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _buildYesNoOption(
-                      label: 'Sí',
-                      selected: _worksCorrectly == true,
-                      yes: true,
-                      onTap: _isSaving
-                          ? () {}
-                          : () {
-                              setState(() => _worksCorrectly = true);
-                            },
+                  const SizedBox(height: 18),
+                  const Text(
+                    '¿Funciona correctamente?',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: textGray900,
                     ),
-                    const SizedBox(width: 12),
-                    _buildYesNoOption(
-                      label: 'No',
-                      selected: _worksCorrectly == false,
-                      yes: false,
-                      onTap: _isSaving
-                          ? () {}
-                          : () {
-                              setState(() => _worksCorrectly = false);
-                            },
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _buildYesNoOption(
+                        label: 'Sí',
+                        selected: _worksCorrectly == true,
+                        yes: true,
+                        onTap: _isSaving
+                            ? () {}
+                            : () {
+                                setState(() => _worksCorrectly = true);
+                              },
+                      ),
+                      const SizedBox(width: 12),
+                      _buildYesNoOption(
+                        label: 'No',
+                        selected: _worksCorrectly == false,
+                        yes: false,
+                        onTap: _isSaving
+                            ? () {}
+                            : () {
+                                setState(() => _worksCorrectly = false);
+                              },
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 4),
 
                 // Pickup Schedule Section
@@ -1115,100 +1356,6 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                   ),
                 ),
 
-                const _SectionTitle(title: 'Imágenes'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _FormFieldWrapper(
-                        label: 'Moneda',
-                        child: const Text('CLP'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _FormFieldWrapper(
-                        label: 'Imagen',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                height: 110,
-                                width: double.infinity,
-                                color: borderGray100,
-                                child: _buildCoverPreview(),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: _isSaving
-                                        ? null
-                                        : _pickCoverImage,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: primaryOrange,
-                                      foregroundColor: backgroundWhite,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 12,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'Elegir',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                if (_coverImageBytes != null) ...[
-                                  const SizedBox(width: 10),
-                                  TextButton(
-                                    onPressed: _isSaving
-                                        ? null
-                                        : () {
-                                            setState(() {
-                                              _coverImageBytes = null;
-                                              _coverImageFileName = null;
-                                            });
-                                          },
-                                    child: const Text('Quitar'),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Imágenes adicionales',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: textGray900,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            _buildAdditionalImagesPreview(),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed:
-                                    _isSaving ? null : _pickAdditionalImages,
-                                icon: const Icon(Icons.add_photo_alternate),
-                                label: const Text('Agregar imágenes'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,

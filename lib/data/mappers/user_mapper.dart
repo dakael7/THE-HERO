@@ -19,6 +19,8 @@ class UserMapper {
       status: model.status.toEntity(),
       heroProfile: model.heroProfile?.toEntity(),
       riderProfile: model.riderProfile?.toEntity(),
+      verificationStatus: model.verificationStatus,
+      rutVerificationStatus: model.rutVerificationStatus,
     );
   }
 
@@ -33,6 +35,8 @@ class UserMapper {
       status: UserStatusModel.fromEntity(entity.status),
       heroProfile: entity.heroProfile != null ? HeroProfileModel.fromEntity(entity.heroProfile!) : null,
       riderProfile: entity.riderProfile != null ? RiderProfileModel.fromEntity(entity.riderProfile!) : null,
+      verificationStatus: entity.verificationStatus,
+      rutVerificationStatus: entity.rutVerificationStatus,
     );
   }
 }

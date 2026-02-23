@@ -2,8 +2,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 
-/// Service for managing Firebase Cloud Messaging
 class FCMService {
   static final FCMService _instance = FCMService._internal();
   factory FCMService() => _instance;
@@ -15,12 +15,12 @@ class FCMService {
 
   bool _initialized = false;
   String? _fcmToken;
+  String? _currentTopic;
 
-  /// Initialize FCM and request permissions
   Future<void> initialize() async {
     if (_initialized) return;
 
-    // Request permission for iOS
+    // Request permission fo   iOS
     NotificationSettings settings = await _firebaseMessaging.requestPermission(
       alert: true,
       badge: true,
@@ -45,28 +45,38 @@ class FCMService {
     _fcmToken = await _firebaseMessaging.getToken();
     print('FCM Token: $_fcmToken');
 
-    // Save token to Firestore
-    if (_fcmToken != null) {
-      await _saveFCMToken(_fcmToken!);
-    }
+    FirebaseAuth.instance.authStateChanges().listen(
+      (user) async {
+        try {
+          if (user == null) {
+            await _unsubscribeFromCurrentTopic();
+            await _unsubscribeFromLegacyTopics();
+            return;
+          }
 
-    // Subscribe to 'all_users' topic for broadcast notifications
-    await subscribeToTopic('all_users');
+          await _unsubscribeFromLegacyTopics();
+          await _subscribeToUserTopic();
 
-    // Listen for token refresh
+          final token = _fcmToken;
+          if (token != null) {
+            await _saveFCMToken(token);
+          }
+        } catch (_) {
+          // ignore
+        }
+      },
+    );
+
     _firebaseMessaging.onTokenRefresh.listen((newToken) {
       print('FCM Token refreshed: $newToken');
       _fcmToken = newToken;
       _saveFCMToken(newToken);
     });
 
-    // Handle foreground messages
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-    // Handle background message tap
     FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
 
-    // Check if app was opened from a terminated state
     RemoteMessage? initialMessage = await _firebaseMessaging
         .getInitialMessage();
     if (initialMessage != null) {
@@ -76,7 +86,25 @@ class FCMService {
     _initialized = true;
   }
 
-  /// Initialize local notifications for Android
+  Future<void> _unsubscribeFromLegacyTopics() async {
+    try {
+      await _firebaseMessaging.unsubscribeFromTopic('all_users');
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> _unsubscribeFromCurrentTopic() async {
+    final current = _currentTopic;
+    if (current == null) return;
+    try {
+      await _firebaseMessaging.unsubscribeFromTopic(current);
+    } catch (_) {
+      // ignore
+    }
+    _currentTopic = null;
+  }
+
   Future<void> _initializeLocalNotifications() async {
     const AndroidInitializationSettings androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -144,13 +172,44 @@ class FCMService {
       if (user == null) return;
 
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'fcmTokens': FieldValue.arrayUnion([token]),
-        'lastTokenUpdate': FieldValue.serverTimestamp(),
+        'fcmToken': token,
+        'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       print('FCM Token saved to Firestore');
     } catch (e) {
       print('Error saving FCM token: $e');
+    }
+  }
+
+  Future<void> _subscribeToUserTopic() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final topic = 'user_${user.uid}';
+    if (_currentTopic == topic) return;
+
+    await _unsubscribeFromCurrentTopic();
+
+    await _firebaseMessaging.subscribeToTopic(topic);
+    _currentTopic = topic;
+    print('Subscribed to topic: $topic');
+  }
+
+  Future<void> cleanupBeforeSignOut() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      await _unsubscribeFromCurrentTopic();
+      await _unsubscribeFromLegacyTopics();
+
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'fcmToken': FieldValue.delete(),
+        'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {
+      // ignore
     }
   }
 

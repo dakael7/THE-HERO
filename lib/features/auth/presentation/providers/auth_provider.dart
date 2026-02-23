@@ -17,6 +17,7 @@ import '../../domain/providers/google_sign_in_usecase_provider.dart';
 import '../../domain/providers/register_google_user_usecase_provider.dart';
 import '../../../../data/providers/repository_providers.dart';
 import '../../../../domain/repositories/auth_repository.dart';
+import '../../../../core/services/fcm_service.dart';
 import 'auth_state.dart';
 
 class AuthNotifier extends Notifier<AuthState> {
@@ -247,6 +248,7 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> signOut() async {
     state = state.copyWith(isLoading: true);
     try {
+      await FCMService().cleanupBeforeSignOut();
       await _signOutUseCase.execute();
 
       state = state.copyWith(

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/config/mercadopago_config.dart';
 import '../../../domain/entities/payment.dart';
 import 'providers/payment_providers.dart';
 import '../../hero/presentation/views/hero_home_screen.dart';
@@ -12,11 +14,13 @@ enum PaymentResultType { success, failure, pending }
 class PaymentResultScreen extends ConsumerStatefulWidget {
   final String orderId;
   final PaymentResultType resultType;
+  final Map<String, String> queryParams;
 
   const PaymentResultScreen({
     super.key,
     required this.orderId,
     required this.resultType,
+    this.queryParams = const {},
   });
 
   @override
@@ -29,6 +33,7 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
+  bool _isSimulating = false;
 
   @override
   void initState() {
@@ -89,6 +94,14 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
 
   Widget _buildResultContent(Payment? payment) {
     final config = _getResultConfig(payment);
+
+    final qp = widget.queryParams;
+    final status = qp['status'] ?? qp['collection_status'];
+    final statusDetail = qp['status_detail'] ?? qp['collection_status_detail'];
+    final paymentId = qp['payment_id'] ?? qp['collection_id'];
+    final preferenceId = qp['preference_id'] ?? qp['pref_id'];
+    final effectivePreferenceId =
+        (payment?.preferenceId.isNotEmpty ?? false) ? payment!.preferenceId : preferenceId;
 
     return Center(
       child: SingleChildScrollView(
@@ -165,6 +178,22 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
                       'Monto',
                       '\$${payment.amount.toStringAsFixed(0)} ${payment.currency}',
                     ),
+                    if (paymentId != null && paymentId.isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow('payment_id', paymentId),
+                    ],
+                    if (preferenceId != null && preferenceId.isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow('preference_id', preferenceId),
+                    ],
+                    if (status != null && status.isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow('status', status),
+                    ],
+                    if (statusDetail != null && statusDetail.isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow('status_detail', statusDetail),
+                    ],
                     if (payment.paymentMethodId != null) ...[
                       const Divider(height: 24),
                       _buildDetailRow(
@@ -175,6 +204,46 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
                     if (payment.statusDetail != null) ...[
                       const Divider(height: 24),
                       _buildDetailRow('Estado', payment.statusDetail!),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+
+            if (payment == null && qp.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: textGray900.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildDetailRow('Orden', widget.orderId),
+                    if (paymentId != null && paymentId.isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow('payment_id', paymentId),
+                    ],
+                    if (preferenceId != null && preferenceId.isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow('preference_id', preferenceId),
+                    ],
+                    if (status != null && status.isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow('status', status),
+                    ],
+                    if (statusDetail != null && statusDetail.isNotEmpty) ...[
+                      const Divider(height: 24),
+                      _buildDetailRow('status_detail', statusDetail),
                     ],
                   ],
                 ),
@@ -228,15 +297,89 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
                 ),
               ),
             ],
+
+            if (MercadoPagoConfig.isSandbox &&
+                effectivePreferenceId != null &&
+                effectivePreferenceId.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _isSimulating
+                      ? null
+                      : () => _simulateApprovedPayment(
+                            orderId: widget.orderId,
+                            preferenceId: effectivePreferenceId,
+                            amount: payment?.amount,
+                          ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: primaryOrange,
+                    side: const BorderSide(color: primaryOrange, width: 2),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(
+                    _isSimulating ? 'Simulando...' : 'Aprobar (Sandbox)',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
+  Future<void> _simulateApprovedPayment({
+    required String orderId,
+    required String preferenceId,
+    double? amount,
+  }) async {
+    if (_isSimulating) return;
+    setState(() => _isSimulating = true);
+
+    try {
+      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('simulatePaymentApproved');
+
+      await callable.call({
+        'orderId': orderId,
+        'preferenceId': preferenceId,
+        if (amount != null) 'amount': amount,
+      });
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => PaymentResultScreen(
+            orderId: orderId,
+            resultType: PaymentResultType.success,
+            queryParams: const {},
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo simular el pago: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSimulating = false);
+      }
+    }
+  }
+
   Widget _buildDetailRow(String label, String value) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
@@ -246,12 +389,20 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
             color: textGray600,
           ),
         ),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: textGray900,
+        const SizedBox(width: 12),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: textGray900,
+              ),
+            ),
           ),
         ),
       ],

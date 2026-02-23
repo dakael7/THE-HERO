@@ -1,5 +1,6 @@
 import 'package:latlong2/latlong.dart';
 import '../../../../domain/entities/location_entity.dart';
+import '../../../../domain/entities/offer.dart';
 
 class MapState {
   final LocationEntity? userLocation;
@@ -56,6 +57,7 @@ class MapProduct {
   final String category;
   final double price;
   final LatLng location;
+  final Offer offer;
   final double? distanceFromUser;
   final String? imageUrl;
 
@@ -65,6 +67,7 @@ class MapProduct {
     required this.category,
     required this.price,
     required this.location,
+    required this.offer,
     this.distanceFromUser,
     this.imageUrl,
   });
@@ -76,6 +79,7 @@ class MapProduct {
       category: category,
       price: price,
       location: location,
+      offer: offer,
       distanceFromUser: distanceFromUser ?? this.distanceFromUser,
       imageUrl: imageUrl,
     );

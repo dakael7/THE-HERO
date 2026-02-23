@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
-import '../../../core/utils/weight_utils.dart';
 import 'cart_item.dart';
 import 'cart_provider.dart';
-import 'cart_summary_provider.dart';
 import 'checkout_screen.dart';
+import '../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../shared/profile/presentation/views/rut_verification_screen.dart';
 
 class HeroCartSheet extends ConsumerWidget {
   const HeroCartSheet({super.key});
@@ -14,7 +14,6 @@ class HeroCartSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cartItems = ref.watch(cartProvider);
-    final summary = ref.watch(cartSummaryProvider);
     final totalItems = cartItems.fold<int>(
       0,
       (sum, item) => sum + item.quantity,
@@ -150,74 +149,6 @@ class HeroCartSheet extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Resumen de pago',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: textGray900,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          _buildSummaryRow(
-                            'Subtotal (Donación):',
-                            '\$${summary.subtotal.toStringAsFixed(0)}',
-                            fontSize: 13,
-                          ),
-                          const SizedBox(height: 10),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildSummaryRow(
-                                'Envío:',
-                                '\$${summary.shippingCost.toStringAsFixed(0)}',
-                                fontSize: 13,
-                              ),
-                              if (summary.shippingBreakdown != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  summary.shippingBreakdown!,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: textGray600,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          _buildSummaryRow(
-                            'Comisión de servicio:',
-                            '\$${summary.serviceFee.toStringAsFixed(0)}',
-                            fontSize: 13,
-                          ),
-                          const SizedBox(height: 10),
-                          _buildSummaryRow(
-                            'Impuestos (IVA 19%):',
-                            '\$${summary.tax.toStringAsFixed(0)}',
-                            fontSize: 13,
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Container(height: 1, color: borderGray100),
-                          ),
-                          _buildSummaryRow(
-                            'Total:',
-                            '\$${summary.total.toStringAsFixed(0)}',
-                            isBold: true,
-                            fontSize: 17,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '* Peso total: ${formatWeightKg(summary.totalWeight)}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: textGray600,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
@@ -234,6 +165,24 @@ class HeroCartSheet extends ConsumerWidget {
                                 ),
                               ),
                               onPressed: () {
+                                final user = ref.read(profileStreamProvider).value;
+                                if (user != null && !user.isRutVerified) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Debes verificar tu RUT para proceder al pago.',
+                                      ),
+                                      duration: Duration(seconds: 3),
+                                    ),
+                                  );
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const RutVerificationScreen(),
+                                    ),
+                                  );
+                                  return;
+                                }
                                 Navigator.of(
                                   context,
                                 ).pop(); // Close sheet first
@@ -262,35 +211,6 @@ class HeroCartSheet extends ConsumerWidget {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildSummaryRow(
-    String label,
-    String value, {
-    bool isBold = false,
-    double fontSize = 14,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
-            color: textGray900,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
-            color: textGray900,
-          ),
-        ),
-      ],
     );
   }
 }

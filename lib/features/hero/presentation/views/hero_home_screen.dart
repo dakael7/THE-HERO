@@ -19,6 +19,8 @@ import '../widgets/product_card.dart';
 import '../../../../domain/entities/offer_condition.dart';
 import '../../../../domain/entities/user.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../shared/profile/presentation/views/rut_verification_screen.dart';
+import '../../../shared/profile/presentation/widgets/rut_verification_cta_banner.dart';
 
 const double paddingNormal = 16.0;
 const double paddingLarge = 24.0;
@@ -146,6 +148,32 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                             // --- SECCIÓN BANNER PROMOCIONAL ---
                             const RepaintBoundary(child: HeroPromoBanner()),
                             const SizedBox(height: paddingNormal),
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final userAsync = ref.watch(profileStreamProvider);
+                                final user = userAsync.value;
+                                if (user == null || user.isRutVerified) {
+                                  return const SizedBox.shrink();
+                                }
+
+                                return Column(
+                                  children: [
+                                    RutVerificationCtaBanner(
+                                      user: user,
+                                      onTap: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const RutVerificationScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: paddingNormal),
+                                  ],
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -211,7 +239,7 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                                                 CrossAxisAlignment.start,
                                             children: const [
                                               Text(
-                                                'Mis ofertas',
+                                                'Mis Donaciones',
                                                 style: TextStyle(
                                                   fontSize: 16,
                                                   fontWeight: FontWeight.w800,
@@ -314,8 +342,6 @@ class _CatalogSection extends ConsumerWidget {
         Row(
           children: const [
             SortOptionsButton(),
-            SizedBox(width: 8),
-            PriceRangeFilter(),
           ],
         ),
 
@@ -410,8 +436,12 @@ class _CatalogSection extends ConsumerWidget {
                                 colorCondition: _conditionColor(
                                   offer.condition,
                                 ),
-                                price: offer.price,
+                                category: offer.category,
+                                availableQty: offer.availableQty,
+                                viewCount: offer.viewCount,
+                                orderCount: offer.orderCount,
                                 weight: offer.weight,
+                                pickupGeo: offer.itemLocationSnapshot?.geopoint,
                                 showShadow: false,
                                 imageUrl: offer.coverImageUrl,
                                 avgRating: offer.avgRating,

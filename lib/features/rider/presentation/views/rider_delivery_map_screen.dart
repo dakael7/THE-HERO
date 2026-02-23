@@ -1,42 +1,84 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
+import 'package:latlong2/latlong.dart' as ll;
+import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/chat.dart';
 import '../../../../domain/entities/chat_type.dart';
+import '../../../../domain/entities/offer.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/entities/order_status.dart';
+import '../../../../data/providers/repository_providers.dart';
+import '../../../../data/providers/network_providers.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../shared/chat/presentation/providers/chat_providers.dart';
 import '../../../shared/chat/presentation/views/chat_conversation_screen.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../../data/repositories/location_repository_impl.dart';
 import '../../domain/services/directions_service.dart';
+import '../../domain/services/rider_tracking_service.dart';
+import '../providers/rider_nearby_providers.dart';
 import '../providers/rider_location_provider.dart';
 
 final _routeProvider = FutureProvider.autoDispose
-    .family<DirectionsRoute, _RouteParams>((ref, params) {
+    .family<DirectionsRoute?, _RouteRequestParams>((ref, params) {
       final service = DirectionsService();
+      // ignore: avoid_print
+      print(
+        '🛰️ [_routeProvider] origin=${params.pickupLat},${params.pickupLng} '
+        'destination=${params.deliveryLat},${params.deliveryLng}',
+      );
       return service.getRoute(
         pickupLat: params.pickupLat,
         pickupLng: params.pickupLng,
         deliveryLat: params.deliveryLat,
         deliveryLng: params.deliveryLng,
+        waypoints: params.waypoints,
       );
     });
 
-class _RouteParams {
+final _offerByIdProvider = FutureProvider.autoDispose.family<Offer?, String>((
+  ref,
+  offerId,
+) async {
+  final repo = ref.read(offersRepositoryProvider);
+  return repo.getOfferById(offerId);
+});
+
+class _RouteRequestParams {
   final double pickupLat;
   final double pickupLng;
   final double deliveryLat;
   final double deliveryLng;
+  final List<DirectionsPoint> waypoints;
+  final String waypointsKey;
 
-  const _RouteParams({
+  const _RouteRequestParams({
     required this.pickupLat,
     required this.pickupLng,
     required this.deliveryLat,
     required this.deliveryLng,
+    required this.waypoints,
+    required this.waypointsKey,
   });
+
+  @override
+  bool operator ==(Object other) {
+    return other is _RouteRequestParams &&
+        other.pickupLat == pickupLat &&
+        other.pickupLng == pickupLng &&
+        other.deliveryLat == deliveryLat &&
+        other.deliveryLng == deliveryLng &&
+        other.waypointsKey == waypointsKey;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(pickupLat, pickupLng, deliveryLat, deliveryLng, waypointsKey);
 }
 
 class RiderDeliveryMapScreen extends ConsumerStatefulWidget {
@@ -52,14 +94,76 @@ class RiderDeliveryMapScreen extends ConsumerStatefulWidget {
 class _RiderDeliveryMapScreenState
     extends ConsumerState<RiderDeliveryMapScreen> {
   gmap.GoogleMapController? _mapController;
+  gmap.LatLng? _lastCameraRider;
+  StreamSubscription? _trackingSub;
+  int _pickupStopIndex = 0;
+
+  double _roundCoord(double v) => double.parse(v.toStringAsFixed(5));
+
+  Future<void> _markPickupStopCompleted({
+    required String orderId,
+    required int stopIndex,
+  }) async {
+    try {
+      final firestore = ref.read(firebaseFirestoreProvider);
+      await firestore.collection('orders').doc(orderId).set(
+        {
+          'pickupProgress': {
+            'currentStopIndex': stopIndex,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (e) {
+      // ignore: avoid_print
+      print('⚠️ [_markPickupStopCompleted] error: $e');
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final user = ref.read(profileProvider).value;
+        if (user == null) return;
+
+        final order = await ref.read(orderByIdProvider(widget.orderId).future);
+        if (order == null) return;
+
+        final assignedRiderId = order.rider.assignedRiderId;
+        if (assignedRiderId == null || assignedRiderId.isEmpty) return;
+        if (assignedRiderId != user.id) return;
+
+        final trackingService = RiderTrackingService(
+          firestore: FirebaseFirestore.instance,
+          locationRepository: LocationRepositoryImpl(),
+        );
+        _trackingSub = await trackingService.startTracking(
+          orderId: widget.orderId,
+          riderId: user.id,
+        );
+      } catch (e) {
+        // ignore: avoid_print
+        print('⚠️ [RiderDeliveryMap] Failed to start tracking: $e');
+      }
+    });
+  }
 
   @override
   void dispose() {
     _mapController?.dispose();
+    _trackingSub?.cancel();
     super.dispose();
   }
 
-  Future<void> _openChat({required Order order}) async {
+  Future<void> _openChat({
+    required Order order,
+    required String buyerId,
+    required String buyerName,
+  }) async {
     final riderId = order.rider.assignedRiderId;
     if (riderId == null || riderId.isEmpty) {
       throw Exception('Pedido sin rider asignado');
@@ -73,7 +177,7 @@ class _RiderDeliveryMapScreenState
 
     final chatId = Chat.generateChatId(
       type: ChatType.heroRider,
-      buyerId: order.heroId,
+      buyerId: buyerId,
       riderId: riderId,
       orderId: order.orderId,
     );
@@ -81,9 +185,8 @@ class _RiderDeliveryMapScreenState
     final chat = Chat(
       chatId: chatId,
       type: ChatType.heroRider,
-      buyerId: order.heroId,
-      buyerName:
-          'Cliente', // We don't have hero name in Order, will use generic
+      buyerId: buyerId,
+      buyerName: buyerName,
       riderId: riderId,
       riderName: user.fullName,
       orderId: order.orderId,
@@ -102,6 +205,15 @@ class _RiderDeliveryMapScreenState
   Future<void> _setStatus(Order order, OrderStatus status) async {
     final notifier = ref.read(orderNotifierProvider.notifier);
     await notifier.updateStatus(order.orderId, _orderStatusToString(status));
+    if (!mounted) return;
+
+    if (status == OrderStatus.delivered) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => _DeliveryCompletedScreen(orderId: order.orderId),
+        ),
+      );
+    }
   }
 
   static String _orderStatusToString(OrderStatus status) {
@@ -154,8 +266,23 @@ class _RiderDeliveryMapScreenState
             return const Center(child: Text('Pedido no disponible'));
           }
 
-          final pickupLat = order.pickup.geo.latitude;
-          final pickupLng = order.pickup.geo.longitude;
+          final stops = order.pickupStops ?? const [];
+          final needsPickup = order.status == OrderStatus.assigned;
+          final needsDelivery = order.status == OrderStatus.pickedUp ||
+              order.status == OrderStatus.inTransit;
+
+          final effectivePickupStopIndex = (!needsPickup || stops.isEmpty)
+              ? 0
+              : _pickupStopIndex.clamp(0, stops.length - 1);
+
+          final pickupTargetGeo = (!needsPickup)
+              ? order.pickup.geo
+              : (stops.isNotEmpty
+                  ? stops[effectivePickupStopIndex].geo
+                  : order.pickup.geo);
+
+          final pickupLat = pickupTargetGeo.latitude;
+          final pickupLng = pickupTargetGeo.longitude;
           final deliveryLat = order.delivery.geo.latitude;
           final deliveryLng = order.delivery.geo.longitude;
 
@@ -167,104 +294,255 @@ class _RiderDeliveryMapScreenState
             riderLocationForOrderProvider(widget.orderId),
           );
 
+          // Prefer device GPS stream for the rider marker & routing.
+          final deviceRiderLocationAsync = ref.watch(riderLocationStreamProvider);
+
+          final deviceLatLng = deviceRiderLocationAsync.maybeWhen(
+            data: (loc) => gmap.LatLng(loc.latitude, loc.longitude),
+            orElse: () => null,
+          );
+          final firestoreLatLng = riderLocationAsync.maybeWhen(
+            data: (loc) => loc == null ? null : gmap.LatLng(loc.latitude, loc.longitude),
+            orElse: () => null,
+          );
+
+          // Sometimes emulators / stale providers yield a default location (e.g. US)
+          // that makes Directions return ZERO_RESULTS for local deliveries.
+          // If the device location is implausibly far from both pickup and delivery,
+          // prefer the Firestore location (if available).
+          final riderLatLng = () {
+            if (deviceLatLng == null) return firestoreLatLng;
+            final distance = ll.Distance();
+            final dToPickup = distance.as(
+              ll.LengthUnit.Meter,
+              ll.LatLng(deviceLatLng.latitude, deviceLatLng.longitude),
+              ll.LatLng(pickupLat, pickupLng),
+            );
+            final dToDelivery = distance.as(
+              ll.LengthUnit.Meter,
+              ll.LatLng(deviceLatLng.latitude, deviceLatLng.longitude),
+              ll.LatLng(deliveryLat, deliveryLng),
+            );
+
+            const farThresholdMeters = 200000.0;
+            final isImplausible = dToPickup > farThresholdMeters &&
+                dToDelivery > farThresholdMeters;
+
+            if (!isImplausible) return deviceLatLng;
+            if (firestoreLatLng == null) {
+              // ignore: avoid_print
+              print(
+                '⚠️ [RiderDeliveryMap] Device GPS implausible and no Firestore location. '
+                'Skipping rider location for routing. '
+                'device=${deviceLatLng.latitude},${deviceLatLng.longitude} '
+                'pickup=$pickupLat,$pickupLng delivery=$deliveryLat,$deliveryLng '
+                'dToPickup=${dToPickup.toStringAsFixed(0)}m '
+                'dToDelivery=${dToDelivery.toStringAsFixed(0)}m',
+              );
+              return null;
+            }
+
+            // ignore: avoid_print
+            print(
+              '⚠️ [RiderDeliveryMap] Ignoring device GPS (too far). '
+              'device=${deviceLatLng.latitude},${deviceLatLng.longitude} '
+              'pickup=$pickupLat,$pickupLng delivery=$deliveryLat,$deliveryLng '
+              'dToPickup=${dToPickup.toStringAsFixed(0)}m '
+              'dToDelivery=${dToDelivery.toStringAsFixed(0)}m',
+            );
+            return firestoreLatLng;
+          }();
+
+          // Stabilize rider coordinate changes to avoid refetching routes on
+          // every tiny GPS jitter.
+          final riderLatLngStable = riderLatLng == null
+              ? null
+              : gmap.LatLng(
+                  _roundCoord(riderLatLng.latitude),
+                  _roundCoord(riderLatLng.longitude),
+                );
+
           final initialCenter = gmap.LatLng(
             (pickupLat + deliveryLat) / 2,
             (pickupLng + deliveryLng) / 2,
           );
 
-          // Get the main route from pickup to delivery
-          final routeAsync = ref.watch(
-            _routeProvider(
-              _RouteParams(
-                pickupLat: pickupLat,
-                pickupLng: pickupLng,
-                deliveryLat: deliveryLat,
-                deliveryLng: deliveryLng,
-              ),
-            ),
-          );
-
-          final polylinePoints = routeAsync.maybeWhen(
-            data: (route) => route.path
-                .map((p) => gmap.LatLng(p.latitude, p.longitude))
-                .toList(),
-            orElse: () => <gmap.LatLng>[],
-          );
-
-          // Build markers set
-          final markers = <gmap.Marker>{
-            // Pickup marker
-            gmap.Marker(
-              markerId: const gmap.MarkerId('pickup'),
-              position: pickupLocation,
-              icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                gmap.BitmapDescriptor.hueOrange,
-              ),
-              infoWindow: const gmap.InfoWindow(title: 'Recogida'),
-            ),
-            // Delivery marker
-            gmap.Marker(
-              markerId: const gmap.MarkerId('delivery'),
-              position: deliveryLocation,
-              icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                gmap.BitmapDescriptor.hueGreen,
-              ),
-              infoWindow: const gmap.InfoWindow(title: 'Entrega'),
-            ),
-          };
-
-          // Build polylines set
-          final polylines = <gmap.Polyline>{};
-
-          // Add rider marker and route to pickup if rider location is available
-          riderLocationAsync.whenData((riderLoc) {
-            if (riderLoc != null) {
-              // Add rider marker
-              markers.add(
-                gmap.Marker(
-                  markerId: const gmap.MarkerId('rider'),
-                  position: gmap.LatLng(riderLoc.latitude, riderLoc.longitude),
-                  icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                    gmap.BitmapDescriptor.hueAzure,
-                  ),
-                  infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
-                ),
+          // If we already have a controller, keep the camera near the rider
+          // as their GPS updates, but avoid spamming camera animations.
+          if (_mapController != null && riderLatLng != null) {
+            final last = _lastCameraRider;
+            final movedEnough = last == null ||
+                (last.latitude - riderLatLng.latitude).abs() > 0.0005 ||
+                (last.longitude - riderLatLng.longitude).abs() > 0.0005;
+            if (movedEnough) {
+              _lastCameraRider = riderLatLng;
+              _mapController!.animateCamera(
+                gmap.CameraUpdate.newLatLng(riderLatLng),
               );
-
-              // Create route from rider to pickup (if order is not yet picked up)
-              if (order.status == OrderStatus.assigned) {
-                // For simplicity, draw a straight line from rider to pickup
-                // In production, you'd want to fetch the actual route
-                polylines.add(
-                  gmap.Polyline(
-                    polylineId: const gmap.PolylineId('rider_to_pickup'),
-                    points: [
-                      gmap.LatLng(riderLoc.latitude, riderLoc.longitude),
-                      pickupLocation,
-                    ],
-                    width: 4,
-                    color: const Color(0xFF3B82F6), // Blue color
-                    patterns: [
-                      gmap.PatternItem.dash(15),
-                      gmap.PatternItem.gap(10),
-                    ],
-                  ),
-                );
-              }
             }
-          });
+          }
 
-          // Add main route from pickup to delivery
-          if (polylinePoints.isNotEmpty) {
-            polylines.add(
-              gmap.Polyline(
-                polylineId: const gmap.PolylineId('route'),
-                points: polylinePoints,
-                width: 4,
-                color: primaryOrange,
+      final showRoute =
+          riderLatLngStable != null && (needsPickup || needsDelivery);
+
+      final pickupWaypoints = () {
+        if (!needsPickup) return <DirectionsPoint>[];
+
+        // Build ordered stops: current pickup stop -> next pickup stops -> delivery.
+        // Destination stays as delivery; pickups are passed as waypoints.
+        if (stops.isEmpty) {
+          return <DirectionsPoint>[
+            DirectionsPoint(latitude: pickupLat, longitude: pickupLng),
+          ];
+        }
+
+        final remaining = stops.skip(effectivePickupStopIndex);
+        return remaining
+            .map(
+              (s) => DirectionsPoint(
+                latitude: s.geo.latitude,
+                longitude: s.geo.longitude,
+              ),
+            )
+            .toList();
+      }();
+
+      final pickupWaypointsKey = pickupWaypoints
+          .map(
+            (p) =>
+                '${_roundCoord(p.latitude)}:${_roundCoord(p.longitude)}',
+          )
+          .join('|');
+
+      final routeAsync = !showRoute
+          ? const AsyncValue<DirectionsRoute?>.data(null)
+          : ref.watch(
+              _routeProvider(
+                _RouteRequestParams(
+                  pickupLat: riderLatLngStable.latitude,
+                  pickupLng: riderLatLngStable.longitude,
+                  deliveryLat: deliveryLat,
+                  deliveryLng: deliveryLng,
+                  waypoints: pickupWaypoints,
+                  waypointsKey: pickupWaypointsKey,
+                ),
               ),
             );
-          }
+
+      final targetLatLng = !showRoute
+          ? null
+          : (needsPickup ? pickupLocation : deliveryLocation);
+
+      final routeColor = needsPickup ? primaryOrange : const Color(0xFF3B82F6);
+
+      final markers = <gmap.Marker>{
+        if (needsPickup)
+          ...(() {
+            if (stops.isEmpty) {
+              return <gmap.Marker>[
+                gmap.Marker(
+                  markerId: const gmap.MarkerId('pickup'),
+                  position: pickupLocation,
+                  icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                    gmap.BitmapDescriptor.hueOrange,
+                  ),
+                  infoWindow: const gmap.InfoWindow(title: 'Recogida'),
+                ),
+              ];
+            }
+
+            return List.generate(stops.length, (i) {
+              final stop = stops[i];
+              final isCurrent = i == effectivePickupStopIndex;
+              return gmap.Marker(
+                markerId: gmap.MarkerId('pickup_${i + 1}'),
+                position: gmap.LatLng(
+                  stop.geo.latitude,
+                  stop.geo.longitude,
+                ),
+                icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                  isCurrent
+                      ? gmap.BitmapDescriptor.hueAzure
+                      : gmap.BitmapDescriptor.hueOrange,
+                ),
+                infoWindow: gmap.InfoWindow(
+                  title: 'Recogida ${i + 1}/${stops.length}',
+                ),
+              );
+            });
+          })(),
+        gmap.Marker(
+          markerId: const gmap.MarkerId('delivery'),
+          position: deliveryLocation,
+          icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+            gmap.BitmapDescriptor.hueGreen,
+          ),
+          infoWindow: const gmap.InfoWindow(title: 'Entrega'),
+        ),
+      };
+
+      if (riderLatLng != null) {
+        markers.add(
+          gmap.Marker(
+            markerId: const gmap.MarkerId('rider'),
+            position: riderLatLng,
+            icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+              gmap.BitmapDescriptor.hueAzure,
+            ),
+            infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
+          ),
+        );
+      }
+
+      // Build polylines set
+      final polylines = <gmap.Polyline>{};
+
+      final routePoints = routeAsync.maybeWhen(
+        data: (route) => (route?.path ?? const <DirectionsPoint>[])
+            .map((p) => gmap.LatLng(p.latitude, p.longitude))
+            .toList(),
+        orElse: () => const <gmap.LatLng>[],
+      );
+
+      final routeStatusText = () {
+        if (!showRoute) return 'Ruta: esperando ubicación/estado';
+        return routeAsync.when(
+          data: (route) {
+            if (route == null || routePoints.isEmpty) {
+              return 'Ruta: fallback recta';
+            }
+            final mins = (route.durationSeconds / 60).round();
+            final km = route.distanceMeters / 1000.0;
+            return 'Ruta: $mins min • ${km.toStringAsFixed(1)} km';
+          },
+          loading: () => 'Ruta: calculando...',
+          error: (e, _) => 'Ruta: error ($e)',
+        );
+      }();
+
+      if (showRoute && routePoints.isNotEmpty) {
+        polylines.add(
+          gmap.Polyline(
+            polylineId: const gmap.PolylineId('follow_route'),
+            points: routePoints,
+            width: 7,
+            color: routeColor,
+            geodesic: true,
+            zIndex: 10,
+          ),
+        );
+      } else if (showRoute && targetLatLng != null) {
+        polylines.add(
+          gmap.Polyline(
+            polylineId: const gmap.PolylineId('fallback_route'),
+            points: [riderLatLngStable, targetLatLng],
+            width: 6,
+            color: routeColor,
+            geodesic: true,
+            zIndex: 5,
+          ),
+        );
+      }
 
           return Stack(
             children: [
@@ -274,48 +552,39 @@ class _RiderDeliveryMapScreenState
                     target: initialCenter,
                     zoom: 13.5,
                   ),
-                  onMapCreated: (controller) {
-                    _mapController = controller;
-                    // Adjust camera to show all markers
-                    Future.delayed(const Duration(milliseconds: 500), () {
-                      if (_mapController != null) {
-                        // Calculate bounds to include all points
-                        riderLocationAsync.whenData((riderLoc) {
-                          if (riderLoc != null) {
-                            _mapController!.animateCamera(
-                              gmap.CameraUpdate.newLatLngBounds(
-                                _calculateBoundsForThreePoints(
-                                  gmap.LatLng(
-                                    riderLoc.latitude,
-                                    riderLoc.longitude,
-                                  ),
-                                  pickupLocation,
-                                  deliveryLocation,
-                                ),
-                                80,
-                              ),
-                            );
-                          } else {
-                            _mapController!.animateCamera(
-                              gmap.CameraUpdate.newLatLngBounds(
-                                _calculateBounds(
-                                  pickupLocation,
-                                  deliveryLocation,
-                                ),
-                                80,
-                              ),
-                            );
-                          }
-                        });
-                      }
-                    });
-                  },
-                  polylines: polylines,
                   markers: markers,
-                  myLocationEnabled: false,
-                  myLocationButtonEnabled: false,
+                  polylines: polylines,
+                  myLocationEnabled: true,
+                  myLocationButtonEnabled: true,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
+                ),
+              ),
+              Positioned(
+                top: 12,
+                left: 12,
+                right: 12,
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      routeStatusText,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
               ),
               Positioned(
@@ -324,18 +593,66 @@ class _RiderDeliveryMapScreenState
                 bottom: 16,
                 child: _BottomPanel(
                   order: order,
-                  onChat: () async {
+                  stepTitle: needsPickup
+                      ? (stops.isEmpty
+                          ? 'Siguiente: Recoger'
+                          : 'Siguiente: Recoger ${effectivePickupStopIndex + 1}/${stops.length}')
+                      : 'Siguiente: Entregar',
+                  needsPickup: needsPickup,
+                  pickupStopsCount: stops.length,
+                  pickupStopIndex: effectivePickupStopIndex,
+                  currentPickupOfferIds: (needsPickup &&
+                          stops.isNotEmpty &&
+                          effectivePickupStopIndex < stops.length)
+                      ? stops[effectivePickupStopIndex].offerIds
+                      : const <String>[],
+                  currentPickupAddressSnapshot: (!needsPickup)
+                      ? ''
+                      : (stops.isNotEmpty && effectivePickupStopIndex < stops.length)
+                          ? stops[effectivePickupStopIndex].addressSnapshot
+                          : order.pickup.addressSnapshot,
+                  deliveryAddressSnapshot: order.delivery.addressSnapshot,
+                  onOpenChat: ({
+                    required String buyerId,
+                    required String buyerName,
+                  }) async {
                     try {
-                      await _openChat(order: order);
+                      await _openChat(
+                        order: order,
+                        buyerId: buyerId,
+                        buyerName: buyerName,
+                      );
                     } catch (e) {
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('No se pudo abrir chat: $e')),
                       );
                     }
                   },
+                  onArrivedAtPickupStop: (!needsPickup || stops.isEmpty)
+                      ? null
+                      : () {
+                          final isLast =
+                              effectivePickupStopIndex >= stops.length - 1;
+
+                          // Persist progress for per-stop hero notifications.
+                          unawaited(
+                            _markPickupStopCompleted(
+                              orderId: order.orderId,
+                              stopIndex: effectivePickupStopIndex,
+                            ),
+                          );
+
+                          if (!isLast) {
+                            setState(() => _pickupStopIndex =
+                                (effectivePickupStopIndex + 1).clamp(0, 9999));
+                          }
+                        },
                   onPickedUp: order.status == OrderStatus.assigned
-                      ? () => _setStatus(order, OrderStatus.pickedUp)
+                      ? (stops.isNotEmpty &&
+                              effectivePickupStopIndex < stops.length - 1
+                          ? null
+                          : () => _setStatus(order, OrderStatus.pickedUp))
                       : null,
                   onInTransit: (order.status == OrderStatus.pickedUp)
                       ? () => _setStatus(order, OrderStatus.inTransit)
@@ -352,68 +669,115 @@ class _RiderDeliveryMapScreenState
     );
   }
 
-  gmap.LatLngBounds _calculateBounds(gmap.LatLng pos1, gmap.LatLng pos2) {
-    final southwest = gmap.LatLng(
-      pos1.latitude < pos2.latitude ? pos1.latitude : pos2.latitude,
-      pos1.longitude < pos2.longitude ? pos1.longitude : pos2.longitude,
-    );
-    final northeast = gmap.LatLng(
-      pos1.latitude > pos2.latitude ? pos1.latitude : pos2.latitude,
-      pos1.longitude > pos2.longitude ? pos1.longitude : pos2.longitude,
-    );
-    return gmap.LatLngBounds(southwest: southwest, northeast: northeast);
-  }
-
-  gmap.LatLngBounds _calculateBoundsForThreePoints(
-    gmap.LatLng pos1,
-    gmap.LatLng pos2,
-    gmap.LatLng pos3,
-  ) {
-    final minLat = [
-      pos1.latitude,
-      pos2.latitude,
-      pos3.latitude,
-    ].reduce((a, b) => a < b ? a : b);
-    final maxLat = [
-      pos1.latitude,
-      pos2.latitude,
-      pos3.latitude,
-    ].reduce((a, b) => a > b ? a : b);
-    final minLng = [
-      pos1.longitude,
-      pos2.longitude,
-      pos3.longitude,
-    ].reduce((a, b) => a < b ? a : b);
-    final maxLng = [
-      pos1.longitude,
-      pos2.longitude,
-      pos3.longitude,
-    ].reduce((a, b) => a > b ? a : b);
-
-    return gmap.LatLngBounds(
-      southwest: gmap.LatLng(minLat, minLng),
-      northeast: gmap.LatLng(maxLat, maxLng),
-    );
-  }
 }
 
-class _BottomPanel extends StatelessWidget {
+class _BottomPanel extends ConsumerWidget {
   final Order order;
-  final VoidCallback onChat;
+  final String stepTitle;
+  final bool needsPickup;
+  final int pickupStopsCount;
+  final int pickupStopIndex;
+  final List<String> currentPickupOfferIds;
+  final String currentPickupAddressSnapshot;
+  final String deliveryAddressSnapshot;
+  final Future<void> Function({required String buyerId, required String buyerName})
+  onOpenChat;
+  final VoidCallback? onArrivedAtPickupStop;
   final VoidCallback? onPickedUp;
   final VoidCallback? onInTransit;
   final VoidCallback? onDelivered;
 
   const _BottomPanel({
     required this.order,
-    required this.onChat,
+    required this.stepTitle,
+    required this.needsPickup,
+    required this.pickupStopsCount,
+    required this.pickupStopIndex,
+    required this.currentPickupOfferIds,
+    required this.currentPickupAddressSnapshot,
+    required this.deliveryAddressSnapshot,
+    required this.onOpenChat,
+    required this.onArrivedAtPickupStop,
     required this.onPickedUp,
     required this.onInTransit,
     required this.onDelivered,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasStops = pickupStopsCount > 0;
+    final currentPickupHuman = (pickupStopIndex + 1).clamp(1, pickupStopsCount);
+    final arrivedLabel = hasStops
+        ? 'Llegué a la recogida $currentPickupHuman/$pickupStopsCount'
+        : 'Llegué a la recogida';
+    final arrivedEnabled = needsPickup && onArrivedAtPickupStop != null;
+    final pickedUpEnabled = onPickedUp != null;
+    final inTransitEnabled = onInTransit != null;
+    final deliveredEnabled = onDelivered != null;
+
+    final isLastPickupStop = !hasStops || pickupStopIndex >= pickupStopsCount - 1;
+
+    Future<void> callPhone(String phone) async {
+      final uri = Uri.parse('tel:$phone');
+      final ok = await launchUrl(uri);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir la llamada')),
+        );
+      }
+    }
+
+    final String targetTitle;
+    final String? targetPhone;
+    final String? chatBuyerId;
+    final String chatBuyerName;
+
+    String? pickupSummary;
+    String? pickupWhere;
+
+    if (needsPickup) {
+      targetTitle = 'Donador';
+      final offerId = currentPickupOfferIds.isNotEmpty
+          ? currentPickupOfferIds.first
+          : null;
+      final offerAsync = offerId == null
+          ? const AsyncValue<Offer?>.data(null)
+          : ref.watch(_offerByIdProvider(offerId));
+      final offerTitle = offerAsync.value?.title;
+      final donorId = offerAsync.value?.heroId;
+      final donorAsync = (donorId == null || donorId.isEmpty)
+          ? const AsyncValue.data(null)
+          : ref.watch(userByIdProvider(donorId));
+      targetPhone = donorAsync.value?.phoneNumber;
+      chatBuyerId = donorId;
+      chatBuyerName = donorAsync.value?.fullName ?? 'Donador';
+
+      final extraOffers = currentPickupOfferIds.length - 1;
+      final titleBase = (offerTitle != null && offerTitle.trim().isNotEmpty)
+          ? offerTitle.trim()
+          : 'Pedido';
+      pickupSummary = extraOffers > 0
+          ? '$titleBase (+$extraOffers más)'
+          : titleBase;
+
+      final pickupAddress = currentPickupAddressSnapshot.trim();
+      pickupWhere = pickupAddress.isNotEmpty
+          ? pickupAddress
+          : 'Ubicación de recogida';
+    } else {
+      targetTitle = 'Hero';
+      targetPhone = order.delivery.recipientPhone;
+      chatBuyerId = order.heroId;
+      chatBuyerName = order.delivery.recipientName.isNotEmpty
+          ? order.delivery.recipientName
+          : 'Cliente';
+    }
+
+    final phoneTrimmed = targetPhone?.trim() ?? '';
+    final canCall = phoneTrimmed.isNotEmpty;
+    final buyerIdResolved = chatBuyerId;
+    final canChat = buyerIdResolved != null && buyerIdResolved.trim().isNotEmpty;
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -443,30 +807,392 @@ class _BottomPanel extends StatelessWidget {
                   ),
                 ),
               ),
+              if (canCall)
+                IconButton(
+                  tooltip: 'Llamar a $targetTitle',
+                  onPressed: () {
+                    callPhone(phoneTrimmed);
+                  },
+                  icon: const Icon(Icons.call_outlined),
+                  color: primaryOrange,
+                ),
               IconButton(
-                onPressed: onChat,
+                tooltip: 'Chat con $targetTitle',
+                onPressed: !canChat
+                    ? null
+                    : () {
+                        onOpenChat(
+                          buyerId: buyerIdResolved,
+                          buyerName: chatBuyerName,
+                        );
+                      },
                 icon: const Icon(Icons.chat_bubble_outline),
                 color: primaryOrange,
               ),
             ],
           ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  stepTitle,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: textGray700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 10),
+              _StepPills(
+                pickupStopsCount: pickupStopsCount,
+                pickupStopIndex: pickupStopIndex,
+                needsPickup: needsPickup,
+                status: order.status,
+              ),
+            ],
+          ),
           const SizedBox(height: 10),
-          _ActionButton(label: 'Retirando (Picked up)', onPressed: onPickedUp),
-          const SizedBox(height: 8),
-          _ActionButton(label: 'En vía (In transit)', onPressed: onInTransit),
-          const SizedBox(height: 8),
-          _ActionButton(label: 'Entregado', onPressed: onDelivered),
+          if (needsPickup)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: primaryOrange.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: primaryOrange.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.inventory_2_outlined,
+                    color: primaryOrange,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Vas a recoger: ${pickupSummary ?? 'Pedido'}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: textGray900,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          pickupWhere ?? 'Ubicación de recogida',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: textGray700,
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF3B82F6).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.18),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    color: Color(0xFF3B82F6),
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Vas a entregar a: ${order.delivery.recipientName.isNotEmpty ? order.delivery.recipientName : 'Hero'}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: textGray900,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          deliveryAddressSnapshot.trim().isNotEmpty
+                              ? deliveryAddressSnapshot.trim()
+                              : order.delivery.addressSnapshot,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: textGray700,
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 10),
+          if (needsPickup) ...[
+            _ActionButton(
+              icon: Icons.store_mall_directory_outlined,
+              label: arrivedLabel,
+              onPressed: arrivedEnabled ? onArrivedAtPickupStop : null,
+            ),
+            if (isLastPickupStop) ...[
+              const SizedBox(height: 8),
+              _ActionButton(
+                icon: Icons.shopping_bag_outlined,
+                label: 'Retiré el pedido',
+                onPressed: pickedUpEnabled ? onPickedUp : null,
+              ),
+            ],
+          ] else ...[
+            _ActionButton(
+              icon: Icons.local_shipping_outlined,
+              label: 'En vía',
+              onPressed: inTransitEnabled ? onInTransit : null,
+            ),
+            const SizedBox(height: 8),
+            _ActionButton(
+              icon: Icons.check_circle_outline,
+              label: 'Entregado',
+              onPressed: deliveredEnabled ? onDelivered : null,
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
+class _StepPills extends StatelessWidget {
+  final int pickupStopsCount;
+  final int pickupStopIndex;
+  final bool needsPickup;
+  final OrderStatus status;
+
+  const _StepPills({
+    required this.pickupStopsCount,
+    required this.pickupStopIndex,
+    required this.needsPickup,
+    required this.status,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pills = <Widget>[];
+
+    if (pickupStopsCount > 0) {
+      for (int i = 0; i < pickupStopsCount; i++) {
+        final isDone = !needsPickup || i < pickupStopIndex;
+        final isCurrent = needsPickup && i == pickupStopIndex;
+        pills.add(
+          _Pill(
+            text: '${i + 1}',
+            active: isCurrent,
+            done: isDone,
+          ),
+        );
+        if (i < pickupStopsCount - 1) pills.add(const SizedBox(width: 6));
+      }
+    } else {
+      pills.add(
+        _Pill(
+          text: 'R',
+          active: needsPickup,
+          done: !needsPickup,
+        ),
+      );
+    }
+
+    pills.add(const SizedBox(width: 6));
+    pills.add(
+      _Pill(
+        text: 'D',
+        active: !needsPickup,
+        done: status == OrderStatus.delivered,
+      ),
+    );
+
+    return Row(mainAxisSize: MainAxisSize.min, children: pills);
+  }
+}
+
+class _Pill extends StatelessWidget {
+  final String text;
+  final bool active;
+  final bool done;
+
+  const _Pill({
+    required this.text,
+    required this.active,
+    required this.done,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg = done
+        ? Colors.green.withValues(alpha: 0.16)
+        : (active
+            ? primaryOrange.withValues(alpha: 0.16)
+            : borderGray100);
+    final Color fg = done
+        ? Colors.green
+        : (active ? primaryOrange : textGray600);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: done
+              ? Colors.green.withValues(alpha: 0.35)
+              : (active
+                  ? primaryOrange.withValues(alpha: 0.35)
+                  : borderGray100),
+        ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+          color: fg,
+        ),
+      ),
+    );
+  }
+}
+
+class _DeliveryCompletedScreen extends StatelessWidget {
+  final String orderId;
+
+  const _DeliveryCompletedScreen({required this.orderId});
+
+  @override
+  Widget build(BuildContext context) {
+    final shortId = orderId.length <= 8 ? orderId : orderId.substring(0, 8);
+
+    return Scaffold(
+      backgroundColor: backgroundGray50,
+      appBar: AppBar(
+        backgroundColor: primaryYellow,
+        foregroundColor: textGray900,
+        elevation: 0,
+        title: const Text(
+          'Entrega completada',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle,
+                  size: 54,
+                  color: Colors.green,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Pedido #$shortId',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: textGray900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '¡Entrega marcada como completada!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: textGray900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Puedes volver al inicio para ver nuevos pedidos.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: textGray600,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryOrange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Volver al inicio',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ActionButton extends StatelessWidget {
+  final IconData icon;
   final String label;
   final VoidCallback? onPressed;
 
-  const _ActionButton({required this.label, required this.onPressed});
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -481,7 +1207,21 @@ class _ActionButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

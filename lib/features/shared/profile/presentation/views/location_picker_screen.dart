@@ -3,6 +3,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_places_flutter/google_places_flutter.dart';
 import 'package:google_places_flutter/model/prediction.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class MapLocationResult {
   final double latitude;
@@ -43,6 +45,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   late final TextEditingController _searchController;
   GoogleMapController? _controller;
   bool _isLocating = false;
+  bool _isResolvingAddress = false;
 
   @override
   void initState() {
@@ -71,6 +74,69 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       _selected = pos;
       _addressController.text = _formatLatLng(pos);
     });
+
+    _resolveAddressFromLatLng(pos);
+  }
+
+  Future<void> _resolveAddressFromLatLng(LatLng pos) async {
+    if (_isResolvingAddress) return;
+    if (widget.apiKey.trim().isEmpty) return;
+
+    setState(() => _isResolvingAddress = true);
+    try {
+      final uri = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json'
+        '?latlng=${pos.latitude},${pos.longitude}'
+        '&key=${widget.apiKey}',
+      );
+
+      final res = await http.get(uri);
+      if (res.statusCode != 200) return;
+
+      final decoded = json.decode(res.body);
+      if (decoded is! Map<String, dynamic>) return;
+
+      String? compoundPlusCode;
+      final plusCode = decoded['plus_code'];
+      if (plusCode is Map<String, dynamic>) {
+        final compound = plusCode['compound_code'];
+        if (compound is String && compound.trim().isNotEmpty) {
+          compoundPlusCode = compound.trim();
+        }
+      }
+
+      final results = decoded['results'];
+      if (results is! List || results.isEmpty) return;
+
+      final first = results.first;
+      if (first is! Map<String, dynamic>) return;
+
+      final formatted = first['formatted_address'];
+      if (formatted is! String || formatted.trim().isEmpty) return;
+
+      final resolved = _sanitizeAddress(
+        compoundPlusCode != null
+            ? '$compoundPlusCode, ${formatted.trim()}'
+            : formatted.trim(),
+      );
+      if (!mounted) return;
+      setState(() {
+        if (compoundPlusCode != null) {
+          _addressController.text = resolved;
+          return;
+        }
+
+        // Avoid overwriting if user already selected a place from autocomplete.
+        // Only replace if it's still showing the lat/lng placeholder.
+        if (_addressController.text.trim().startsWith('Lat:')) {
+          _addressController.text = resolved;
+        }
+      });
+    } catch (_) {
+      // Keep fallback text
+    } finally {
+      if (mounted) setState(() => _isResolvingAddress = false);
+    }
   }
 
   void _onConfirm() {
@@ -83,9 +149,28 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       MapLocationResult(
         latitude: _selected.latitude,
         longitude: _selected.longitude,
-        address: resolvedAddress,
+        address: _sanitizeAddress(resolvedAddress),
       ),
     );
+  }
+
+  Future<void> _onConfirmAsync() async {
+    if (_isResolvingAddress) return;
+
+    // If user tapped the map and the placeholder is still shown, try to resolve
+    // once before returning.
+    if (_addressController.text.trim().startsWith('Lat:')) {
+      await _resolveAddressFromLatLng(_selected);
+    }
+
+    _onConfirm();
+  }
+
+  String _sanitizeAddress(String value) {
+    final trimmed = value.trim();
+
+    // Avoid dangling commas/spaces.
+    return trimmed.replaceAll(RegExp(r'[\s,]+$'), '').trim();
   }
 
   String _formatLatLng(LatLng pos) =>
@@ -148,7 +233,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               ),
               itemClick: (Prediction p) {
                 _searchController.text = p.description ?? '';
-                _addressController.text = p.description ?? _addressController.text;
+                final desc = p.description;
+                _addressController.text =
+                    desc != null ? _sanitizeAddress(desc) : _addressController.text;
               },
               isLatLngRequired: true,
               getPlaceDetailWithLatLng: (Prediction p) async {
@@ -156,7 +243,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   final latLng = LatLng(double.parse(p.lat!), double.parse(p.lng!));
                   setState(() {
                     _selected = latLng;
-                    _addressController.text = p.description ?? _formatLatLng(latLng);
+                    final desc = p.description;
+                    _addressController.text = desc != null
+                        ? _sanitizeAddress(desc)
+                        : _formatLatLng(latLng);
                   });
                   await _controller?.animateCamera(
                     CameraUpdate.newCameraPosition(
@@ -166,7 +256,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                 }
               },
               debounceTime: 600,
-              countries: const ['cl'],
             ),
           ),
           Expanded(
@@ -203,11 +292,23 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    onPressed: _onConfirm,
-                    child: const Text(
-                      'Usar esta ubicación',
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-                    ),
+                    onPressed: _isResolvingAddress ? null : _onConfirmAsync,
+                    child: _isResolvingAddress
+                        ? const SizedBox(
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Usar esta ubicación',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                            ),
+                          ),
                   ),
                 ),
               ],

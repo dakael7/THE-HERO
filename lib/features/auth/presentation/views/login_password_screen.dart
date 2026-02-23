@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../providers/auth_provider.dart';
@@ -165,8 +166,11 @@ class _LoginPasswordScreenState extends ConsumerState<LoginPasswordScreen> {
               return;
             }
 
+            final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+            final isEmailVerified = authUser?.emailVerified ?? false;
+
             final isVerified = currentUser.contact.emailVerified;
-            if (!isVerified) {
+            if (!isEmailVerified || !isVerified) {
               if (!context.mounted) return;
               Navigator.pushReplacement(
                 context,

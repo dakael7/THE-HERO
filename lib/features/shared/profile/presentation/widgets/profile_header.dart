@@ -14,6 +14,8 @@ class ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isVerified = user.isRutVerified;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
@@ -80,27 +82,28 @@ class ProfileHeader extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: primaryOrange.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: primaryOrange.withValues(alpha: 0.20),
+                  if (isVerified)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: primaryOrange.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: primaryOrange.withValues(alpha: 0.20),
+                        ),
+                      ),
+                      child: Text(
+                        isRiderProfile ? 'Rider Verificado' : 'Héroe Verificado',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: primaryOrange,
+                        ),
                       ),
                     ),
-                    child: Text(
-                      isRiderProfile ? 'Rider Verificado' : 'Héroe Verificado',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: primaryOrange,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),

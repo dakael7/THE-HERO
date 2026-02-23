@@ -1,41 +1,72 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../../../core/config/env.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/order.dart';
+import '../../../../domain/services/rider_commission_calculator.dart';
 import '../../../../data/repositories/location_repository_impl.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../shared/profile/presentation/views/rut_verification_screen.dart';
 import '../../domain/services/rider_tracking_service.dart';
 import '../../domain/services/directions_service.dart';
+import '../providers/rider_nearby_providers.dart';
 import 'rider_delivery_map_screen.dart';
 
 final _routeProvider = FutureProvider.autoDispose
-    .family<DirectionsRoute, _RouteParams>((ref, params) {
+    .family<DirectionsRoute, _RouteRequestParams>((ref, params) {
       final service = DirectionsService();
       return service.getRoute(
-        pickupLat: params.pickupLat,
-        pickupLng: params.pickupLng,
-        deliveryLat: params.deliveryLat,
-        deliveryLng: params.deliveryLng,
+        pickupLat: params.originLat,
+        pickupLng: params.originLng,
+        deliveryLat: params.destinationLat,
+        deliveryLng: params.destinationLng,
+        waypoints: params.waypoints,
       );
     });
 
-class _RouteParams {
-  final double pickupLat;
-  final double pickupLng;
-  final double deliveryLat;
-  final double deliveryLng;
+class _RouteRequestParams {
+  final double originLat;
+  final double originLng;
+  final double destinationLat;
+  final double destinationLng;
+  final List<DirectionsPoint> waypoints;
+  final String waypointsKey;
 
-  const _RouteParams({
-    required this.pickupLat,
-    required this.pickupLng,
-    required this.deliveryLat,
-    required this.deliveryLng,
+  const _RouteRequestParams({
+    required this.originLat,
+    required this.originLng,
+    required this.destinationLat,
+    required this.destinationLng,
+    this.waypoints = const <DirectionsPoint>[],
+    this.waypointsKey = '',
   });
+
+  @override
+  bool operator ==(Object other) {
+    return other is _RouteRequestParams &&
+        other.originLat == originLat &&
+        other.originLng == originLng &&
+        other.destinationLat == destinationLat &&
+        other.destinationLng == destinationLng &&
+        other.waypointsKey == waypointsKey;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(
+        originLat,
+        originLng,
+        destinationLat,
+        destinationLng,
+        waypointsKey,
+      );
 }
 
 class DeliveryDetailsScreen extends ConsumerStatefulWidget {
@@ -50,6 +81,9 @@ class DeliveryDetailsScreen extends ConsumerStatefulWidget {
 
 class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
   gmap.GoogleMapController? _mapController;
+  String? _lastRouteDebug;
+
+  double _roundCoord(double v) => double.parse(v.toStringAsFixed(5));
 
   @override
   void dispose() {
@@ -62,24 +96,65 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
     final claimState = ref.watch(orderNotifierProvider);
 
     // Extract data from order
-    final pickupLat = widget.order.pickup.geo.latitude;
-    final pickupLng = widget.order.pickup.geo.longitude;
+    final stops = widget.order.pickupStops ?? const [];
+    final earnings = RiderCommissionCalculator.calculateCommission(
+      deliveryFee: widget.order.deliveryFee,
+    );
+    final primaryPickupGeo = (stops.isNotEmpty) ? stops.first.geo : widget.order.pickup.geo;
+    final pickupLat = primaryPickupGeo.latitude;
+    final pickupLng = primaryPickupGeo.longitude;
     final deliveryLat = widget.order.delivery.geo.latitude;
     final deliveryLng = widget.order.delivery.geo.longitude;
 
+    final deviceRiderLocationAsync = ref.watch(riderLocationStreamProvider);
+    final deviceLatLng = deviceRiderLocationAsync.maybeWhen(
+      data: (loc) => gmap.LatLng(loc.latitude, loc.longitude),
+      orElse: () => null,
+    );
+    final riderLatLngStable = deviceLatLng == null
+        ? null
+        : gmap.LatLng(
+            _roundCoord(deviceLatLng.latitude),
+            _roundCoord(deviceLatLng.longitude),
+          );
+
+    final showFullRoute = riderLatLngStable != null;
+
+    final pickupWaypoints = stops
+        .map(
+          (s) => DirectionsPoint(
+            latitude: s.geo.latitude,
+            longitude: s.geo.longitude,
+          ),
+        )
+        .toList();
+    final pickupWaypointsKey = stops
+        .map(
+          (s) =>
+              '${s.geo.latitude.toStringAsFixed(5)},${s.geo.longitude.toStringAsFixed(5)}',
+        )
+        .join('|');
+
     final routeAsync = ref.watch(
       _routeProvider(
-        _RouteParams(
-          pickupLat: pickupLat,
-          pickupLng: pickupLng,
-          deliveryLat: deliveryLat,
-          deliveryLng: deliveryLng,
+        _RouteRequestParams(
+          originLat: showFullRoute ? riderLatLngStable.latitude : pickupLat,
+          originLng: showFullRoute ? riderLatLngStable.longitude : pickupLng,
+          destinationLat: deliveryLat,
+          destinationLng: deliveryLng,
+          waypoints: showFullRoute ? pickupWaypoints : const <DirectionsPoint>[],
+          waypointsKey: showFullRoute ? pickupWaypointsKey : '',
         ),
       ),
     );
 
     final pickupLocation = gmap.LatLng(pickupLat, pickupLng);
     final deliveryLocation = gmap.LatLng(deliveryLat, deliveryLng);
+    final allPickupLocations = stops.isNotEmpty
+        ? stops
+            .map((s) => gmap.LatLng(s.geo.latitude, s.geo.longitude))
+            .toList(growable: false)
+        : <gmap.LatLng>[pickupLocation];
     final initialCenter = gmap.LatLng(
       (pickupLat + deliveryLat) / 2,
       (pickupLng + deliveryLng) / 2,
@@ -101,6 +176,61 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       orElse: () => '~15 min',
     );
 
+    final debug = 'rider=${riderLatLngStable == null ? '-' : '${riderLatLngStable.latitude},${riderLatLngStable.longitude}'} '
+        'pickup=$pickupLat,$pickupLng delivery=$deliveryLat,$deliveryLng '
+        'fullRoute=$showFullRoute';
+    if (_lastRouteDebug != debug) {
+      _lastRouteDebug = debug;
+      // ignore: avoid_print
+      print('🧭 [DeliveryDetailsMap] $debug');
+    }
+
+    final pickupMarkers = <gmap.Marker>{
+      if (stops.isEmpty)
+        gmap.Marker(
+          markerId: const gmap.MarkerId('pickup'),
+          position: pickupLocation,
+          icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+            gmap.BitmapDescriptor.hueOrange,
+          ),
+          infoWindow: const gmap.InfoWindow(title: 'Recogida'),
+        )
+      else
+        for (int i = 0; i < stops.length; i++)
+          gmap.Marker(
+            markerId: gmap.MarkerId('pickup_${i + 1}'),
+            position: gmap.LatLng(
+              stops[i].geo.latitude,
+              stops[i].geo.longitude,
+            ),
+            icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+              gmap.BitmapDescriptor.hueOrange,
+            ),
+            infoWindow: gmap.InfoWindow(
+              title: 'Recogida ${i + 1}/${stops.length}',
+            ),
+          ),
+    };
+
+    gmap.LatLngBounds boundsForPoints(List<gmap.LatLng> points) {
+      final lats = points.map((p) => p.latitude).toList();
+      final lngs = points.map((p) => p.longitude).toList();
+      final minLat = lats.reduce((a, b) => a < b ? a : b);
+      final maxLat = lats.reduce((a, b) => a > b ? a : b);
+      final minLng = lngs.reduce((a, b) => a < b ? a : b);
+      final maxLng = lngs.reduce((a, b) => a > b ? a : b);
+      return gmap.LatLngBounds(
+        southwest: gmap.LatLng(minLat, minLng),
+        northeast: gmap.LatLng(maxLat, maxLng),
+      );
+    }
+
+    final cameraPoints = <gmap.LatLng>[
+      if (riderLatLngStable != null) riderLatLngStable,
+      ...allPickupLocations,
+      deliveryLocation,
+    ];
+
     return Scaffold(
       backgroundColor: backgroundGray50,
       body: Stack(
@@ -114,13 +244,13 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
               ),
               onMapCreated: (controller) {
                 _mapController = controller;
-                // Ajustar bounds para mostrar ambos marcadores
+                // Ajustar bounds para mostrar marcadores
                 if (polylinePoints.isNotEmpty) {
                   Future.delayed(const Duration(milliseconds: 500), () {
                     if (_mapController != null) {
                       _mapController!.animateCamera(
                         gmap.CameraUpdate.newLatLngBounds(
-                          _calculateBounds(pickupLocation, deliveryLocation),
+                          boundsForPoints(cameraPoints),
                           80,
                         ),
                       );
@@ -142,14 +272,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                   ),
               },
               markers: {
-                gmap.Marker(
-                  markerId: const gmap.MarkerId('pickup'),
-                  position: pickupLocation,
-                  icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                    gmap.BitmapDescriptor.hueOrange,
-                  ),
-                  infoWindow: const gmap.InfoWindow(title: 'Recogida'),
-                ),
+                ...pickupMarkers,
                 gmap.Marker(
                   markerId: const gmap.MarkerId('delivery'),
                   position: deliveryLocation,
@@ -158,9 +281,18 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                   ),
                   infoWindow: const gmap.InfoWindow(title: 'Entrega'),
                 ),
+                if (deviceLatLng != null)
+                  gmap.Marker(
+                    markerId: const gmap.MarkerId('rider'),
+                    position: deviceLatLng,
+                    icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                      gmap.BitmapDescriptor.hueAzure,
+                    ),
+                    infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
+                  ),
               },
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: true,
               zoomControlsEnabled: false,
               mapToolbarEnabled: false,
             ),
@@ -171,82 +303,80 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
             top: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 8,
-                left: 8,
-                right: 8,
-                bottom: 8,
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.6),
-                    Colors.transparent,
+            child: SafeArea(
+              bottom: false,
+              child: Container(
+                padding: const EdgeInsets.only(
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back, color: textGray900),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Detalles de Entrega',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back, color: textGray900),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'Detalles de Entrega',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
-                    ),
-                  ),
-                ],
               ),
             ),
           ),
 
           // Info cards flotantes sobre el mapa
           Positioned(
-            top: MediaQuery.of(context).padding.top + 70,
             left: 16,
             right: 16,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildInfoCard(
-                    icon: Icons.route_outlined,
-                    label: 'Distancia',
-                    value: distanceText,
-                    color: primaryOrange,
-                  ),
+            top: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 70),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _buildInfoCard(
+                        icon: Icons.route_outlined,
+                        label: 'Distancia',
+                        value: distanceText,
+                        color: primaryOrange,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildInfoCard(
+                        icon: Icons.access_time_outlined,
+                        label: 'Tiempo est.',
+                        value: durationText,
+                        color: categoryTextBlue,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildInfoCard(
-                    icon: Icons.access_time_outlined,
-                    label: 'Tiempo est.',
-                    value: durationText,
-                    color: categoryTextBlue,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
 
@@ -254,7 +384,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
           DraggableScrollableSheet(
             initialChildSize: 0.42,
             minChildSize: 0.42,
-            maxChildSize: 0.85,
+            maxChildSize: 0.42,
             builder: (context, scrollController) {
               return Container(
                 decoration: const BoxDecoration(
@@ -271,22 +401,25 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                     ),
                   ],
                 ),
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(20),
+                child: Column(
                   children: [
-                    // Indicador de arrastre
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: textGray600.withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                    Expanded(
+                      child: ListView(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(20),
+                        children: [
+                          // Indicador de arrastre
+                          Center(
+                            child: Container(
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: textGray600.withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
 
                     // Producto y earnings
                     Row(
@@ -411,7 +544,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '\$${widget.order.deliveryFee.toStringAsFixed(0)}',
+                                '\$${earnings.netEarnings.toStringAsFixed(0)}',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
@@ -500,15 +633,116 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                     // Direcciones compactas
                     _buildCompactAddressRow(
                       icon: Icons.location_on_outlined,
-                      label: 'Recogida',
-                      address: widget.order.pickup.addressSnapshot,
+                      label: (widget.order.pickupStops != null &&
+                              widget.order.pickupStops!.isNotEmpty)
+                          ? 'Recogidas'
+                          : 'Recogida',
+                      address: (widget.order.pickupStops != null &&
+                              widget.order.pickupStops!.isNotEmpty)
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: List.generate(
+                                widget.order.pickupStops!.length,
+                                (i) {
+                                  final stop = widget.order.pickupStops![i];
+                                  return Padding(
+                                    padding: EdgeInsets.only(top: i == 0 ? 0 : 6),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${i + 1}. ',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                            color: textGray900,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: _ResolvedAddressText(
+                                            snapshot: stop.addressSnapshot,
+                                            geo: stop.geo,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                              color: textGray900,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _ResolvedAddressText(
+                                  snapshot: widget.order.pickup.addressSnapshot,
+                                  geo: widget.order.pickup.geo,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: textGray900,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (widget.order.pickup.instructions.trim().isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      widget.order.pickup.instructions.trim(),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: textGray600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                       color: primaryOrange,
                     ),
                     const SizedBox(height: 12),
                     _buildCompactAddressRow(
                       icon: Icons.flag_outlined,
                       label: 'Entrega',
-                      address: widget.order.delivery.addressSnapshot,
+                      address: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _ResolvedAddressText(
+                            snapshot: widget.order.delivery.addressSnapshot,
+                            geo: widget.order.delivery.geo,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: textGray900,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (widget.order.delivery.instructions.trim().isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                widget.order.delivery.instructions.trim(),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: textGray600,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                       color: categoryTextGreen,
                     ),
                     if (widget.order.delivery.deliverToReception) ...[
@@ -545,51 +779,59 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 24),
-
-                    // Botón de aceptar
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: claimState.isLoading
-                            ? null
-                            : () async {
-                                await _claimOrder(context);
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryOrange,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 2,
-                          shadowColor: primaryOrange.withValues(alpha: 0.4),
-                        ),
-                        child: claimState.isLoading
-                            ? const SizedBox(
-                                height: 24,
-                                width: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
-                                  Icon(Icons.check_circle_outline, size: 22),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Aceptar Entrega',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 0.3,
-                                    ),
-                                  ),
-                                ],
+                          const SizedBox(height: 24),
+                        ],
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      minimum: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: claimState.isLoading
+                                ? null
+                                : () async {
+                                    await _claimOrder(context);
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryOrange,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
+                              elevation: 2,
+                              shadowColor: primaryOrange.withValues(alpha: 0.4),
+                            ),
+                            child: claimState.isLoading
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: const [
+                                      Icon(Icons.check_circle_outline, size: 22),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Aceptar Entrega',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -650,7 +892,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
   Widget _buildCompactAddressRow({
     required IconData icon,
     required String label,
-    required String address,
+    required Widget address,
     required Color color,
   }) {
     return Container(
@@ -684,17 +926,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  address,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: textGray900,
-                    height: 1.3,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                address,
               ],
             ),
           ),
@@ -741,20 +973,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
     );
   }
 
-  gmap.LatLngBounds _calculateBounds(gmap.LatLng pos1, gmap.LatLng pos2) {
-    final southwest = gmap.LatLng(
-      pos1.latitude < pos2.latitude ? pos1.latitude : pos2.latitude,
-      pos1.longitude < pos2.longitude ? pos1.longitude : pos2.longitude,
-    );
-    final northeast = gmap.LatLng(
-      pos1.latitude > pos2.latitude ? pos1.latitude : pos2.latitude,
-      pos1.longitude > pos2.longitude ? pos1.longitude : pos2.longitude,
-    );
-    return gmap.LatLngBounds(southwest: southwest, northeast: northeast);
-  }
-
   Future<void> _claimOrder(BuildContext context) async {
-    final profile = await ref.read(profileProvider.future);
+    final profile = await ref.read(profileStreamProvider.future);
     final user = profile;
     if (user == null || user.riderProfile == null) {
       if (context.mounted) {
@@ -763,6 +983,24 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
             content: Text('Debes completar tu perfil de rider.'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!user.isRutVerified) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Debes verificar tu RUT para aceptar pedidos.'),
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const RutVerificationScreen(),
           ),
         );
       }
@@ -797,6 +1035,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
         );
       } catch (trackingError) {
         // Log tracking error but don't block the claim success
+        // ignore: avoid_print
         print('⚠️ Warning: Failed to start tracking: $trackingError');
       }
 
@@ -833,6 +1072,150 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
         );
       }
     }
+  }
+}
+
+class _ResolvedAddressText extends StatefulWidget {
+  final String snapshot;
+  final GeoPoint geo;
+  final TextStyle style;
+  final int maxLines;
+  final TextOverflow overflow;
+
+  const _ResolvedAddressText({
+    required this.snapshot,
+    required this.geo,
+    required this.style,
+    required this.maxLines,
+    required this.overflow,
+  });
+
+  @override
+  State<_ResolvedAddressText> createState() => _ResolvedAddressTextState();
+}
+
+class _ResolvedAddressTextState extends State<_ResolvedAddressText> {
+  static final Map<String, String> _cache = <String, String>{};
+  String? _resolved;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ResolvedAddressText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.snapshot != widget.snapshot ||
+        oldWidget.geo.latitude != widget.geo.latitude ||
+        oldWidget.geo.longitude != widget.geo.longitude) {
+      _resolved = null;
+      _loading = false;
+      _resolveIfNeeded();
+    }
+  }
+
+  bool _needsResolve(String v) {
+    final t = v.trim();
+    return t.isEmpty || t.startsWith('Lat:');
+  }
+
+  String _cacheKey() =>
+      '${widget.geo.latitude.toStringAsFixed(6)},${widget.geo.longitude.toStringAsFixed(6)}';
+
+  String _sanitizeAddress(String value) {
+    final trimmed = value.trim();
+
+    final plusCodeAtStart = RegExp(
+      r'^\s*([A-Z0-9]{4,8}\+[A-Z0-9]{2,3})(?:\s+|,\s*)',
+    );
+    final removedLeading = trimmed.replaceFirst(plusCodeAtStart, '').trim();
+
+    final plusCodeAtEnd = RegExp(
+      r'(?:\s+|,\s*)([A-Z0-9]{4,8}\+[A-Z0-9]{2,3})\s*$',
+    );
+    final removedPlusCode = removedLeading.replaceAll(plusCodeAtEnd, '').trim();
+
+    return removedPlusCode.replaceAll(RegExp(r'[\s,]+$'), '').trim();
+  }
+
+  Future<void> _resolveIfNeeded() async {
+    if (!_needsResolve(widget.snapshot)) return;
+
+    final apiKey = Env.placesApiKey;
+    if (apiKey.trim().isEmpty) return;
+
+    final key = _cacheKey();
+    final cached = _cache[key];
+    if (cached != null && cached.trim().isNotEmpty) {
+      setState(() => _resolved = cached);
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final uri = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json'
+        '?latlng=${widget.geo.latitude},${widget.geo.longitude}'
+        '&key=$apiKey',
+      );
+
+      final res = await http.get(uri);
+      if (!mounted) return;
+      if (res.statusCode != 200) return;
+
+      final decoded = json.decode(res.body);
+      if (decoded is! Map<String, dynamic>) return;
+
+      final results = decoded['results'];
+      if (results is! List || results.isEmpty) return;
+
+      final first = results.first;
+      if (first is! Map<String, dynamic>) return;
+
+      final formatted = first['formatted_address'];
+      if (formatted is! String || formatted.trim().isEmpty) return;
+
+      final resolved = _sanitizeAddress(formatted);
+      _cache[key] = resolved;
+      setState(() => _resolved = resolved);
+    } catch (_) {
+      // swallow
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = widget.snapshot.trim();
+    final show = (_resolved != null && _resolved!.trim().isNotEmpty)
+        ? _resolved!.trim()
+        : (raw.isEmpty || raw.startsWith('Lat:') ? 'Ubicación en el mapa' : raw);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            show,
+            style: widget.style,
+            maxLines: widget.maxLines,
+            overflow: widget.overflow,
+          ),
+        ),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.only(left: 8),
+            child: SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+      ],
+    );
   }
 }
 

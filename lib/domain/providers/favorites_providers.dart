@@ -83,9 +83,9 @@ class FavoritesNotifier extends Notifier<AsyncValue<void>> {
       }
 
       // Invalidate providers to refresh data
-      ref.invalidate(favoriteOfferIdsProvider);
-      ref.invalidate(favoritesCountProvider);
-      ref.invalidate(isFavoriteProvider);
+      ref.invalidate(favoriteOfferIdsProvider(userId));
+      ref.invalidate(favoritesCountProvider(userId));
+      ref.invalidate(isFavoriteProvider(FavoriteParams(userId: userId, offerId: offerId)));
 
       state = const AsyncValue.data(null);
     } catch (e, stack) {

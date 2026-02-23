@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 
 import '../../../../../core/constants/app_colors.dart';
-import '../../../../../data/providers/repository_providers.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
@@ -345,28 +344,135 @@ class _OrderTile extends ConsumerWidget {
                               if (confirmed == true && context.mounted) {
                                 try {
                                   // Restore stock for all items in the order
-                                  final offersRepository = ref.read(
-                                    offersRepositoryProvider,
-                                  );
-                                  for (final item in order.items) {
-                                    await offersRepository.incrementStock(
-                                      item.offerId,
-                                      item.qty,
-                                    );
-                                  }
-
                                   // Delete order from Firestore
-                                  await firestore.FirebaseFirestore.instance
-                                      .collection('orders')
-                                      .doc(order.orderId)
-                                      .delete();
+                                  final db =
+                                      firestore.FirebaseFirestore.instance;
+
+                                  await db.runTransaction((tx) async {
+                                    final orderRef = db
+                                        .collection('orders')
+                                        .doc(order.orderId);
+                                    final reservationRef = db
+                                        .collection('stockReservations')
+                                        .doc(order.orderId);
+
+                                    // 1. READ: Get reservation
+                                    final reservationSnap = await tx.get(
+                                      reservationRef,
+                                    );
+
+                                    // Map to store offer snapshots: offerId -> DocumentSnapshot
+                                    final offerSnaps =
+                                        <String, firestore.DocumentSnapshot>{};
+                                    List<dynamic>? itemsRaw;
+
+                                    if (reservationSnap.exists) {
+                                      final data = reservationSnap.data();
+                                      final status = data?['status'] as String?;
+                                      itemsRaw =
+                                          data?['items'] as List<dynamic>?;
+
+                                      if (status == 'reserved' &&
+                                          itemsRaw != null) {
+                                        // 2. READ: Get all offers related to this reservation
+                                        for (final raw in itemsRaw) {
+                                          if (raw is! Map) continue;
+                                          final offerId =
+                                              raw['offerId'] as String?;
+                                          if (offerId == null ||
+                                              offerId.isEmpty) {
+                                            continue;
+                                          }
+
+                                          // Avoid reading the same doc twice
+                                          if (!offerSnaps.containsKey(
+                                            offerId,
+                                          )) {
+                                            final offerRef = db
+                                                .collection('offers')
+                                                .doc(offerId);
+                                            final offerSnap = await tx.get(
+                                              offerRef,
+                                            );
+                                            offerSnaps[offerId] = offerSnap;
+                                          }
+                                        }
+                                      }
+                                    }
+
+                                    // 3. WRITE: Perform all updates
+                                    if (reservationSnap.exists &&
+                                        itemsRaw != null) {
+                                      final data = reservationSnap.data();
+                                      final status = data?['status'] as String?;
+
+                                      if (status == 'reserved') {
+                                        for (final raw in itemsRaw) {
+                                          if (raw is! Map) continue;
+                                          final offerId =
+                                              raw['offerId'] as String?;
+                                          final qty = raw['qty'] as int?;
+
+                                          if (offerId == null ||
+                                              !offerSnaps.containsKey(
+                                                offerId,
+                                              )) {
+                                            continue;
+                                          }
+
+                                          final qtyInt =
+                                              (qty == null || qty <= 0)
+                                              ? 1
+                                              : qty;
+                                          final offerSnap =
+                                              offerSnaps[offerId]!;
+
+                                          if (!offerSnap.exists) continue;
+
+                                          final offerData =
+                                              offerSnap.data()
+                                                  as Map<String, dynamic>?;
+                                          final currentQty =
+                                              (offerData?['availableQty']
+                                                  as int?) ??
+                                              0;
+                                          final newQty = currentQty + qtyInt;
+                                          final currentStatus =
+                                              offerData?['status'] as String?;
+
+                                          final update = <String, Object?>{
+                                            'availableQty': newQty,
+                                            'updatedAt': firestore
+                                                .FieldValue.serverTimestamp(),
+                                          };
+
+                                          if (currentStatus == 'sold_out' &&
+                                              newQty > 0) {
+                                            update['status'] = 'active';
+                                          }
+
+                                          tx.update(
+                                            offerSnap.reference,
+                                            update,
+                                          );
+                                        }
+
+                                        tx.update(reservationRef, {
+                                          'status': 'released',
+                                          'releasedAt': firestore
+                                              .FieldValue.serverTimestamp(),
+                                        });
+                                      }
+                                    }
+
+                                    // 4. WRITE: Delete order
+                                    tx.delete(orderRef);
+                                  });
 
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text(
-                                          'Orden eliminada y stock restaurado',
-                                        ),
+                                        content: Text('Orden eliminada'),
                                         backgroundColor: categoryTextGreen,
                                       ),
                                     );

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
 import 'unverified_email_screen.dart';
@@ -23,7 +24,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
   final _formKey = GlobalKey<FormState>();
 
   static final Uri _termsAndConditionsUri = Uri.parse(
-    'https://firebasestorage.googleapis.com/v0/b/the-hero-67d93.firebasestorage.app/o/Docs%2FTerminos%20y%20condiciones.pdf?alt=media&token=e8d69aa2-4646-47b8-a296-6f677f10dd44',
+    'https://theheroprojects.com/privacy-policy',
   );
 
   bool _acceptedTerms = false;
@@ -289,13 +290,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                           hintText: 'Ej: 19.123.456-K',
                           keyboardType: TextInputType.text,
                           validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'El RUT es obligatorio.';
-                            }
-                            if (value.length < 7 || value.length > 12) {
-                              return 'El formato de RUT es incorrecto.';
-                            }
-                            return null;
+                            return Validators.rut(value);
                           },
                         ),
 
