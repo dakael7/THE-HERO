@@ -13,7 +13,8 @@ class OrderRider {
     this.riderPhoneSnapshot,
   });
 
-  bool get isAssigned => assignedRiderId != null;
+  bool get isAssigned =>
+      assignedRiderId != null && assignedRiderId!.trim().isNotEmpty;
 
   OrderRider copyWith({
     String? assignedRiderId,

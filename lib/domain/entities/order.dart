@@ -12,11 +12,13 @@ import 'concierge_info.dart';
 class Order {
   final String orderId;
   final String heroId;
+  final List<String> sellerHeroIds;
   final List<OrderItem> items;
   final double subtotal;
   final double deliveryFee;
   final double serviceFee;
   final double tax;
+  final double tip;
   final double amountTotal;
   final String currency;
   final OrderPickup pickup;
@@ -33,6 +35,7 @@ class Order {
   final PickupSchedule? pickupSchedule;
   final bool useConcierge;
   final ConciergeInfo? conciergeInfo;
+  final bool inPersonPickup;
   final bool confirmedByHero;
   final double? heroRating;
   final String? heroRatingComment;
@@ -40,11 +43,13 @@ class Order {
   Order({
     required this.orderId,
     required this.heroId,
+    this.sellerHeroIds = const [],
     required this.items,
     required this.subtotal,
     required this.deliveryFee,
     required this.serviceFee,
     required this.tax,
+    this.tip = 0.0,
     required this.amountTotal,
     required this.currency,
     required this.pickup,
@@ -61,6 +66,7 @@ class Order {
     this.pickupSchedule,
     this.useConcierge = false,
     this.conciergeInfo,
+    this.inPersonPickup = false,
     this.confirmedByHero = false,
     this.heroRating,
     this.heroRatingComment,
@@ -76,11 +82,13 @@ class Order {
   Order copyWith({
     String? orderId,
     String? heroId,
+    List<String>? sellerHeroIds,
     List<OrderItem>? items,
     double? subtotal,
     double? deliveryFee,
     double? serviceFee,
     double? tax,
+    double? tip,
     double? amountTotal,
     String? currency,
     OrderPickup? pickup,
@@ -97,6 +105,7 @@ class Order {
     PickupSchedule? pickupSchedule,
     bool? useConcierge,
     ConciergeInfo? conciergeInfo,
+    bool? inPersonPickup,
     bool? confirmedByHero,
     double? heroRating,
     String? heroRatingComment,
@@ -104,11 +113,13 @@ class Order {
     return Order(
       orderId: orderId ?? this.orderId,
       heroId: heroId ?? this.heroId,
+      sellerHeroIds: sellerHeroIds ?? this.sellerHeroIds,
       items: items ?? this.items,
       subtotal: subtotal ?? this.subtotal,
       deliveryFee: deliveryFee ?? this.deliveryFee,
       serviceFee: serviceFee ?? this.serviceFee,
       tax: tax ?? this.tax,
+      tip: tip ?? this.tip,
       amountTotal: amountTotal ?? this.amountTotal,
       currency: currency ?? this.currency,
       pickup: pickup ?? this.pickup,
@@ -125,6 +136,7 @@ class Order {
       pickupSchedule: pickupSchedule ?? this.pickupSchedule,
       useConcierge: useConcierge ?? this.useConcierge,
       conciergeInfo: conciergeInfo ?? this.conciergeInfo,
+      inPersonPickup: inPersonPickup ?? this.inPersonPickup,
       confirmedByHero: confirmedByHero ?? this.confirmedByHero,
       heroRating: heroRating ?? this.heroRating,
       heroRatingComment: heroRatingComment ?? this.heroRatingComment,

@@ -60,6 +60,7 @@ class FavoritesScreen extends ConsumerWidget {
                   // Filter to only show favorite offers
                   final favoriteOffers = allOffers
                       .where((offer) => favoriteIds.contains(offer.offerId))
+                      .where((offer) => offer.heroId != user.id)
                       .toList();
 
                   if (favoriteOffers.isEmpty) {
@@ -82,6 +83,7 @@ class FavoritesScreen extends ConsumerWidget {
                           child: ProductCard(
                             offerId: offer.offerId,
                             name: offer.title,
+                            sellerHeroId: offer.heroId,
                             condition: offer.condition.name,
                             colorCondition:
                                 offer.condition == OfferCondition.newProduct
@@ -94,6 +96,12 @@ class FavoritesScreen extends ConsumerWidget {
                             viewCount: offer.viewCount,
                             orderCount: offer.orderCount,
                             weight: offer.weight,
+                            pickupGeo: offer.itemLocationSnapshot?.geopoint,
+                            pickupAddressSnapshot:
+                                offer.itemLocationSnapshot?.fullAddress,
+                            pickupCountryCode:
+                                offer.itemLocationSnapshot?.countryCode,
+                            allowInPersonPickup: offer.allowInPersonPickup,
                             imageUrl: offer.coverImageUrl,
                             avgRating: offer.avgRating,
                             ratingCount: offer.ratingCount,

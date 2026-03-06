@@ -12,8 +12,8 @@ import '../widgets/personal_info_card.dart';
 import 'favorites_screen.dart';
 import 'help_center_screen.dart';
 import 'my_products_screen.dart';
+import 'my_donation_orders_screen.dart';
 import 'payment_methods_screen.dart';
-import 'previous_orders_screen.dart';
 import '../../../../hero/orders/presentation/views/hero_orders_screen.dart';
 import 'settings_screen.dart';
 import 'address_screen.dart';
@@ -26,8 +26,9 @@ import '../../../../offers/presentation/providers/offers_provider.dart';
 import '../../../../../domain/providers/favorites_providers.dart';
 import '../../../../../domain/entities/user.dart';
 import '../../../../../domain/entities/order_status.dart';
-import '../../../../../domain/services/rider_commission_calculator.dart';
+import '../../../../../domain/entities/offer_status.dart';
 import '../../../../../data/providers/network_providers.dart';
+import '../../../../rider/presentation/providers/rider_cumulative_stats_provider.dart';
 
 class ProfileScreen extends ConsumerWidget {
   final VoidCallback? onBackPressed;
@@ -188,7 +189,7 @@ class ProfileScreen extends ConsumerWidget {
 
                               final publications = offersAsync.maybeWhen(
                                 data: (offers) => offers
-                                    .where((o) => o.status == 'active')
+                                    .where((o) => o.status == OfferStatus.active)
                                     .length,
                                 orElse: () => 0,
                               );
@@ -505,15 +506,12 @@ class ProfileScreen extends ConsumerWidget {
               icon: Icons.attach_money,
               title: 'Mis ganancias',
               trailingText: () {
-                final ordersAsync = ref.watch(riderOrdersProvider(user.id));
-                return ordersAsync.maybeWhen(
-                  data: (orders) {
-                    final delivered =
-                        orders.where((o) => o.status.name == 'delivered');
-                    final totalNet = RiderCommissionCalculator
-                        .calculateTotalNetEarnings(
-                      delivered.map((o) => o.deliveryFee).toList(),
-                    );
+                final statsAsync =
+                    ref.watch(riderCumulativeStatsProvider(user.id));
+                return statsAsync.maybeWhen(
+                  data: (stats) {
+                    if (stats == null) return '-';
+                    final totalNet = stats.totalEarnings + stats.totalTips;
                     return '\$${totalNet.toStringAsFixed(0)}';
                   },
                   orElse: () => '-',
@@ -580,24 +578,26 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: 8),
           ],
 
-          ProfileMenuTile(
-            icon: Icons.badge_outlined,
-            title: user.isRutVerified
-                ? 'RUT verificado'
-                : (user.rutVerificationStatus == 'submitted' ||
-                        user.rutVerificationStatus == 'processing')
-                    ? 'Verificación en curso'
-                    : 'Verificar RUT',
-            trailingText: _rutStatusText(user.rutVerificationStatus),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const RutVerificationScreen(),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
+          if (isRiderProfile) ...[
+            ProfileMenuTile(
+              icon: Icons.badge_outlined,
+              title: user.isRutVerified
+                  ? 'RUT verificado'
+                  : (user.rutVerificationStatus == 'submitted' ||
+                          user.rutVerificationStatus == 'processing')
+                      ? 'Verificación en curso'
+                      : 'Verificar RUT',
+              trailingText: _rutStatusText(user.rutVerificationStatus),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const RutVerificationScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
           // Hero-specific options
           if (!isRiderProfile) ...[
             ProfileMenuTile(
@@ -607,7 +607,7 @@ class ProfileScreen extends ConsumerWidget {
                 final offersAsync = ref.watch(myOffersProvider(user.id));
                 return offersAsync.maybeWhen(
                   data: (offers) => offers
-                      .where((o) => o.status == 'active')
+                      .where((o) => o.status == OfferStatus.active)
                       .length
                       .toString(),
                   orElse: () => '-',
@@ -616,6 +616,25 @@ class ProfileScreen extends ConsumerWidget {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const MyProductsScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            ProfileMenuTile(
+              icon: Icons.volunteer_activism_outlined,
+              title: 'Pedidos de mis donaciones',
+              trailingText: () {
+                final ordersAsync = ref.watch(myDonationOrdersProvider(user.id));
+                return ordersAsync.maybeWhen(
+                  data: (orders) => orders.length.toString(),
+                  orElse: () => '-',
+                );
+              }(),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const MyDonationOrdersScreen(),
+                  ),
                 );
               },
             ),
@@ -652,28 +671,6 @@ class ProfileScreen extends ConsumerWidget {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const HeroOrdersScreen()),
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            ProfileMenuTile(
-              icon: Icons.history,
-              title: 'Pedidos anteriores',
-              trailingText: () {
-                final ordersAsync = ref.watch(myOrdersProvider(user.id));
-                return ordersAsync.maybeWhen(
-                  data: (orders) => orders
-                      .where((o) => o.status.isCompleted)
-                      .length
-                      .toString(),
-                  orElse: () => '-',
-                );
-              }(),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const PreviousOrdersScreen(),
-                  ),
                 );
               },
             ),
@@ -801,7 +798,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
-    await ref.read(authNotifierProvider.notifier).signOut();
+    ref.read(authNotifierProvider.notifier).signOut();
     if (!context.mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
@@ -874,11 +871,72 @@ class _QuickActionButton extends StatelessWidget {
   }
 }
 
-class PersonalDataScreen extends ConsumerWidget {
+class PersonalDataScreen extends ConsumerStatefulWidget {
   const PersonalDataScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PersonalDataScreen> createState() =>
+      _PersonalDataScreenState();
+}
+
+class _PersonalDataScreenState extends ConsumerState<PersonalDataScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _phoneController = TextEditingController();
+
+  bool _isEditing = false;
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  String? _phoneValidator(String? v) {
+    final value = (v ?? '').trim();
+    if (value.isEmpty) return 'Campo requerido';
+    return null;
+  }
+
+  Future<void> _save(User user) async {
+    if (_isSaving) return;
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSaving = true);
+
+    try {
+      final newPhone = _phoneController.text.trim();
+
+      final firestoreDb = ref.read(firebaseFirestoreProvider);
+      await firestoreDb.collection('users').doc(user.id).update({
+        'contact.phoneNumber': newPhone,
+      });
+
+      ref.invalidate(profileProvider);
+
+      if (!mounted) return;
+      setState(() => _isEditing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Datos actualizados'),
+          duration: Duration(milliseconds: 1600),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo guardar: $e'),
+          duration: const Duration(milliseconds: 2000),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final userAsyncValue = ref.watch(profileStreamProvider);
 
     return Scaffold(
@@ -891,6 +949,44 @@ class PersonalDataScreen extends ConsumerWidget {
           'Datos personales',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
+        actions: [
+          userAsyncValue.when(
+            data: (user) {
+              if (user == null) return const SizedBox.shrink();
+              if (_isEditing) {
+                return Row(
+                  children: [
+                    IconButton(
+                      onPressed: _isSaving
+                          ? null
+                          : () {
+                              setState(() => _isEditing = false);
+                            },
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Cancelar',
+                    ),
+                    IconButton(
+                      onPressed: _isSaving ? null : () => _save(user),
+                      icon: const Icon(Icons.check),
+                      tooltip: 'Guardar',
+                    ),
+                  ],
+                );
+              }
+
+              return IconButton(
+                onPressed: () {
+                  _phoneController.text = user.phoneNumber;
+                  setState(() => _isEditing = true);
+                },
+                icon: const Icon(Icons.edit),
+                tooltip: 'Editar',
+              );
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+        ],
       ),
       body: userAsyncValue.when(
         data: (user) {
@@ -898,32 +994,236 @@ class PersonalDataScreen extends ConsumerWidget {
             return const Center(child: Text('No hay datos de usuario'));
           }
 
-          return SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          return Stack(
+            children: [
+              ListView(
+                padding: const EdgeInsets.all(16),
                 children: [
-                  PersonalInfoCard(label: 'Nombre', value: user.fullName),
-                  const SizedBox(height: 8),
-                  PersonalInfoCard(label: 'Email', value: user.email),
-                  const SizedBox(height: 8),
-                  PersonalInfoCard(
-                    label: 'Teléfono',
-                    value: user.phoneNumber.isNotEmpty
-                        ? user.phoneNumber
-                        : 'No disponible',
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: backgroundWhite,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: borderGray100, width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: textGray900.withValues(alpha: 0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: primaryOrange.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.badge_outlined,
+                            color: primaryOrange,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tu información',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: textGray900,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Nombre, correo y documento no se pueden modificar desde la app.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: textGray600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  PersonalInfoCard(
-                    label: 'RUT',
-                    value: user.documentId.isNotEmpty
-                        ? user.documentId
-                        : 'No disponible',
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: backgroundWhite,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: borderGray100, width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Identidad',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: textGray900,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        PersonalInfoCard(label: 'Nombre', value: user.fullName),
+                        const SizedBox(height: 8),
+                        PersonalInfoCard(
+                          label: 'Documento',
+                          value: user.documentId.isNotEmpty
+                              ? user.documentId
+                              : 'No disponible',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: backgroundWhite,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: borderGray100, width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Contacto',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: textGray900,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        PersonalInfoCard(label: 'Email', value: user.email),
+                        const SizedBox(height: 8),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 160),
+                          child: !_isEditing
+                              ? PersonalInfoCard(
+                                  key: const ValueKey('phone_read'),
+                                  label: 'Teléfono',
+                                  value: user.phoneNumber.isNotEmpty
+                                      ? user.phoneNumber
+                                      : 'No disponible',
+                                )
+                              : Form(
+                                  key: _formKey,
+                                  child: TextFormField(
+                                    key: const ValueKey('phone_edit'),
+                                    controller: _phoneController,
+                                    validator: _phoneValidator,
+                                    keyboardType: TextInputType.phone,
+                                    decoration: InputDecoration(
+                                      labelText: 'Teléfono',
+                                      prefixIcon: const Icon(
+                                        Icons.phone_outlined,
+                                        color: textGray600,
+                                      ),
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: borderGray100,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: primaryOrange,
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        if (_isEditing) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: _isSaving
+                                      ? null
+                                      : () => setState(
+                                            () => _isEditing = false,
+                                          ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: textGray900,
+                                    side: const BorderSide(color: borderGray100),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Cancelar',
+                                    style: TextStyle(fontWeight: FontWeight.w800),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _isSaving ? null : () => _save(user),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: primaryOrange,
+                                    foregroundColor: backgroundWhite,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _isSaving ? 'Guardando...' : 'Guardar',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
+              if (_isSaving)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    alignment: Alignment.center,
+                    child: const CircularProgressIndicator(
+                      color: primaryOrange,
+                    ),
+                  ),
+                ),
+            ],
           );
         },
         loading: () {

@@ -14,11 +14,13 @@ import 'concierge_info_model.dart';
 class OrderModel {
   final String orderId;
   final String heroId;
+  final List<String> sellerHeroIds;
   final List<OrderItemModel> items;
   final double subtotal;
   final double deliveryFee;
   final double serviceFee;
   final double tax;
+  final double tip;
   final double amountTotal;
   final String currency;
   final OrderPickupModel pickup;
@@ -35,6 +37,7 @@ class OrderModel {
   final PickupScheduleModel? pickupSchedule;
   final bool useConcierge;
   final ConciergeInfoModel? conciergeInfo;
+  final bool inPersonPickup;
   final bool confirmedByHero;
   final double? heroRating;
   final String? heroRatingComment;
@@ -42,11 +45,13 @@ class OrderModel {
   OrderModel({
     required this.orderId,
     required this.heroId,
+    this.sellerHeroIds = const [],
     required this.items,
     required this.subtotal,
     required this.deliveryFee,
     required this.serviceFee,
     required this.tax,
+    this.tip = 0.0,
     required this.amountTotal,
     required this.currency,
     required this.pickup,
@@ -63,6 +68,7 @@ class OrderModel {
     this.pickupSchedule,
     this.useConcierge = false,
     this.conciergeInfo,
+    this.inPersonPickup = false,
     this.confirmedByHero = false,
     this.heroRating,
     this.heroRatingComment,
@@ -85,6 +91,10 @@ class OrderModel {
     return OrderModel(
       orderId: json['orderId'] as String? ?? '',
       heroId: json['heroId'] as String? ?? '',
+      sellerHeroIds: (json['sellerHeroIds'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       items:
           (json['items'] as List<dynamic>?)
               ?.map(
@@ -96,6 +106,7 @@ class OrderModel {
       deliveryFee: (json['deliveryFee'] as num?)?.toDouble() ?? 0.0,
       serviceFee: (json['serviceFee'] as num?)?.toDouble() ?? 0.0,
       tax: (json['tax'] as num?)?.toDouble() ?? 0.0,
+      tip: (json['tip'] as num?)?.toDouble() ?? 0.0,
       amountTotal: (json['amountTotal'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] as String? ?? 'CLP',
       pickup: OrderPickupModel.fromJson(
@@ -133,6 +144,7 @@ class OrderModel {
               json['conciergeInfo'] as Map<String, dynamic>,
             )
           : null,
+      inPersonPickup: json['inPersonPickup'] as bool? ?? false,
       confirmedByHero: json['confirmedByHero'] as bool? ?? false,
       heroRating: (json['heroRating'] as num?)?.toDouble(),
       heroRatingComment: json['heroRatingComment'] as String?,
@@ -143,11 +155,13 @@ class OrderModel {
     return {
       'orderId': orderId,
       'heroId': heroId,
+      'sellerHeroIds': sellerHeroIds,
       'items': items.map((item) => item.toJson()).toList(),
       'subtotal': subtotal,
       'deliveryFee': deliveryFee,
       'serviceFee': serviceFee,
       'tax': tax,
+      'tip': tip,
       'amountTotal': amountTotal,
       'currency': currency,
       'pickup': pickup.toJson(),
@@ -166,6 +180,7 @@ class OrderModel {
       'pickupSchedule': pickupSchedule?.toJson(),
       'useConcierge': useConcierge,
       'conciergeInfo': conciergeInfo?.toJson(),
+      'inPersonPickup': inPersonPickup,
       'confirmedByHero': confirmedByHero,
       'heroRating': heroRating,
       'heroRatingComment': heroRatingComment,
@@ -176,11 +191,13 @@ class OrderModel {
     return Order(
       orderId: orderId,
       heroId: heroId,
+      sellerHeroIds: sellerHeroIds,
       items: items.map((item) => item.toEntity()).toList(),
       subtotal: subtotal,
       deliveryFee: deliveryFee,
       serviceFee: serviceFee,
       tax: tax,
+      tip: tip,
       amountTotal: amountTotal,
       currency: currency,
       pickup: pickup.toEntity(),
@@ -197,6 +214,7 @@ class OrderModel {
       pickupSchedule: pickupSchedule?.toEntity(),
       useConcierge: useConcierge,
       conciergeInfo: conciergeInfo?.toEntity(),
+      inPersonPickup: inPersonPickup,
       confirmedByHero: confirmedByHero,
       heroRating: heroRating,
       heroRatingComment: heroRatingComment,
@@ -207,6 +225,7 @@ class OrderModel {
     return OrderModel(
       orderId: entity.orderId,
       heroId: entity.heroId,
+      sellerHeroIds: entity.sellerHeroIds,
       items: entity.items
           .map((item) => OrderItemModel.fromEntity(item))
           .toList(),
@@ -214,6 +233,7 @@ class OrderModel {
       deliveryFee: entity.deliveryFee,
       serviceFee: entity.serviceFee,
       tax: entity.tax,
+      tip: entity.tip,
       amountTotal: entity.amountTotal,
       currency: entity.currency,
       pickup: OrderPickupModel.fromEntity(entity.pickup),
@@ -234,6 +254,7 @@ class OrderModel {
       conciergeInfo: entity.conciergeInfo != null
           ? ConciergeInfoModel.fromEntity(entity.conciergeInfo!)
           : null,
+      inPersonPickup: entity.inPersonPickup,
       confirmedByHero: entity.confirmedByHero,
       heroRating: entity.heroRating,
       heroRatingComment: entity.heroRatingComment,

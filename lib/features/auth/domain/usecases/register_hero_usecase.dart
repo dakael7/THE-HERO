@@ -12,7 +12,8 @@ class RegisterHeroUseCase {
     required String password,
     required String firstName,
     required String lastName,
-    required String rut,
+    required String documentType,
+    required String documentId,
     required String phone,
   }) async {
     if (email.isEmpty || password.isEmpty) {
@@ -24,7 +25,8 @@ class RegisterHeroUseCase {
       password: password,
       firstName: firstName,
       lastName: lastName,
-      rut: rut,
+      documentType: documentType,
+      documentId: documentId,
       phone: phone,
     );
   }

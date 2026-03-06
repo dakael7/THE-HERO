@@ -108,6 +108,15 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }
 
   @override
+  Future<void> unassignRiderAndRequeue(String orderId, String riderId) async {
+    try {
+      await _remoteDataSource.unassignRiderAndRequeue(orderId, riderId);
+    } catch (e) {
+      throw Exception('Error al cancelar pedido como rider: $e');
+    }
+  }
+
+  @override
   Future<void> cancelOrder(String orderId, String reason, String canceledBy) async {
     try {
       await _remoteDataSource.cancelOrder(orderId, reason, canceledBy);

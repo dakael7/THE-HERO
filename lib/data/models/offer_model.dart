@@ -38,6 +38,7 @@ class OfferModel {
   final PickupScheduleModel? pickupSchedule;
   final bool useConcierge;
   final ConciergeInfoModel? conciergeInfo;
+  final bool allowInPersonPickup;
 
   OfferModel({
     required this.offerId,
@@ -69,16 +70,18 @@ class OfferModel {
     this.pickupSchedule,
     this.useConcierge = false,
     this.conciergeInfo,
+    this.allowInPersonPickup = true,
   });
 
   factory OfferModel.fromJson(Map<String, dynamic> json) {
+    final rawCondition = (json['condition'] as String?)?.trim();
     return OfferModel(
       offerId: json['offerId'] as String? ?? '',
       heroId: json['heroId'] as String? ?? '',
       title: json['title'] as String? ?? '',
       description: json['description'] as String? ?? '',
       category: json['category'] as String? ?? '',
-      condition: _stringToCondition(json['condition'] as String? ?? 'new'),
+      condition: _stringToCondition(rawCondition),
       isInGoodState: json['isInGoodState'] as bool?,
       worksCorrectly: json['worksCorrectly'] as bool?,
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
@@ -125,6 +128,7 @@ class OfferModel {
               json['conciergeInfo'] as Map<String, dynamic>,
             )
           : null,
+      allowInPersonPickup: json['allowInPersonPickup'] as bool? ?? true,
     );
   }
 
@@ -159,6 +163,7 @@ class OfferModel {
       'pickupSchedule': pickupSchedule?.toJson(),
       'useConcierge': useConcierge,
       'conciergeInfo': conciergeInfo?.toJson(),
+      'allowInPersonPickup': allowInPersonPickup,
     };
   }
 
@@ -193,6 +198,7 @@ class OfferModel {
       pickupSchedule: pickupSchedule?.toEntity(),
       useConcierge: useConcierge,
       conciergeInfo: conciergeInfo?.toEntity(),
+      allowInPersonPickup: allowInPersonPickup,
     );
   }
 
@@ -235,25 +241,46 @@ class OfferModel {
       conciergeInfo: entity.conciergeInfo != null
           ? ConciergeInfoModel.fromEntity(entity.conciergeInfo!)
           : null,
+      allowInPersonPickup: entity.allowInPersonPickup,
     );
   }
 
-  static OfferCondition _stringToCondition(String value) {
-    switch (value.toLowerCase()) {
+  static OfferCondition _stringToCondition(String? value) {
+    final normalized = value
+            ?.trim()
+            .toLowerCase()
+            .replaceAll('_', ' ')
+            .replaceAll('-', ' ') ??
+        '';
+
+    if (normalized.isEmpty) {
+      return OfferCondition.good;
+    }
+
+    switch (normalized) {
       case 'new':
       case 'nuevo':
+      case 'nuevo producto':
+      case 'new product':
+      case 'newproduct':
+      case 'new product condition':
         return OfferCondition.newProduct;
       case 'excellent':
       case 'excelente':
+      case 'excelente estado':
+      case 'excellent state':
         return OfferCondition.excellent;
       case 'good':
-      case 'good_condition':
+      case 'good condition':
       case 'buen':
+      case 'bueno':
+      case 'buen estado':
         return OfferCondition.good;
       case 'used':
+      case 'usado':
         return OfferCondition.used;
       default:
-        return OfferCondition.newProduct;
+        return OfferCondition.good;
     }
   }
 

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
-import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 
 import '../../../../core/constants/app_colors.dart';
@@ -12,17 +11,21 @@ import '../../../../domain/entities/chat_type.dart';
 import '../../../../domain/entities/offer.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/entities/order_status.dart';
+import '../../../../domain/entities/payment.dart';
 import '../../../../data/providers/repository_providers.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../shared/chat/presentation/providers/chat_providers.dart';
 import '../../../shared/chat/presentation/views/chat_conversation_screen.dart';
+import 'rider_delivery_chats_screen.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../hero/payment/providers/payment_providers.dart';
 import '../../../../data/repositories/location_repository_impl.dart';
 import '../../domain/services/directions_service.dart';
 import '../../domain/services/rider_tracking_service.dart';
 import '../providers/rider_nearby_providers.dart';
 import '../providers/rider_location_provider.dart';
+import '../../../hero/orders/presentation/views/order_receipt_screen.dart';
 
 final _routeProvider = FutureProvider.autoDispose
     .family<DirectionsRoute?, _RouteRequestParams>((ref, params) {
@@ -97,29 +100,83 @@ class _RiderDeliveryMapScreenState
   gmap.LatLng? _lastCameraRider;
   StreamSubscription? _trackingSub;
   int _pickupStopIndex = 0;
+  bool _arrivedAtPickupStop = false;
 
   double _roundCoord(double v) => double.parse(v.toStringAsFixed(5));
 
-  Future<void> _markPickupStopCompleted({
+  Future<bool> _markPickupStopCompleted({
     required String orderId,
     required int stopIndex,
   }) async {
     try {
       final firestore = ref.read(firebaseFirestoreProvider);
-      await firestore.collection('orders').doc(orderId).set(
-        {
-          'pickupProgress': {
-            'currentStopIndex': stopIndex,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
+      final riderUid = ref.read(firebaseAuthProvider).currentUser?.uid;
+      // ignore: avoid_print
+      print(
+        '📌 [_markPickupStopCompleted] orderId=$orderId stopIndex=$stopIndex uid=$riderUid',
       );
+      await firestore.collection('orders').doc(orderId).update({
+        'pickupProgress.currentStopIndex': stopIndex,
+        'pickupProgress.updatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
     } catch (e) {
       // ignore: avoid_print
       print('⚠️ [_markPickupStopCompleted] error: $e');
+      return false;
     }
+  }
+
+  Future<void> _cancelAsRider(Order order) async {
+    final user = ref.read(profileProvider).value;
+    if (user == null) {
+      throw Exception('Usuario no autenticado');
+    }
+
+    final assignedId = order.rider.assignedRiderId;
+    if (assignedId == null || assignedId.isEmpty || assignedId != user.id) {
+      throw Exception('Pedido no asignado a este rider');
+    }
+
+    if (order.status != OrderStatus.assigned) {
+      throw Exception('Solo puedes cancelar antes de recoger');
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Cancelar entrega'),
+          content: const Text(
+            'Solo puedes cancelar si aún no has recogido ningún punto. '
+            'El pedido volverá a estar disponible para otros riders.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Volver'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    await ref.read(orderNotifierProvider.notifier).unassignRiderAndRequeue(
+          orderId: order.orderId,
+          riderId: user.id,
+        );
+
+    await _trackingSub?.cancel();
+    _trackingSub = null;
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   @override
@@ -203,6 +260,11 @@ class _RiderDeliveryMapScreenState
   }
 
   Future<void> _setStatus(Order order, OrderStatus status) async {
+    if (status == OrderStatus.delivered) {
+      final okToDeliver = await _maybeConfirmCashPayment(orderId: order.orderId);
+      if (!okToDeliver || !mounted) return;
+    }
+
     final notifier = ref.read(orderNotifierProvider.notifier);
     await notifier.updateStatus(order.orderId, _orderStatusToString(status));
     if (!mounted) return;
@@ -213,6 +275,73 @@ class _RiderDeliveryMapScreenState
           builder: (_) => _DeliveryCompletedScreen(orderId: order.orderId),
         ),
       );
+    }
+  }
+
+  Future<bool> _maybeConfirmCashPayment({required String orderId}) async {
+    final paymentRepo = ref.read(paymentRepositoryProvider);
+    final payment = await paymentRepo.getPaymentByOrderId(orderId);
+    if (!mounted) return false;
+    if (payment == null) return true;
+
+    final isCashPayment = payment.paymentMethod == PaymentMethod.cash ||
+        (payment.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment.statusDetail?.toLowerCase() == 'cash_on_delivery');
+
+    final shouldConfirm = isCashPayment && payment.status == PaymentStatus.pending;
+    if (!shouldConfirm) return true;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar cobro'),
+        content: const Text(
+          'Este pedido es con pago en efectivo. ¿Confirmas que cobraste el dinero al entregar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Aún no'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Confirmar cobro'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return false;
+
+    final riderId = ref.read(profileProvider).value?.id;
+    final now = DateTime.now();
+    final existingMeta = payment.metadata ?? const <String, dynamic>{};
+
+    final updated = payment.copyWith(
+      status: PaymentStatus.approved,
+      statusDetail: 'cash_collected',
+      approvedAt: now,
+      updatedAt: now,
+      metadata: <String, dynamic>{
+        ...existingMeta,
+        'confirmedByRiderId': riderId,
+        'confirmedAt': now.toIso8601String(),
+      },
+    );
+
+    try {
+      await paymentRepo.savePayment(updated);
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cobro en efectivo confirmado')),
+      );
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo confirmar el cobro: $e')),
+      );
+      return false;
     }
   }
 
@@ -244,6 +373,13 @@ class _RiderDeliveryMapScreenState
   @override
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderByIdProvider(widget.orderId));
+    final paymentAsync = ref.watch(watchPaymentByOrderIdProvider(widget.orderId));
+    final payment = paymentAsync.asData?.value;
+    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
+        (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
+    final canConfirmCash =
+        isCashPayment && payment?.status == PaymentStatus.pending;
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -255,6 +391,58 @@ class _RiderDeliveryMapScreenState
           'Entrega en curso',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Ver boleta',
+            icon: const Icon(Icons.receipt_long),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => OrderReceiptScreen(
+                    orderId: widget.orderId,
+                    isRiderView: true,
+                  ),
+                ),
+              );
+            },
+          ),
+          if (canConfirmCash)
+            IconButton(
+              tooltip: 'Confirmar cobro (efectivo)',
+              icon: const Icon(Icons.payments_outlined),
+              onPressed: () async {
+                await _maybeConfirmCashPayment(orderId: widget.orderId);
+              },
+            ),
+          orderAsync.maybeWhen(
+            data: (order) {
+              if (order == null) return const SizedBox.shrink();
+              final userId = ref.read(profileProvider).value?.id;
+              final canCancel =
+                  order.status == OrderStatus.assigned &&
+                  userId != null &&
+                  userId.isNotEmpty &&
+                  order.rider.assignedRiderId == userId;
+
+              if (!canCancel) return const SizedBox.shrink();
+              return IconButton(
+                tooltip: 'Cancelar entrega',
+                icon: const Icon(Icons.cancel_outlined),
+                onPressed: () async {
+                  try {
+                    await _cancelAsRider(order);
+                  } catch (e) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('No se pudo cancelar: $e')),
+                    );
+                  }
+                },
+              );
+            },
+            orElse: () => const SizedBox.shrink(),
+          ),
+        ],
       ),
       body: orderAsync.when(
         loading: () => const Center(
@@ -274,6 +462,10 @@ class _RiderDeliveryMapScreenState
           final effectivePickupStopIndex = (!needsPickup || stops.isEmpty)
               ? 0
               : _pickupStopIndex.clamp(0, stops.length - 1);
+
+          final isLastPickupStop = stops.isEmpty ||
+              effectivePickupStopIndex >= stops.length - 1;
+          final arrivedAtPickup = needsPickup && _arrivedAtPickupStop;
 
           final pickupTargetGeo = (!needsPickup)
               ? order.pickup.geo
@@ -594,11 +786,14 @@ class _RiderDeliveryMapScreenState
                 child: _BottomPanel(
                   order: order,
                   stepTitle: needsPickup
-                      ? (stops.isEmpty
-                          ? 'Siguiente: Recoger'
-                          : 'Siguiente: Recoger ${effectivePickupStopIndex + 1}/${stops.length}')
+                      ? (arrivedAtPickup && isLastPickupStop
+                          ? 'Siguiente: Retirar'
+                          : (stops.isEmpty
+                              ? 'Siguiente: Recoger'
+                              : 'Siguiente: Recoger ${effectivePickupStopIndex + 1}/${stops.length}'))
                       : 'Siguiente: Entregar',
                   needsPickup: needsPickup,
+                  arrivedAtPickupStop: arrivedAtPickup,
                   pickupStopsCount: stops.length,
                   pickupStopIndex: effectivePickupStopIndex,
                   currentPickupOfferIds: (needsPickup &&
@@ -629,30 +824,58 @@ class _RiderDeliveryMapScreenState
                       );
                     }
                   },
+                  onOpenChats: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => RiderDeliveryChatsScreen(
+                          orderId: order.orderId,
+                        ),
+                      ),
+                    );
+                  },
                   onArrivedAtPickupStop: (!needsPickup || stops.isEmpty)
                       ? null
-                      : () {
+                      : () async {
                           final isLast =
                               effectivePickupStopIndex >= stops.length - 1;
 
                           // Persist progress for per-stop hero notifications.
-                          unawaited(
-                            _markPickupStopCompleted(
-                              orderId: order.orderId,
-                              stopIndex: effectivePickupStopIndex,
-                            ),
+                          final ok = await _markPickupStopCompleted(
+                            orderId: order.orderId,
+                            stopIndex: effectivePickupStopIndex,
                           );
 
+                          if (!ok) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'No se pudo guardar el progreso. Intenta de nuevo.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
                           if (!isLast) {
-                            setState(() => _pickupStopIndex =
-                                (effectivePickupStopIndex + 1).clamp(0, 9999));
+                            setState(() {
+                              _pickupStopIndex =
+                                  (effectivePickupStopIndex + 1).clamp(0, 9999);
+                              _arrivedAtPickupStop = false;
+                            });
+                          } else {
+                            setState(() => _arrivedAtPickupStop = true);
                           }
                         },
                   onPickedUp: order.status == OrderStatus.assigned
                       ? (stops.isNotEmpty &&
                               effectivePickupStopIndex < stops.length - 1
                           ? null
-                          : () => _setStatus(order, OrderStatus.pickedUp))
+                          : () async {
+                              await _setStatus(order, OrderStatus.pickedUp);
+                              if (!mounted) return;
+                              setState(() => _arrivedAtPickupStop = false);
+                            })
                       : null,
                   onInTransit: (order.status == OrderStatus.pickedUp)
                       ? () => _setStatus(order, OrderStatus.inTransit)
@@ -675,6 +898,7 @@ class _BottomPanel extends ConsumerWidget {
   final Order order;
   final String stepTitle;
   final bool needsPickup;
+  final bool arrivedAtPickupStop;
   final int pickupStopsCount;
   final int pickupStopIndex;
   final List<String> currentPickupOfferIds;
@@ -682,6 +906,7 @@ class _BottomPanel extends ConsumerWidget {
   final String deliveryAddressSnapshot;
   final Future<void> Function({required String buyerId, required String buyerName})
   onOpenChat;
+  final VoidCallback onOpenChats;
   final VoidCallback? onArrivedAtPickupStop;
   final VoidCallback? onPickedUp;
   final VoidCallback? onInTransit;
@@ -691,12 +916,14 @@ class _BottomPanel extends ConsumerWidget {
     required this.order,
     required this.stepTitle,
     required this.needsPickup,
+    required this.arrivedAtPickupStop,
     required this.pickupStopsCount,
     required this.pickupStopIndex,
     required this.currentPickupOfferIds,
     required this.currentPickupAddressSnapshot,
     required this.deliveryAddressSnapshot,
     required this.onOpenChat,
+    required this.onOpenChats,
     required this.onArrivedAtPickupStop,
     required this.onPickedUp,
     required this.onInTransit,
@@ -707,36 +934,25 @@ class _BottomPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hasStops = pickupStopsCount > 0;
     final currentPickupHuman = (pickupStopIndex + 1).clamp(1, pickupStopsCount);
+    final isLastPickupStop =
+        !hasStops || pickupStopIndex >= pickupStopsCount - 1;
     final arrivedLabel = hasStops
         ? 'Llegué a la recogida $currentPickupHuman/$pickupStopsCount'
         : 'Llegué a la recogida';
-    final arrivedEnabled = needsPickup && onArrivedAtPickupStop != null;
+    final arrivedEnabled = needsPickup &&
+        onArrivedAtPickupStop != null &&
+        !(arrivedAtPickupStop && isLastPickupStop);
     final pickedUpEnabled = onPickedUp != null;
     final inTransitEnabled = onInTransit != null;
     final deliveredEnabled = onDelivered != null;
 
-    final isLastPickupStop = !hasStops || pickupStopIndex >= pickupStopsCount - 1;
-
-    Future<void> callPhone(String phone) async {
-      final uri = Uri.parse('tel:$phone');
-      final ok = await launchUrl(uri);
-      if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo abrir la llamada')),
-        );
-      }
-    }
-
-    final String targetTitle;
     final String? targetPhone;
     final String? chatBuyerId;
-    final String chatBuyerName;
 
     String? pickupSummary;
     String? pickupWhere;
 
     if (needsPickup) {
-      targetTitle = 'Donador';
       final offerId = currentPickupOfferIds.isNotEmpty
           ? currentPickupOfferIds.first
           : null;
@@ -750,7 +966,6 @@ class _BottomPanel extends ConsumerWidget {
           : ref.watch(userByIdProvider(donorId));
       targetPhone = donorAsync.value?.phoneNumber;
       chatBuyerId = donorId;
-      chatBuyerName = donorAsync.value?.fullName ?? 'Donador';
 
       final extraOffers = currentPickupOfferIds.length - 1;
       final titleBase = (offerTitle != null && offerTitle.trim().isNotEmpty)
@@ -765,18 +980,40 @@ class _BottomPanel extends ConsumerWidget {
           ? pickupAddress
           : 'Ubicación de recogida';
     } else {
-      targetTitle = 'Hero';
       targetPhone = order.delivery.recipientPhone;
       chatBuyerId = order.heroId;
-      chatBuyerName = order.delivery.recipientName.isNotEmpty
-          ? order.delivery.recipientName
-          : 'Cliente';
     }
 
-    final phoneTrimmed = targetPhone?.trim() ?? '';
-    final canCall = phoneTrimmed.isNotEmpty;
+    final _ = targetPhone;
     final buyerIdResolved = chatBuyerId;
     final canChat = buyerIdResolved != null && buyerIdResolved.trim().isNotEmpty;
+
+    final riderUid = ref.watch(firebaseAuthProvider).currentUser?.uid;
+    final chatBadgeCount = (() {
+      if (!canChat) return 0;
+      final riderId = order.rider.assignedRiderId;
+      if (riderId == null || riderId.trim().isEmpty) return 0;
+
+      final chatId = Chat.generateChatId(
+        type: ChatType.heroRider,
+        buyerId: buyerIdResolved.trim(),
+        riderId: riderId.trim(),
+        orderId: order.orderId,
+      );
+
+      final chatAsync = ref.watch(chatByIdProvider(chatId));
+      return chatAsync.maybeWhen(
+        data: (chat) {
+          if (chat == null) return 0;
+          if (riderUid == null) return 0;
+          if (chat.unreadCount <= 0) return 0;
+          if ((chat.lastMessageSenderId ?? '').trim() == riderUid) return 0;
+          return chat.unreadCount;
+        },
+        orElse: () => 0,
+      );
+    })();
+
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -807,26 +1044,10 @@ class _BottomPanel extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (canCall)
-                IconButton(
-                  tooltip: 'Llamar a $targetTitle',
-                  onPressed: () {
-                    callPhone(phoneTrimmed);
-                  },
-                  icon: const Icon(Icons.call_outlined),
-                  color: primaryOrange,
-                ),
               IconButton(
-                tooltip: 'Chat con $targetTitle',
-                onPressed: !canChat
-                    ? null
-                    : () {
-                        onOpenChat(
-                          buyerId: buyerIdResolved,
-                          buyerName: chatBuyerName,
-                        );
-                      },
-                icon: const Icon(Icons.chat_bubble_outline),
+                tooltip: 'Abrir chat',
+                onPressed: onOpenChats,
+                icon: _ChatIconWithBadge(count: chatBadgeCount),
                 color: primaryOrange,
               ),
             ],
@@ -849,6 +1070,7 @@ class _BottomPanel extends ConsumerWidget {
                 pickupStopsCount: pickupStopsCount,
                 pickupStopIndex: pickupStopIndex,
                 needsPickup: needsPickup,
+                arrivedAtPickupStop: arrivedAtPickupStop,
                 status: order.status,
               ),
             ],
@@ -986,16 +1208,57 @@ class _BottomPanel extends ConsumerWidget {
   }
 }
 
+class _ChatIconWithBadge extends StatelessWidget {
+  final int count;
+
+  const _ChatIconWithBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        const Icon(Icons.chat_bubble_outline),
+        if (count > 0)
+          PositionedDirectional(
+            end: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: primaryOrange,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+              constraints: const BoxConstraints(minWidth: 16),
+              child: Text(
+                count > 99 ? '99+' : count.toString(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _StepPills extends StatelessWidget {
   final int pickupStopsCount;
   final int pickupStopIndex;
   final bool needsPickup;
+  final bool arrivedAtPickupStop;
   final OrderStatus status;
 
   const _StepPills({
     required this.pickupStopsCount,
     required this.pickupStopIndex,
     required this.needsPickup,
+    required this.arrivedAtPickupStop,
     required this.status,
   });
 
@@ -1005,8 +1268,12 @@ class _StepPills extends StatelessWidget {
 
     if (pickupStopsCount > 0) {
       for (int i = 0; i < pickupStopsCount; i++) {
-        final isDone = !needsPickup || i < pickupStopIndex;
-        final isCurrent = needsPickup && i == pickupStopIndex;
+        final isDone = !needsPickup ||
+            i < pickupStopIndex ||
+            (arrivedAtPickupStop && i == pickupStopIndex);
+        final isCurrent = needsPickup &&
+            i == pickupStopIndex &&
+            !(arrivedAtPickupStop && i == pickupStopIndex);
         pills.add(
           _Pill(
             text: '${i + 1}',
@@ -1020,8 +1287,8 @@ class _StepPills extends StatelessWidget {
       pills.add(
         _Pill(
           text: 'R',
-          active: needsPickup,
-          done: !needsPickup,
+          active: needsPickup && !arrivedAtPickupStop,
+          done: !needsPickup || arrivedAtPickupStop,
         ),
       );
     }

@@ -1,5 +1,6 @@
 class OrderItem {
   final String offerId;
+  final String sellerHeroIdSnapshot;
   final String titleSnapshot;
   final double unitPriceSnapshot;
   final int qty;
@@ -8,6 +9,7 @@ class OrderItem {
 
   OrderItem({
     required this.offerId,
+    this.sellerHeroIdSnapshot = '',
     required this.titleSnapshot,
     required this.unitPriceSnapshot,
     required this.qty,
@@ -20,6 +22,7 @@ class OrderItem {
 
   OrderItem copyWith({
     String? offerId,
+    String? sellerHeroIdSnapshot,
     String? titleSnapshot,
     double? unitPriceSnapshot,
     int? qty,
@@ -28,6 +31,7 @@ class OrderItem {
   }) {
     return OrderItem(
       offerId: offerId ?? this.offerId,
+      sellerHeroIdSnapshot: sellerHeroIdSnapshot ?? this.sellerHeroIdSnapshot,
       titleSnapshot: titleSnapshot ?? this.titleSnapshot,
       unitPriceSnapshot: unitPriceSnapshot ?? this.unitPriceSnapshot,
       qty: qty ?? this.qty,

@@ -5,10 +5,12 @@ import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
+import '../../../../../domain/entities/payment.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../payment/payment_processing_screen.dart';
 import '../../../payment/providers/payment_providers.dart';
+import 'order_receipt_screen.dart';
 import 'hero_order_status_screen.dart';
 
 class HeroOrdersScreen extends ConsumerWidget {
@@ -121,21 +123,28 @@ class _OrderTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final title = 'Pedido HRO-${order.orderId}';
+    final paymentAsync = ref.watch(watchPaymentByOrderIdProvider(order.orderId));
+    final payment = paymentAsync.asData?.value;
+    final isPaymentApproved = payment?.status == PaymentStatus.approved;
+    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
+        (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
 
     final statusColor = _statusColor(order.status);
+    final statusBg = _statusBg(order.status);
+    final shortId = order.orderId.length > 8
+        ? order.orderId.substring(0, 8)
+        : order.orderId;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderGray100),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
+            color: statusColor.withValues(alpha: 0.10),
+            blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
@@ -148,75 +157,140 @@ class _OrderTile extends ConsumerWidget {
             ),
           );
         },
-        child: Row(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Colored header band ─────────────────────────
             Container(
-              width: 44,
-              height: 44,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
+                color: statusBg,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
               ),
-              child: Icon(_statusIcon(order.status), color: statusColor),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: textGray900,
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      _statusIcon(order.status),
+                      color: statusColor,
+                      size: 20,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    order.delivery.addressSnapshot,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: textGray600,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: statusColor.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: statusColor.withValues(alpha: 0.25),
-                          ),
-                        ),
-                        child: Text(
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           order.status.displayName,
                           style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
                             color: statusColor,
                           ),
                         ),
+                        Text(
+                          'HRO-$shortId',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: statusColor.withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '\$${order.amountTotal.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: statusColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Body: address + items + rider ──────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (order.delivery.addressSnapshot.isNotEmpty)
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_rounded,
+                          size: 14,
+                          color: textGray600.withValues(alpha: 0.7),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            order.delivery.addressSnapshot,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: textGray600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (order.delivery.addressSnapshot.isNotEmpty)
+                    const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.shopping_bag_outlined,
+                        size: 14,
+                        color: textGray600.withValues(alpha: 0.7),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 4),
                       Text(
-                        '\$${order.amountTotal.toStringAsFixed(0)}',
+                        '${order.totalItems} producto${order.totalItems == 1 ? '' : 's'}',
                         style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: textGray900,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: textGray600,
                         ),
                       ),
+                      if (order.rider.isAssigned &&
+                          (order.rider.riderNameSnapshot?.isNotEmpty ??
+                              false)) ...[
+                        const SizedBox(width: 10),
+                        Icon(
+                          Icons.delivery_dining,
+                          size: 14,
+                          color: primaryOrange.withValues(alpha: 0.8),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            order.rider.riderNameSnapshot!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: primaryOrange,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   // Show payment and delete buttons for pending payment orders
@@ -510,6 +584,40 @@ class _OrderTile extends ConsumerWidget {
                       ],
                     ),
                   ],
+
+                  if (order.status != OrderStatus.pendingPayment &&
+                      (isPaymentApproved || isCashPayment)) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  OrderReceiptScreen(orderId: order.orderId),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.receipt_long, size: 18),
+                        label: const Text(
+                          'Ver boleta',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: primaryOrange,
+                          side: const BorderSide(color: primaryOrange),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -537,6 +645,22 @@ class _OrderTile extends ConsumerWidget {
         return Icons.cancel_outlined;
       case OrderStatus.failed:
         return Icons.error_outline;
+    }
+  }
+
+  static Color _statusBg(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.delivered:
+        return const Color(0xFFD1FAE5);
+      case OrderStatus.canceled:
+      case OrderStatus.failed:
+        return const Color(0xFFFEE2E2);
+      case OrderStatus.assigned:
+      case OrderStatus.pickedUp:
+      case OrderStatus.inTransit:
+        return const Color(0xFFFFEDD5);
+      default:
+        return const Color(0xFFF3F4F6);
     }
   }
 

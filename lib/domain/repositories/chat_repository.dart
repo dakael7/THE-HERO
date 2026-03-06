@@ -10,6 +10,12 @@ abstract class ChatRepository {
     required String text,
   });
 
+  Future<void> setTyping({
+    required String chatId,
+    required String userId,
+    required bool isTyping,
+  });
+
   Future<void> ensureChatExists(Chat chat);
   Future<void> markMessagesAsRead({
     required String chatId,

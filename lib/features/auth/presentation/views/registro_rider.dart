@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/validators.dart';
 import '../../../../domain/entities/user.dart';
+import '../../../../data/providers/network_providers.dart';
 import '../providers/auth_provider.dart';
 import 'unverified_email_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
@@ -39,7 +40,11 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   late final TextEditingController _lastNameController;
   late final TextEditingController _rutController;
   late final TextEditingController _passwordController;
+  late final TextEditingController _confirmPasswordController;
   late final TextEditingController _phoneController;
+
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
@@ -51,14 +56,25 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     super.initState();
 
     final user = widget.existingUser;
+    final authUser = ref.read(firebaseAuthProvider).currentUser;
+
+    String authFirstName = '';
+    String authLastName = '';
+    final displayName = authUser?.displayName?.trim();
+    if (displayName != null && displayName.isNotEmpty) {
+      final parts = displayName.split(RegExp(r'\s+'));
+      authFirstName = parts.isNotEmpty ? parts.first : '';
+      authLastName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    }
+
     _emailController = TextEditingController(
-      text: user?.email ?? widget.email ?? '',
+      text: user?.email ?? widget.email ?? authUser?.email ?? '',
     );
     _firstNameController = TextEditingController(
-      text: user?.identity.firstName ?? '',
+      text: user?.identity.firstName ?? authFirstName,
     );
     _lastNameController = TextEditingController(
-      text: user?.identity.lastName ?? '',
+      text: user?.identity.lastName ?? authLastName,
     );
     _rutController = TextEditingController(
       text: user?.identity.documentId ?? '',
@@ -67,6 +83,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
       text: user?.contact.phoneNumber ?? '',
     );
     _passwordController = TextEditingController();
+    _confirmPasswordController = TextEditingController();
 
     _controller = AnimationController(vsync: this, duration: Duration.zero);
 
@@ -91,6 +108,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     _lastNameController.dispose();
     _rutController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _phoneController.dispose();
     super.dispose();
   }
@@ -110,11 +128,13 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   InputDecoration _getInputDecoration({
     required String labelText,
     required String hintText,
+    Widget? suffixIcon,
   }) {
     return InputDecoration(
       labelText: labelText,
       hintText: hintText,
       hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
+      suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(
@@ -146,6 +166,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     bool enabled = true,
     List<TextInputFormatter>? inputFormatters,
     TextEditingController? controller,
+    Widget? suffixIcon,
   }) {
     return TextFormField(
       controller: controller,
@@ -155,7 +176,11 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
       validator: validator,
       inputFormatters: inputFormatters,
       style: const TextStyle(color: textGray900),
-      decoration: _getInputDecoration(labelText: labelText, hintText: hintText),
+      decoration: _getInputDecoration(
+        labelText: labelText,
+        hintText: hintText,
+        suffixIcon: suffixIcon,
+      ),
     );
   }
 
@@ -318,12 +343,55 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                               labelText: 'Contraseña',
                               hintText:
                                   'Mín. 8 caracteres, 1 mayús, 1 minús, 1 número.',
-                              obscureText: true,
+                              obscureText: _obscurePassword,
                               keyboardType: TextInputType.visiblePassword,
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                ),
+                              ),
                               validator: (value) {
                                 if (value == null ||
                                     !passwordRegex.hasMatch(value)) {
                                   return 'Contraseña débil. Debe cumplir con el formato.';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 24),
+                            _buildTextField(
+                              controller: _confirmPasswordController,
+                              labelText: 'Confirmar contraseña',
+                              hintText: 'Repite tu contraseña',
+                              obscureText: _obscureConfirmPassword,
+                              keyboardType: TextInputType.visiblePassword,
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _obscureConfirmPassword =
+                                        !_obscureConfirmPassword;
+                                  });
+                                },
+                                icon: Icon(
+                                  _obscureConfirmPassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                ),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Confirma tu contraseña.';
+                                }
+                                if (value.trim() !=
+                                    _passwordController.text.trim()) {
+                                  return 'Las contraseñas no coinciden.';
                                 }
                                 return null;
                               },
@@ -432,6 +500,8 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                             // 1. MANEJO DE UPGRADE DE CUENTA (HERO -> RIDER)
                                             if (widget.existingUser != null) {
                                               final user = widget.existingUser!;
+                                              final auth = ref.read(firebaseAuthProvider);
+                                              final uid = auth.currentUser?.uid ?? user.id;
 
                                               await ref
                                                   .read(
@@ -439,7 +509,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                                         .notifier,
                                                   )
                                                   .upgradeToRider(
-                                                    uid: user.id,
+                                                    uid: uid,
                                                     firstName:
                                                         _firstNameController
                                                             .text

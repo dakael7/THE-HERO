@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 
 import '../core/constants/app_colors.dart';
 import '../core/services/notification_handler.dart';
@@ -8,6 +7,7 @@ import '../domain/entities/user.dart';
 import '../features/auth/presentation/views/login_page.dart';
 import '../features/auth/presentation/providers/session_provider.dart';
 import '../features/auth/presentation/views/unverified_email_screen.dart';
+import '../features/auth/presentation/providers/auth_provider.dart';
 import '../features/hero/presentation/views/hero_home_screen.dart';
 import '../features/rider/presentation/views/rider_home_screen.dart';
 
@@ -20,7 +20,7 @@ class App extends ConsumerWidget {
 
     return MaterialApp(
       title: 'THE HERO',
-      navigatorKey: NotificationHandler().navigatorKey, // For FCM navigation
+      navigatorKey: NotificationHandler().navigatorKey, 
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: primaryOrange),
         useMaterial3: true,
@@ -38,9 +38,7 @@ class App extends ConsumerWidget {
             return const LoginPage();
           }
 
-          // Add small delay to allow login screen to complete its navigation
-          // This prevents race condition where app.dart renders home before
-          // login screen can redirect to registration for role upgrade
+          
           return FutureBuilder(
             future: Future.delayed(const Duration(milliseconds: 100)),
             builder: (context, snapshot) {
@@ -73,6 +71,8 @@ class App extends ConsumerWidget {
 
   Widget _buildHomeScreen(WidgetRef ref) {
     final currentUserAsync = ref.watch(currentUserProvider);
+    final lastRoleAsync = ref.watch(lastRoleProvider);
+    final emailVerifiedAsync = ref.watch(emailVerifiedCheckProvider);
 
     return currentUserAsync.when(
       data: (user) {
@@ -80,8 +80,19 @@ class App extends ConsumerWidget {
           return const LoginPage();
         }
 
-        final authUser = fb_auth.FirebaseAuth.instance.currentUser;
-        final isEmailVerified = authUser?.emailVerified ?? false;
+        if (emailVerifiedAsync.isLoading) {
+          return Scaffold(
+            backgroundColor: primaryYellow,
+            body: const Center(
+              child: CircularProgressIndicator(color: primaryOrange),
+            ),
+          );
+        }
+
+        final isEmailVerified = emailVerifiedAsync.maybeWhen(
+          data: (v) => v,
+          orElse: () => false,
+        );
 
         if (!isEmailVerified || !user.contact.emailVerified) {
           return UnverifiedEmailScreen(
@@ -90,16 +101,19 @@ class App extends ConsumerWidget {
           );
         }
 
-        // Navegar directamente según el perfil que tenga el usuario
-        // La selección de rol se hace en login_page.dart ANTES de autenticarse
-        if (user.isRider) {
-          return const RiderHomeScreen();
-        } else if (user.isHero) {
-          return const HeroHomeScreen();
-        } else {
-          // Si no tiene ningún perfil, volver a login
-          return const LoginPage();
+       
+        final hasRider = user.isRider;
+        final hasHero = user.isHero;
+        final lastRole = lastRoleAsync.maybeWhen(data: (v) => v, orElse: () => null);
+
+        if (hasRider && hasHero) {
+          if (lastRole == 'hero') return const HeroHomeScreen();
+          if (lastRole == 'rider') return const RiderHomeScreen();
         }
+
+        if (hasRider) return const RiderHomeScreen();
+        if (hasHero) return const HeroHomeScreen();
+        return const LoginPage();
       },
       loading: () {
         return Scaffold(

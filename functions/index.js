@@ -1,4 +1,4 @@
-const {onCall, HttpsError} = require('firebase-functions/v2/https');
+const {onCall, onRequest, HttpsError} = require('firebase-functions/v2/https');
 const {onObjectFinalized} = require('firebase-functions/v2/storage');
 const {onDocumentWritten} = require('firebase-functions/v2/firestore');
 const logger = require('firebase-functions/logger');
@@ -41,6 +41,237 @@ function isSupportUser(auth) {
 
   return false;
 }
+
+function _requireAdminApiKey(req) {
+  const expected = process.env.ADMIN_API_KEY;
+  if (!expected) {
+    logger.error('[adminPayoutRider] Missing ADMIN_API_KEY env var');
+    return {ok: false, status: 500, message: 'Server not configured'};
+  }
+
+  const authHeader = req.get('authorization') || req.get('Authorization') || '';
+  const prefix = 'bearer ';
+  const token = authHeader.toLowerCase().startsWith(prefix)
+    ? authHeader.slice(prefix.length).trim()
+    : '';
+
+  if (!token || token !== expected) {
+    return {ok: false, status: 401, message: 'Unauthorized'};
+  }
+
+  return {ok: true};
+}
+
+function _toCents(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.round(num * 100);
+}
+
+function _round2(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.round(num * 100) / 100;
+}
+
+// Admin payout endpoint (called from your admin web/backend)
+// Security: Bearer token via ADMIN_API_KEY env var.
+// Body: { riderId, amount?, idempotencyKey, reference?, note? }
+exports.adminPayoutRider = onRequest(
+  {
+    region: 'southamerica-west1',
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({error: 'Method not allowed'});
+      }
+
+      const authCheck = _requireAdminApiKey(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({error: authCheck.message});
+      }
+
+      const riderId = String(req.body?.riderId || '').trim();
+      const idempotencyKey = String(req.body?.idempotencyKey || '').trim();
+      const reference = req.body?.reference != null ? String(req.body.reference) : null;
+      const note = req.body?.note != null ? String(req.body.note) : null;
+
+      if (!riderId) {
+        return res.status(400).json({error: 'riderId is required'});
+      }
+      if (!idempotencyKey) {
+        return res.status(400).json({error: 'idempotencyKey is required'});
+      }
+
+      const requestedCents =
+        req.body?.amount == null ? null : _toCents(req.body.amount);
+      if (req.body?.amount != null && (requestedCents == null || requestedCents <= 0)) {
+        return res.status(400).json({error: 'amount must be > 0'});
+      }
+
+      const firestore = admin.firestore();
+      const userRef = firestore.collection('users').doc(riderId);
+      const idemRef = firestore.collection('admin_payout_requests').doc(idempotencyKey);
+      const payoutTxRef = userRef.collection('riderWalletTransactions').doc();
+
+      const result = await firestore.runTransaction(async (tx) => {
+        const idemSnap = await tx.get(idemRef);
+        if (idemSnap.exists) {
+          const idem = idemSnap.data() || {};
+          if (idem.status === 'completed') {
+            return {
+              replay: true,
+              riderId,
+              payoutTxId: idem.payoutTxId || null,
+              paidAmount: idem.paidAmount || 0,
+              paidAmountCents: idem.paidAmountCents || 0,
+              currency: idem.currency || 'CLP',
+              walletBefore: idem.walletBefore || null,
+              walletAfter: idem.walletAfter || null,
+            };
+          }
+          throw new Error('Idempotency key is already in use');
+        }
+
+        const userSnap = await tx.get(userRef);
+        if (!userSnap.exists) {
+          throw new Error('Rider not found');
+        }
+        const user = userSnap.data() || {};
+        const wallet = (user.riderWallet && typeof user.riderWallet === 'object')
+          ? user.riderWallet
+          : {};
+
+        let earningsBalanceCents =
+          wallet.earningsBalanceCents != null ? Number(wallet.earningsBalanceCents) : null;
+
+        const legacyEarnings = wallet.earningsBalance != null
+          ? Number(wallet.earningsBalance)
+          : 0;
+
+        if (earningsBalanceCents == null || !Number.isFinite(earningsBalanceCents)) {
+          earningsBalanceCents = _toCents(legacyEarnings) || 0;
+          tx.update(userRef, {
+            'riderWallet.earningsBalanceCents': earningsBalanceCents,
+          });
+        }
+
+        earningsBalanceCents = Math.max(0, Math.trunc(earningsBalanceCents));
+        const maxPayableCents = earningsBalanceCents;
+        const payoutCents = Math.min(
+          requestedCents == null ? maxPayableCents : requestedCents,
+          maxPayableCents,
+        );
+
+        const isPartial = payoutCents < maxPayableCents;
+
+        if (payoutCents <= 0) {
+          const payload = {
+            status: 'completed',
+            riderId,
+            payoutTxId: null,
+            paidAmountCents: 0,
+            paidAmount: 0,
+            currency: wallet.currency || 'CLP',
+            walletBefore: {
+              earningsBalanceCents: earningsBalanceCents,
+              earningsBalance: legacyEarnings,
+            },
+            walletAfter: {
+              earningsBalanceCents: earningsBalanceCents,
+              earningsBalance: legacyEarnings,
+            },
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+          tx.set(idemRef, payload);
+          return {
+            replay: false,
+            riderId,
+            payoutTxId: null,
+            paidAmountCents: 0,
+            paidAmount: 0,
+            currency: payload.currency,
+            walletBefore: payload.walletBefore,
+            walletAfter: payload.walletAfter,
+          };
+        }
+
+        const paidAmount = payoutCents / 100;
+        const walletBefore = {
+          earningsBalanceCents: earningsBalanceCents,
+          earningsBalance: legacyEarnings,
+        };
+        const walletAfter = {
+          earningsBalanceCents: earningsBalanceCents - payoutCents,
+          earningsBalance: _round2(legacyEarnings - paidAmount) ?? (legacyEarnings - paidAmount),
+        };
+
+        tx.set(payoutTxRef, {
+          type: 'payout',
+          riderId,
+          amountCents: -payoutCents,
+          amount: -paidAmount,
+          currency: wallet.currency || 'CLP',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          meta: {
+            method: 'bank_transfer',
+            reference,
+            note,
+            isPartial,
+            requestedAmountCents: requestedCents,
+          },
+        });
+
+        const walletUpdate = {
+          'riderWallet.earningsBalanceCents': admin.firestore.FieldValue.increment(-payoutCents),
+          'riderWallet.earningsBalance': admin.firestore.FieldValue.increment(-paidAmount),
+        };
+        if (!isPartial) {
+          walletUpdate['riderWallet.lastPayoutAt'] = admin.firestore.FieldValue.serverTimestamp();
+          walletUpdate['riderWallet.lastPayoutAmountCents'] = payoutCents;
+        }
+        tx.update(userRef, walletUpdate);
+
+        tx.set(idemRef, {
+          status: 'completed',
+          riderId,
+          payoutTxId: payoutTxRef.id,
+          paidAmountCents: payoutCents,
+          paidAmount,
+          currency: wallet.currency || 'CLP',
+          walletBefore,
+          walletAfter,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        return {
+          replay: false,
+          riderId,
+          payoutTxId: payoutTxRef.id,
+          paidAmountCents: payoutCents,
+          paidAmount,
+          currency: wallet.currency || 'CLP',
+          walletBefore,
+          walletAfter,
+        };
+      });
+
+      return res.status(200).json(result);
+    } catch (e) {
+      logger.error('[adminPayoutRider] Error', e);
+      const msg = e?.message ? String(e.message) : String(e);
+      if (msg.toLowerCase().includes('not found')) {
+        return res.status(404).json({error: msg});
+      }
+      if (msg.toLowerCase().includes('idempotency')) {
+        return res.status(409).json({error: msg});
+      }
+      return res.status(500).json({error: msg});
+    }
+  },
+);
 
 /**
  * Asigna un pedido a un rider de forma segura
@@ -695,6 +926,262 @@ function extractRutCandidates(text) {
   return Array.from(candidates);
 }
 
+function stripDiacritics(input) {
+  if (!input) return '';
+  return String(input).normalize('NFD').replace(/\p{Diacritic}/gu, '');
+}
+
+function countRutKeywords(text) {
+  const t = stripDiacritics(String(text || '')).toUpperCase();
+  const keywords = [
+    'REPUBLICA DE CHILE',
+    'CEDULA DE IDENTIDAD',
+    'RUN',
+  ];
+
+  let hits = 0;
+  const matched = [];
+  for (const k of keywords) {
+    if (t.includes(k)) {
+      hits += 1;
+      matched.push(k);
+    }
+  }
+
+  return {hits, matched};
+}
+
+function countLicenseKeywords(text) {
+  const t = stripDiacritics(String(text || '')).toUpperCase();
+  const keywords = [
+    'LICENCIA DE CONDUCIR',
+    'CLASE',
+    'REPUBLICA DE CHILE',
+  ];
+
+  let hits = 0;
+  const matched = [];
+  for (const k of keywords) {
+    if (t.includes(k)) {
+      hits++;
+      matched.push(k);
+    }
+  }
+  return {hits, matched};
+}
+
+function normalizeLicenseClass(raw) {
+  if (!raw) return null;
+  const c = stripDiacritics(String(raw)).toUpperCase().replace(/\s+/g, '');
+  return c;
+}
+
+function extractLicenseClass(text) {
+  const t = stripDiacritics(String(text || '')).toUpperCase();
+  // Prefer explicit "CLASE" marker
+  const m = t.match(/\bCLASE\b\s*[:\-]?\s*([A-C]\s?\d?)/);
+  if (m && m[1]) return normalizeLicenseClass(m[1]);
+
+  // Secondary: look for A4/A5 tokens
+  if (t.includes('A4')) return 'A4';
+  if (t.includes('A5')) return 'A5';
+
+  // Very conservative fallback for B/C
+  if (t.match(/\bCLASE\s*B\b/)) return 'B';
+  if (t.match(/\bCLASE\s*C\b/)) return 'C';
+
+  return null;
+}
+
+function extractExpiryDate(text) {
+  const t = stripDiacritics(String(text || '')).toUpperCase();
+  // Common patterns: VENCIMIENTO 12/09/2028, VENC. 12-09-2028
+  const near = t.match(/(VENC|VENCIMIENTO|CADUCIDAD)[^0-9]{0,25}(\d{2}[\/-]\d{2}[\/-]\d{4})/);
+  const raw = near && near[2] ? near[2] : (t.match(/\b(\d{2}[\/-]\d{2}[\/-]\d{4})\b/) || [null, null])[1];
+  if (!raw) return null;
+
+  const parts = raw.split(/[\/-]/).map((n) => Number(n));
+  if (parts.length !== 3) return null;
+  const [dd, mm, yyyy] = parts;
+  if (!dd || !mm || !yyyy) return null;
+
+  const d = new Date(Date.UTC(yyyy, mm - 1, dd, 23, 59, 59));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function normalizeNameForMatch(name) {
+  return stripDiacritics(String(name || ''))
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function nameTokenSet(name) {
+  return new Set(
+    normalizeNameForMatch(name)
+      .split(' ')
+      .map((t) => t.trim())
+      .filter((t) => t.length >= 2)
+  );
+}
+
+function nameMatchRatio({declaredFullName, extractedFullName}) {
+  const d = nameTokenSet(declaredFullName);
+  const e = nameTokenSet(extractedFullName);
+  if (d.size === 0 || e.size === 0) return 0;
+  let inter = 0;
+  for (const t of d) {
+    if (e.has(t)) inter++;
+  }
+  return inter / d.size;
+}
+
+function extractNameHeuristic({ocrText, declaredFullName}) {
+  const lines = String(ocrText || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const declared = normalizeNameForMatch(declaredFullName);
+  const declaredTokens = nameTokenSet(declared);
+
+  // 1) Explicit markers
+  for (let i = 0; i < lines.length; i++) {
+    const ln = normalizeNameForMatch(lines[i]);
+    if (ln.includes('NOMBRES') || ln.includes('NOMBRE')) {
+      const candidate = normalizeNameForMatch(lines[i + 1] || '');
+      if (candidate.length >= 8) return candidate;
+    }
+    if (ln.includes('APELLIDOS') || ln.includes('APELLIDO')) {
+      const candidate = normalizeNameForMatch(lines[i + 1] || '');
+      if (candidate.length >= 8) return candidate;
+    }
+  }
+
+  // 2) Best overlap line
+  let best = null;
+  let bestScore = 0;
+  for (const raw of lines) {
+    const candidate = normalizeNameForMatch(raw);
+    if (candidate.length < 8 || candidate.length > 60) continue;
+    if (/\b(REPUBLICA|CHILE|LICENCIA|CONDUCIR|CLASE|VENC|VENCIMIENTO|FECHA|DIRECCION|DOMICILIO|NACIONALIDAD)\b/.test(candidate)) {
+      continue;
+    }
+
+    const tokens = nameTokenSet(candidate);
+    if (tokens.size < 2) continue;
+
+    let inter = 0;
+    for (const t of declaredTokens) {
+      if (tokens.has(t)) inter++;
+    }
+    const score = declaredTokens.size > 0 ? inter / declaredTokens.size : 0;
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+
+  return best;
+}
+
+function validateLicenseClassForVehicle({vehicleType, licenseClass}) {
+  const vt = String(vehicleType || '').toLowerCase();
+  const lc = normalizeLicenseClass(licenseClass);
+
+  if (vt === 'bicycle' || vt === 'bicicleta') {
+    return {ok: true, reason: null};
+  }
+
+  if (!lc) return {ok: false, reason: 'no_license_class_detected'};
+
+  if (vt === 'motorcycle' || vt === 'moto') {
+    return {ok: lc.includes('C'), reason: 'requires_class_c'};
+  }
+
+  if (vt === 'car' || vt === 'auto' || vt === 'camioneta') {
+    return {ok: lc.includes('B'), reason: 'requires_class_b'};
+  }
+
+  // In this repo the heavy vehicle is 'truck'
+  if (vt === 'truck' || vt === 'camion' || vt === 'transporte_profesional') {
+    const ok = lc.includes('A4') || lc.includes('A5');
+    return {ok, reason: 'requires_class_a4_or_a5'};
+  }
+
+  return {ok: false, reason: 'unknown_vehicle_type'};
+}
+
+async function computeAntifraudSignalsFromStorageObject({bucketName, filePath}) {
+  const bucket = admin.storage().bucket(bucketName);
+  const tempLocalFile = path.join(os.tmpdir(), path.basename(filePath));
+
+  await bucket.file(filePath).download({destination: tempLocalFile});
+
+  try {
+    const {data, info} = await sharp(tempLocalFile)
+      .rotate()
+      .resize(160, 160, {fit: 'inside', withoutEnlargement: true})
+      .removeAlpha()
+      .raw()
+      .toBuffer({resolveWithObject: true});
+
+    const channels = info.channels;
+    const pixels = info.width * info.height;
+    if (!pixels || channels < 3) {
+      return {
+        ok: false,
+        whiteRatio: null,
+        luminanceVariance: null,
+        luminanceMin: null,
+        luminanceMax: null,
+        errorCodes: ['antifraud_invalid_image'],
+      };
+    }
+
+    let whiteCount = 0;
+    let sumL = 0;
+    let sumL2 = 0;
+    let minL = 255;
+    let maxL = 0;
+
+    for (let i = 0; i < data.length; i += channels) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const l = (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+
+      sumL += l;
+      sumL2 += l * l;
+      if (l < minL) minL = l;
+      if (l > maxL) maxL = l;
+
+      if (r > 245 && g > 245 && b > 245) {
+        whiteCount += 1;
+      }
+    }
+
+    const meanL = sumL / pixels;
+    const variance = Math.max(0, (sumL2 / pixels) - (meanL * meanL));
+    const whiteRatio = whiteCount / pixels;
+
+    return {
+      ok: true,
+      whiteRatio,
+      luminanceVariance: variance,
+      luminanceMin: minL,
+      luminanceMax: maxL,
+      errorCodes: [],
+    };
+  } finally {
+    if (fs.existsSync(tempLocalFile)) {
+      fs.unlinkSync(tempLocalFile);
+    }
+  }
+}
+
 async function runVisionOcrForGcsUri({gcsUri, mimeType}) {
   if (mimeType === 'application/pdf') {
     const [result] = await visionClient.documentTextDetection({
@@ -916,6 +1403,500 @@ exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
   }
 );
 
+/**
+ * Trigger: Send notification when a new chat message is created.
+ * Notifies all participants except the sender.
+ */
+exports.notifyNewChatMessage = onDocumentWritten(
+  {document: 'chats/{chatId}/messages/{messageId}', region: STORAGE_REGION},
+  async (event) => {
+    const before = event.data && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after.exists ? event.data.after.data() : null;
+
+    // Only on create
+    if (!after || before) {
+      return;
+    }
+
+    const chatId = event.params.chatId;
+    const messageId = event.params.messageId;
+    const senderId = after.senderId;
+    const text = after.text;
+
+    if (!chatId || !senderId) return;
+
+    // Load chat to get participants and context
+    const chatSnap = await admin.firestore().collection('chats').doc(chatId).get();
+    if (!chatSnap.exists) return;
+    const chat = chatSnap.data() || {};
+
+    // Sender display name
+    let senderName = 'Usuario';
+    try {
+      const senderSnap = await admin.firestore().collection('users').doc(senderId).get();
+      if (senderSnap.exists) {
+        const senderData = senderSnap.data() || {};
+        const identity = senderData.identity || {};
+        const firstName = typeof identity.firstName === 'string' ? identity.firstName.trim() : '';
+        const lastName = typeof identity.lastName === 'string' ? identity.lastName.trim() : '';
+        const fullName = `${firstName} ${lastName}`.trim();
+        if (fullName) {
+          senderName = fullName;
+        } else if (typeof senderData.fullName === 'string' && senderData.fullName.trim()) {
+          senderName = senderData.fullName.trim();
+        } else if (typeof senderData.displayName === 'string' && senderData.displayName.trim()) {
+          senderName = senderData.displayName.trim();
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    const typeRaw = typeof chat.type === 'string' ? chat.type.toLowerCase() : '';
+    const chatLabel = typeRaw.includes('rider') ? 'Rider' : 'Hero';
+
+    const orderIdRaw = typeof chat.orderId === 'string' ? chat.orderId.trim() : '';
+    const shortOrderId = orderIdRaw
+      ? (orderIdRaw.length > 8 ? orderIdRaw.substring(0, 8) : orderIdRaw)
+      : '';
+
+    const participantIds = Array.isArray(chat.participantIds)
+      ? chat.participantIds.map((x) => String(x)).filter(Boolean)
+      : [];
+
+    const recipients = participantIds.filter((id) => id && id !== senderId);
+    if (recipients.length === 0) return;
+
+    const preview = typeof text === 'string' ? text.trim() : '';
+    const trimmedText = preview.length > 140 ? `${preview.substring(0, 137)}...` : preview;
+    const body = trimmedText ? `${senderName}: ${trimmedText}` : `${senderName}: Nuevo mensaje`;
+
+    const title = shortOrderId
+      ? `Nuevo mensaje (${chatLabel}) • Pedido #${shortOrderId}`
+      : `Nuevo mensaje (${chatLabel})`;
+
+    await sendNotificationToUsers(
+      recipients,
+      {
+        title,
+        body,
+      },
+      {
+        type: 'chat_message',
+        action: 'open_chat',
+        chatId,
+        orderId: chat.orderId || '',
+        offerId: chat.offerId || '',
+        messageId,
+        priority: 'high',
+      }
+    );
+  }
+);
+
+exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
+  {region: STORAGE_REGION},
+  async (event) => {
+    const object = event.data;
+    const filePath = object.name;
+    const contentType = object.contentType || '';
+
+    if (!filePath) return null;
+
+    // Expected path:
+    // users/{uid}/documents/license_verification/{requestId}/...license_front.*
+    const segments = filePath.split('/').filter(Boolean);
+    if (segments.length < 6) return null;
+    if (segments[0] !== 'users') return null;
+    if (segments[2] !== 'documents') return null;
+    if (segments[3] !== 'license_verification') return null;
+
+    const userId = segments[1];
+    const requestId = segments[4];
+    const fileName = segments[segments.length - 1];
+
+    const isFront = fileName.toLowerCase().includes('license_front');
+    if (!isFront) return null;
+
+    const isPdf = contentType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+    const isImage = contentType.startsWith('image/');
+    if (!isPdf && !isImage) return null;
+
+    // Strict: no PDFs
+    if (isPdf) {
+      logger.warn('[ocrLicenseVerification] PDF not allowed', {userId, requestId, filePath});
+      const userRef = admin.firestore().collection('users').doc(userId);
+      const reqRef = userRef.collection('license_verification_requests').doc(requestId);
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      await userRef.set(
+        {
+          licenseVerification: {
+            status: 'rejected',
+            requestId,
+            mode: 'ocr',
+            updatedAt: now,
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              errorCodes: ['pdf_not_allowed'],
+            },
+          },
+        },
+        {merge: true}
+      );
+
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: 'rejected',
+          ocr: {
+            errorCodes: ['pdf_not_allowed'],
+            processedAt: now,
+          },
+        },
+        {merge: true}
+      );
+
+      return null;
+    }
+
+    logger.info('[ocrLicenseVerification] Start', {
+      userId,
+      requestId,
+      filePath,
+      contentType,
+    });
+
+    const userRef = admin.firestore().collection('users').doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      logger.warn('[ocrLicenseVerification] user not found', {userId});
+      return null;
+    }
+
+    const userData = userSnap.data() || {};
+    const roles = Array.isArray(userData.roles) ? userData.roles : [];
+    const isRider = roles.includes('rider');
+    if (!isRider) {
+      logger.warn('[ocrLicenseVerification] rejected: not rider', {userId, requestId});
+      const reqRef = userRef.collection('license_verification_requests').doc(requestId);
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      await userRef.set(
+        {
+          licenseVerification: {
+            status: 'rejected',
+            requestId,
+            mode: 'ocr',
+            updatedAt: now,
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              errorCodes: ['not_rider'],
+            },
+          },
+        },
+        {merge: true}
+      );
+
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: 'rejected',
+          ocr: {
+            errorCodes: ['not_rider'],
+            processedAt: now,
+          },
+        },
+        {merge: true}
+      );
+
+      return null;
+    }
+
+    const declaredRut = userData?.identity?.documentId;
+    const declaredNormalized = normalizeRut(declaredRut);
+    const declaredFullName = `${userData?.identity?.firstName || ''} ${userData?.identity?.lastName || ''}`.trim();
+    const declaredFullNameNorm = normalizeNameForMatch(declaredFullName);
+
+    const vehicleType = userData?.riderProfile?.vehicle?.type || null;
+
+    const reqRef = userRef.collection('license_verification_requests').doc(requestId);
+    const gcsUri = `gs://${object.bucket}/${filePath}`;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    // Mark processing
+    await userRef.set(
+      {
+        licenseVerification: {
+          status: 'processing',
+          requestId,
+          mode: 'ocr',
+          updatedAt: now,
+        },
+      },
+      {merge: true}
+    );
+
+    await reqRef.set(
+      {
+        updatedAt: now,
+        status: 'processing',
+        declared: {
+          rut: declaredNormalized,
+          fullName: declaredFullName,
+          vehicleType,
+        },
+      },
+      {merge: true}
+    );
+
+    try {
+      const text = await runVisionOcrForGcsUri({
+        gcsUri,
+        mimeType: isPdf ? 'application/pdf' : contentType,
+      });
+
+      const ocrText = String(text || '');
+      const documentDetected = ocrText.trim().length >= 40;
+      const keywordResult = countLicenseKeywords(ocrText);
+      const keywordsOk = keywordResult.hits >= 2;
+
+      const candidates = extractRutCandidates(ocrText);
+      const extractedRutRaw = candidates.length > 0 ? candidates[0] : null;
+      const extractedRut = extractedRutRaw ? normalizeRut(extractedRutRaw) : null;
+      const strictRutOk = extractedRut ? /^\d{7,8}-[0-9K]$/.test(extractedRut) : false;
+      const dvValid = extractedRut ? isValidRutDv(extractedRut) : false;
+      const matchDeclared =
+        extractedRut && declaredNormalized
+          ? extractedRut === declaredNormalized
+          : false;
+
+      const extractedLicenseClass = extractLicenseClass(ocrText);
+      const expiryIso = extractExpiryDate(ocrText);
+      const expired = expiryIso ? new Date(expiryIso).getTime() < Date.now() : true;
+
+      const extractedName = extractNameHeuristic({
+        ocrText,
+        declaredFullName: declaredFullNameNorm,
+      });
+      const nameRatio = extractedName
+        ? nameMatchRatio({
+            declaredFullName: declaredFullNameNorm,
+            extractedFullName: extractedName,
+          })
+        : 0;
+      const nameMatchOk = extractedName ? nameRatio >= 0.7 : false;
+
+      const classCheck = validateLicenseClassForVehicle({
+        vehicleType,
+        licenseClass: extractedLicenseClass,
+      });
+
+      const antifraud = await computeAntifraudSignalsFromStorageObject({
+        bucketName: object.bucket,
+        filePath,
+      });
+
+      const whiteRatio = typeof antifraud.whiteRatio === 'number' ? antifraud.whiteRatio : null;
+      const variance = typeof antifraud.luminanceVariance === 'number' ? antifraud.luminanceVariance : null;
+
+      const thresholds = {
+        maxWhiteRatio: 0.85,
+        minVariance: 250,
+      };
+
+      const textureValid =
+        antifraud.ok &&
+        whiteRatio !== null &&
+        variance !== null &&
+        whiteRatio <= thresholds.maxWhiteRatio &&
+        variance >= thresholds.minVariance;
+
+      const score =
+        (documentDetected ? 20 : 0) +
+        (keywordsOk ? 15 : 0) +
+        (dvValid ? 20 : 0) +
+        (matchDeclared ? 20 : 0) +
+        (nameMatchOk ? 15 : 0) +
+        (classCheck.ok ? 5 : 0) +
+        (!expired ? 5 : 0) +
+        (textureValid ? 20 : 0);
+
+      const suspiciousAttempt = score < 80;
+      const errors = [];
+
+      if (!documentDetected) errors.push('document_not_detected');
+      if (!keywordsOk) errors.push('missing_keywords');
+      if (!declaredRut) errors.push('missing_declared_rut');
+      if (!extractedRut) errors.push('rut_not_found');
+      if (extractedRut && !strictRutOk) errors.push('rut_format_invalid');
+      if (extractedRut && strictRutOk && !dvValid) errors.push('rut_dv_invalid');
+      if (declaredRut && extractedRut && dvValid && !matchDeclared) errors.push('rut_mismatch_declared');
+
+      if (!extractedName) errors.push('name_not_found');
+      if (extractedName && !nameMatchOk) errors.push('name_mismatch_declared');
+
+      if (!extractedLicenseClass && (vehicleType !== 'bicycle')) errors.push('license_class_not_found');
+      if (expired) errors.push('license_expired');
+      if (!classCheck.ok) errors.push(classCheck.reason);
+
+      if (!textureValid) errors.push('antifraud_texture_invalid');
+      if (suspiciousAttempt) errors.push('suspicious_low_score');
+      if (Array.isArray(antifraud.errorCodes) && antifraud.errorCodes.length > 0) {
+        errors.push(...antifraud.errorCodes);
+      }
+
+      const verificationStatus =
+        documentDetected &&
+        keywordsOk &&
+        extractedRut &&
+        strictRutOk &&
+        dvValid &&
+        declaredRut &&
+        matchDeclared &&
+        extractedName &&
+        nameMatchOk &&
+        !expired &&
+        classCheck.ok &&
+        textureValid &&
+        !suspiciousAttempt
+          ? 'approved'
+          : 'rejected';
+
+      await userRef.set(
+        {
+          licenseVerification: {
+            status: verificationStatus,
+            requestId,
+            mode: 'ocr',
+            verifiedAt: verificationStatus === 'approved' ? now : null,
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              extractedRut,
+              dvValid,
+              matchDeclared,
+              keywordHits: keywordResult.hits,
+              keywordMatched: keywordResult.matched,
+              documentDetected,
+              extractedName,
+              nameMatchRatio: nameRatio,
+              licenseClass: extractedLicenseClass,
+              expiryDate: expiryIso,
+              vehicleType,
+              classOk: classCheck.ok,
+              antifraud: {
+                score,
+                suspiciousAttempt,
+                whiteRatio,
+                luminanceVariance: variance,
+                luminanceMin: antifraud.luminanceMin ?? null,
+                luminanceMax: antifraud.luminanceMax ?? null,
+                thresholds,
+                textureValid,
+              },
+              errorCodes: errors,
+            },
+          },
+        },
+        {merge: true}
+      );
+
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: verificationStatus,
+          score,
+          ocr: {
+            extractedRut,
+            dvValid,
+            matchDeclared,
+            extractedName,
+            nameMatchRatio: nameRatio,
+            licenseClass: extractedLicenseClass,
+            expiryDate: expiryIso,
+            vehicleType,
+            classOk: classCheck.ok,
+            keywordHits: keywordResult.hits,
+            keywordMatched: keywordResult.matched,
+            errorCodes: errors,
+            processedAt: now,
+          },
+        },
+        {merge: true}
+      );
+
+      if (verificationStatus !== 'approved') {
+        await userRef.collection('security_events').add({
+          type: 'license_verification_failed',
+          requestId,
+          vehicleType,
+          score,
+          errorCodes: errors,
+          createdAt: now,
+        });
+      }
+
+      logger.info('[ocrLicenseVerification] Done', {
+        userId,
+        requestId,
+        verificationStatus,
+      });
+    } catch (error) {
+      logger.error('[ocrLicenseVerification] OCR failed', {
+        userId,
+        requestId,
+        filePath,
+        error,
+      });
+
+      await userRef.set(
+        {
+          licenseVerification: {
+            status: 'failed',
+            requestId,
+            mode: 'ocr',
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              errorCodes: ['ocr_error'],
+            },
+          },
+        },
+        {merge: true}
+      );
+
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: 'failed',
+          ocr: {
+            errorCodes: ['ocr_error'],
+            processedAt: now,
+          },
+        },
+        {merge: true}
+      );
+
+      await userRef.collection('security_events').add({
+        type: 'license_verification_failed',
+        requestId,
+        score: 0,
+        errorCodes: ['ocr_error'],
+        createdAt: now,
+      });
+    }
+
+    return null;
+  }
+);
+
 exports.ocrRutVerificationOnUpload = onObjectFinalized(
   {region: STORAGE_REGION},
   async (event) => {
@@ -944,6 +1925,44 @@ exports.ocrRutVerificationOnUpload = onObjectFinalized(
     const isPdf = contentType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
     const isImage = contentType.startsWith('image/');
     if (!isPdf && !isImage) return null;
+    if (isPdf) {
+      logger.warn('[ocrRutVerification] PDF not allowed for strict mode', { userId, requestId, filePath });
+      const userRef = admin.firestore().collection('users').doc(userId);
+      const reqRef = userRef.collection('rut_verification_requests').doc(requestId);
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      await userRef.set(
+        {
+          rutVerification: {
+            status: 'rejected',
+            requestId,
+            mode: 'ocr',
+            updatedAt: now,
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              errorCodes: ['pdf_not_allowed'],
+            },
+          },
+        },
+        { merge: true }
+      );
+
+      await reqRef.set(
+        {
+          updatedAt: now,
+          status: 'rejected',
+          ocr: {
+            errorCodes: ['pdf_not_allowed'],
+            processedAt: now,
+          },
+        },
+        { merge: true }
+      );
+
+      return null;
+    }
 
     logger.info('[ocrRutVerification] Start', {
       userId,
@@ -994,34 +2013,75 @@ exports.ocrRutVerificationOnUpload = onObjectFinalized(
         mimeType: isPdf ? 'application/pdf' : contentType,
       });
 
-      const candidates = extractRutCandidates(text);
-      const extractedRut = candidates.length > 0 ? candidates[0] : null;
-      const extractedNormalized = normalizeRut(extractedRut);
+      const ocrText = String(text || '');
+      const documentDetected = ocrText.trim().length >= 20;
+      const keywordResult = countRutKeywords(ocrText);
+      const keywordsOk = keywordResult.hits >= 2;
+
+      const candidates = extractRutCandidates(ocrText);
+      const extractedRutRaw = candidates.length > 0 ? candidates[0] : null;
+      const extractedRut = extractedRutRaw ? normalizeRut(extractedRutRaw) : null;
+      const strictRutOk = extractedRut ? /^\d{7,8}-[0-9K]$/.test(extractedRut) : false;
       const dvValid = extractedRut ? isValidRutDv(extractedRut) : false;
       const matchDeclared =
-        extractedNormalized && declaredNormalized
-          ? extractedNormalized === declaredNormalized
+        extractedRut && declaredNormalized
+          ? extractedRut === declaredNormalized
           : false;
 
+      const antifraud = await computeAntifraudSignalsFromStorageObject({
+        bucketName: object.bucket,
+        filePath,
+      });
+
+      const whiteRatio = typeof antifraud.whiteRatio === 'number' ? antifraud.whiteRatio : null;
+      const variance = typeof antifraud.luminanceVariance === 'number' ? antifraud.luminanceVariance : null;
+
+      const thresholds = {
+        maxWhiteRatio: 0.85,
+        minVariance: 250,
+      };
+
+      const textureValid =
+        antifraud.ok &&
+        whiteRatio !== null &&
+        variance !== null &&
+        whiteRatio <= thresholds.maxWhiteRatio &&
+        variance >= thresholds.minVariance;
+
+      const score =
+        (documentDetected ? 30 : 0) +
+        (keywordsOk ? 20 : 0) +
+        (dvValid ? 30 : 0) +
+        (textureValid ? 20 : 0);
+
+      const suspiciousAttempt = score < 80;
       const errors = [];
-      let verificationStatus = 'needs_review';
 
-      if (!declaredRut) {
-        errors.push('missing_declared_rut');
+      if (!documentDetected) errors.push('document_not_detected');
+      if (!keywordsOk) errors.push('missing_keywords');
+      if (!declaredRut) errors.push('missing_declared_rut');
+      if (!extractedRut) errors.push('rut_not_found');
+      if (extractedRut && !strictRutOk) errors.push('rut_format_invalid');
+      if (extractedRut && strictRutOk && !dvValid) errors.push('rut_dv_invalid');
+      if (declaredRut && extractedRut && dvValid && !matchDeclared) errors.push('rut_mismatch_declared');
+      if (!textureValid) errors.push('antifraud_texture_invalid');
+      if (suspiciousAttempt) errors.push('suspicious_low_score');
+      if (Array.isArray(antifraud.errorCodes) && antifraud.errorCodes.length > 0) {
+        errors.push(...antifraud.errorCodes);
       }
 
-      if (!extractedRut) {
-        errors.push('rut_not_found');
-        verificationStatus = 'needs_review';
-      } else if (!dvValid) {
-        errors.push('rut_dv_invalid');
-        verificationStatus = 'needs_review';
-      } else if (declaredRut && !matchDeclared) {
-        errors.push('rut_mismatch_declared');
-        verificationStatus = 'needs_review';
-      } else if (declaredRut && matchDeclared && dvValid) {
-        verificationStatus = 'approved';
-      }
+      const verificationStatus =
+        documentDetected &&
+        keywordsOk &&
+        extractedRut &&
+        strictRutOk &&
+        dvValid &&
+        declaredRut &&
+        matchDeclared &&
+        textureValid &&
+        !suspiciousAttempt
+          ? 'approved'
+          : 'rejected';
 
       await userRef.set(
         {
@@ -1038,6 +2098,19 @@ exports.ocrRutVerificationOnUpload = onObjectFinalized(
               dvValid,
               matchDeclared,
               rutCandidates: candidates.slice(0, 5),
+              keywordHits: keywordResult.hits,
+              keywordMatched: keywordResult.matched,
+              documentDetected,
+              antifraud: {
+                score,
+                suspiciousAttempt,
+                whiteRatio,
+                luminanceVariance: variance,
+                luminanceMin: antifraud.luminanceMin ?? null,
+                luminanceMax: antifraud.luminanceMax ?? null,
+                thresholds,
+                textureValid,
+              },
               errorCodes: errors,
             },
           },
@@ -1229,6 +2302,8 @@ exports.syncRiderStatsOnOrderWrite = onDocumentWritten(
     }
 
     const deliveryFee = typeof after.deliveryFee === 'number' ? after.deliveryFee : 0;
+    const tipAfterRaw = typeof after.tip === 'number' ? after.tip : 0;
+    const tipBeforeRaw = before && typeof before.tip === 'number' ? before.tip : 0;
     const statsRef = admin.firestore().collection('rider_stats').doc(riderId);
     const inc = admin.firestore.FieldValue.increment;
 
@@ -1239,6 +2314,7 @@ exports.syncRiderStatsOnOrderWrite = onDocumentWritten(
         case 'delivered':
           return {deliveredTrips: 1, canceledTrips: 0, failedTrips: 0};
         case 'canceled':
+        case 'cancelled':
           return {deliveredTrips: 0, canceledTrips: 1, failedTrips: 0};
         case 'failed':
           return {deliveredTrips: 0, canceledTrips: 0, failedTrips: 1};
@@ -1247,18 +2323,51 @@ exports.syncRiderStatsOnOrderWrite = onDocumentWritten(
       }
     };
 
+    const isRiderUnassignToQueue = () => {
+      const b = (beforeStatus || '').toLowerCase();
+      const a = (afterStatus || '').toLowerCase();
+      if (!(b === 'assigned' && a === 'queued')) return false;
+
+      const beforeAssigned =
+        before && before.rider && typeof before.rider.assignedRiderId === 'string'
+          ? before.rider.assignedRiderId
+          : null;
+      const afterAssigned =
+        after && after.rider && typeof after.rider.assignedRiderId === 'string'
+          ? after.rider.assignedRiderId
+          : null;
+
+      const beforeHas = !!(beforeAssigned && beforeAssigned.trim().length > 0);
+      const afterHas = !!(afterAssigned && afterAssigned.trim().length > 0);
+      return beforeHas && !afterHas;
+    };
+
+    const tipIfDelivered = (status, tip) => {
+      return (status || '').toLowerCase() === 'delivered' ? tip : 0;
+    };
+
     const beforeC = toCounters(beforeStatus);
     const afterC = toCounters(afterStatus);
 
     const deltaDelivered = afterC.deliveredTrips - beforeC.deliveredTrips;
-    const deltaCanceled = afterC.canceledTrips - beforeC.canceledTrips;
+    let deltaCanceled = afterC.canceledTrips - beforeC.canceledTrips;
     const deltaFailed = afterC.failedTrips - beforeC.failedTrips;
+
+    // Rider unassign (assigned -> queued) should count as a cancellation for rider stats.
+    if (isRiderUnassignToQueue()) {
+      deltaCanceled += 1;
+    }
+
+    const beforeTip = tipIfDelivered(beforeStatus, tipBeforeRaw);
+    const afterTip = tipIfDelivered(afterStatus, tipAfterRaw);
+    const deltaTips = afterTip - beforeTip;
 
     const updates = {
       riderId,
       deliveredTrips: inc(deltaDelivered),
       canceledTrips: inc(deltaCanceled),
       failedTrips: inc(deltaFailed),
+      tips: inc(deltaTips),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
@@ -1277,6 +2386,24 @@ exports.syncRiderStatsOnOrderWrite = onDocumentWritten(
       if (deliveredWeekKey === currentWeekKey) {
         updates.weeklyEarnings = inc(deltaDelivered * deliveryFee);
         updates.weeklyTrips = inc(deltaDelivered);
+      }
+    }
+
+    if (deltaTips !== 0) {
+      updates.totalEarnings = inc(deltaTips);
+
+      const deliveredAtForTips =
+        afterStatus && afterStatus.toLowerCase() === 'delivered'
+          ? (after.timestamps && after.timestamps.deliveredAt && typeof after.timestamps.deliveredAt.toDate === 'function'
+              ? after.timestamps.deliveredAt.toDate()
+              : new Date())
+          : new Date();
+
+      const tipsWeekKey = getIsoWeekKey(deliveredAtForTips);
+
+      updates.weekKey = currentWeekKey;
+      if (tipsWeekKey === currentWeekKey) {
+        updates.weeklyEarnings = inc(deltaTips);
       }
     }
 
@@ -1692,10 +2819,8 @@ exports.sendOperatorNotification = onCall(async (request) => {
 
   let recipients = targetUserIds;
 
-  // If no specific users, broadcast to all users
   if (!recipients || recipients.length === 0) {
     if (useTopic) {
-      // Use FCM topic for efficient broadcast
       const message = {
         notification: {
           title,
@@ -1721,8 +2846,7 @@ exports.sendOperatorNotification = onCall(async (request) => {
         message: 'Notificación enviada a todos los usuarios vía topic',
       };
     } else {
-      // Paginated broadcast to all users
-      const BATCH_SIZE = 500; // FCM limit is 500 tokens per request
+      const BATCH_SIZE = 500; 
       let totalSent = 0;
       let lastDoc = null;
 

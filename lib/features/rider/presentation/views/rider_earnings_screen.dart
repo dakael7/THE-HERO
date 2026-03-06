@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/constants/app_colors.dart';
+import '../../../../domain/entities/order_status.dart';
+import '../../../../domain/entities/order.dart';
 import '../../../../domain/services/rider_commission_calculator.dart';
 import '../../../../domain/providers/orders_usecase_providers.dart';
+import '../providers/rider_cumulative_stats_provider.dart';
+import '../providers/rider_earnings_breakdown_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
 class RiderEarningsScreen extends ConsumerWidget {
@@ -29,85 +34,51 @@ class RiderEarningsScreen extends ConsumerWidget {
             return const Center(child: Text('Usuario no encontrado'));
           }
 
-          final useCase = ref.read(getOrdersByRiderUseCaseProvider);
+          final ordersUseCase = ref.read(getOrdersByRiderUseCaseProvider);
+          final statsAsync = ref.watch(riderCumulativeStatsProvider(user.id));
+          final breakdownAsync =
+              ref.watch(riderEarningsBreakdownProvider(user.id));
 
           return StreamBuilder(
-            stream: useCase.execute(user.id),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(color: primaryOrange),
-                );
-              }
+            stream: ordersUseCase.execute(user.id),
+            builder: (context, ordersSnapshot) {
+              final hasOrders = ordersSnapshot.hasData;
+              final List<Order> orders =
+                  hasOrders ? (ordersSnapshot.data ?? const <Order>[]) : const <Order>[];
 
-              if (snapshot.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                  final List<Order>? completedOrders = hasOrders
+                      ? orders
+                          .where((order) => order.status == OrderStatus.delivered)
+                          .toList()
+                      : null;
+
+                  final stats = statsAsync.asData?.value;
+                  final int deliveryCount = stats?.completedTrips ?? 0;
+                  final int? canceledCount = stats?.canceledTrips;
+                  final double totalTips = stats?.totalTips ?? 0.0;
+                  final double totalEarnings = stats?.totalEarnings ?? 0.0;
+                  final double totalNetEarnings = totalEarnings + totalTips;
+                  final double pendingBalance = stats?.pendingBalance ?? 0.0;
+
+                  final breakdown = breakdownAsync.asData?.value;
+                  final earningsOnline = breakdown?.earningsOnline ?? 0.0;
+                  final earningsCash = breakdown?.earningsCash ?? 0.0;
+                  final cashToRender = breakdown?.cashToRender ?? 0.0;
+                  final avgPerDelivery = deliveryCount <= 0
+                      ? 0.0
+                      : (totalNetEarnings / deliveryCount);
+
+                  final completedCountText =
+                      '$deliveryCount entrega${deliveryCount == 1 ? '' : 's'} completada${deliveryCount == 1 ? '' : 's'}';
+
+                  return RefreshIndicator(
+                    color: primaryOrange,
+                    onRefresh: () async {
+                      ref.invalidate(profileProvider);
+                    },
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                       children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 64,
-                          color: textGray600.withValues(alpha: 0.55),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No pudimos cargar tus ganancias',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: textGray900,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${snapshot.error}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: textGray600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              final orders = snapshot.data ?? [];
-
-              // Filter only delivered orders
-              final completedOrders = orders
-                  .where((order) => order.status.name == 'delivered')
-                  .toList();
-
-              // Calculate earnings - explicitly cast to double
-              final deliveryFees = completedOrders
-                  .map((order) => order.deliveryFee)
-                  .toList();
-
-              final summary = RiderCommissionCalculator.getSummary(
-                deliveryFees,
-              );
-              final totalNetEarnings = summary['totalNetEarnings'] ?? 0.0;
-              final deliveryCount = summary['deliveryCount']?.toInt() ?? 0;
-              final avgPerDelivery =
-                  deliveryCount <= 0 ? 0.0 : (totalNetEarnings / deliveryCount);
-
-              final completedCountText =
-                  '$deliveryCount entrega${deliveryCount == 1 ? '' : 's'} completada${deliveryCount == 1 ? '' : 's'}';
-
-              return RefreshIndicator(
-                color: primaryOrange,
-                onRefresh: () async {
-                  ref.invalidate(profileProvider);
-                },
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                  children: [
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -194,11 +165,73 @@ class RiderEarningsScreen extends ConsumerWidget {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _MetricChip(
+                                  icon: Icons.cancel_outlined,
+                                  label: 'Cancelaciones',
+                                  value: canceledCount?.toString() ?? '...',
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _MetricChip(
+                                  icon: Icons.volunteer_activism_outlined,
+                                  label: 'Propinas',
+                                  value: '\$${totalTips.toStringAsFixed(0)}',
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _MetricChip(
+                                  icon: Icons.credit_card,
+                                  label: 'Online',
+                                  value:
+                                      '\$${earningsOnline.toStringAsFixed(0)}',
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _MetricChip(
+                                  icon: Icons.payments_outlined,
+                                  label: 'Efectivo',
+                                  value: '\$${earningsCash.toStringAsFixed(0)}',
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          _MetricChip(
+                            icon: Icons.account_balance_wallet_outlined,
+                            label: 'Pendiente por pagar',
+                            value: '\$${pendingBalance.toStringAsFixed(0)}',
+                          ),
+                          if (cashToRender > 0) ...[
+                            const SizedBox(height: 12),
+                            _MetricChip(
+                              icon: Icons.account_balance_outlined,
+                              label: 'Efectivo compensado',
+                              value: '\$${cashToRender.toStringAsFixed(0)}',
+                            ),
+                          ],
                         ],
                       ),
                     ),
                     const SizedBox(height: 18),
-                    if (completedOrders.isEmpty)
+                    if (completedOrders == null)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: 24),
+                          child: CircularProgressIndicator(color: primaryOrange),
+                        ),
+                      )
+                    else if (completedOrders.isEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
                         child: Container(
@@ -240,7 +273,8 @@ class RiderEarningsScreen extends ConsumerWidget {
                       )
                     else ...[
                       const Padding(
-                        padding: EdgeInsets.only(left: 4, top: 4, bottom: 10),
+                        padding:
+                            EdgeInsets.only(left: 4, top: 4, bottom: 10),
                         child: Text(
                           'Entregas recientes',
                           style: TextStyle(
@@ -251,7 +285,8 @@ class RiderEarningsScreen extends ConsumerWidget {
                         ),
                       ),
                       ...completedOrders.take(10).map((order) {
-                        final earnings = RiderCommissionCalculator.calculateCommission(
+                        final earnings =
+                            RiderCommissionCalculator.calculateCommission(
                           deliveryFee: order.deliveryFee,
                         );
                         final shortId = order.orderId.length <= 8
@@ -299,7 +334,7 @@ class RiderEarningsScreen extends ConsumerWidget {
                               ),
                             ),
                             trailing: Text(
-                              '\$${earnings.netEarnings.toStringAsFixed(0)}',
+                              '\$${(earnings.netEarnings + order.tip).toStringAsFixed(0)}',
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w900,
@@ -311,9 +346,9 @@ class RiderEarningsScreen extends ConsumerWidget {
                       }),
                     ],
                   ],
-                ),
-              );
-            },
+                    ),
+                  );
+                },
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -326,7 +361,7 @@ class RiderEarningsScreen extends ConsumerWidget {
 class _MetricChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  final String value;
+  final Object value;
 
   const _MetricChip({
     required this.icon,
@@ -336,6 +371,17 @@ class _MetricChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final valueWidget = value is Widget
+        ? (value as Widget)
+        : Text(
+            value.toString(),
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          );
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -360,14 +406,7 @@ class _MetricChip extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                  ),
-                ),
+                valueWidget,
               ],
             ),
           ),

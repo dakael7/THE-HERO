@@ -15,6 +15,7 @@ abstract class AuthLocalDataSource {
 class AuthLocalDataSourceImpl implements AuthLocalDataSource {
   final Future<SharedPreferences> _prefs;
   static const String _userKey = 'current_user';
+  static const String _lastRoleKey = 'last_role';
 
   AuthLocalDataSourceImpl() : _prefs = SharedPreferences.getInstance();
 
@@ -62,6 +63,7 @@ class AuthLocalDataSourceImpl implements AuthLocalDataSource {
     try {
       final prefs = await _prefs;
       await prefs.remove(_userKey);
+      await prefs.remove(_lastRoleKey);
     } catch (e) {
       throw Exception('Error al limpiar usuario local: $e');
     }
@@ -76,12 +78,12 @@ class AuthLocalDataSourceImpl implements AuthLocalDataSource {
   @override
   Future<void> saveLastRole(String role) async {
     final prefs = await _prefs;
-    await prefs.setString('last_role', role);
+    await prefs.setString(_lastRoleKey, role);
   }
 
   @override
   Future<String?> getLastRole() async {
     final prefs = await _prefs;
-    return prefs.getString('last_role');
+    return prefs.getString(_lastRoleKey);
   }
 }

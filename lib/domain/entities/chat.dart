@@ -38,10 +38,14 @@ class Chat {
   });
 
   List<String> get participantIds {
-    final ids = <String>[buyerId];
-    if (riderId != null && riderId!.isNotEmpty) ids.add(riderId!);
-    if (sellerId != null && sellerId!.isNotEmpty) ids.add(sellerId!);
-    return ids;
+    switch (type) {
+      case ChatType.heroRider:
+        final r = (riderId ?? '').trim();
+        return <String>[buyerId, if (r.isNotEmpty) r];
+      case ChatType.heroSeller:
+        final s = (sellerId ?? '').trim();
+        return <String>[buyerId, if (s.isNotEmpty) s];
+    }
   }
 
   Chat copyWith({
@@ -92,6 +96,24 @@ class Chat {
   }) {
     if (buyerId.isEmpty) {
       throw ArgumentError('buyerId es requerido');
+    }
+
+    if (type == ChatType.heroRider) {
+      final id = (orderId ?? '').trim();
+      if (id.isEmpty) {
+        throw ArgumentError('orderId es requerido para chats hero_rider');
+      }
+      final r = (riderId ?? '').trim();
+      if (r.isEmpty) {
+        throw ArgumentError('riderId es requerido para chats hero_rider');
+      }
+
+      final b = buyerId.trim();
+      if (b.isEmpty) {
+        throw ArgumentError('buyerId es requerido para chats hero_rider');
+      }
+
+      return '${type.jsonValue}_${b}_${r}_order_$id';
     }
 
     final otherId = type == ChatType.heroRider ? riderId : sellerId;

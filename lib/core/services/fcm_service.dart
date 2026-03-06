@@ -3,6 +3,9 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
+import 'dart:convert';
+
+import 'notification_handler.dart';
 
 class FCMService {
   static final FCMService _instance = FCMService._internal();
@@ -16,6 +19,26 @@ class FCMService {
   bool _initialized = false;
   String? _fcmToken;
   String? _currentTopic;
+
+  String? _activeChatId;
+
+  void setActiveChatId(String? chatId) {
+    final normalized = chatId?.trim();
+    _activeChatId = (normalized == null || normalized.isEmpty)
+        ? null
+        : normalized;
+  }
+
+  bool _isChatCurrentlyOpen(String? chatId) {
+    final active = _activeChatId;
+    if (active == null || active.isEmpty) return false;
+    if (chatId == null || chatId.trim().isEmpty) return false;
+    return active == chatId;
+  }
+
+  int _stableNotificationIdForChat(String chatId) {
+    return chatId.hashCode & 0x7fffffff;
+  }
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -49,8 +72,18 @@ class FCMService {
       (user) async {
         try {
           if (user == null) {
-            await _unsubscribeFromCurrentTopic();
-            await _unsubscribeFromLegacyTopics();
+            try {
+              await _unsubscribeFromCurrentTopic()
+                  .timeout(const Duration(seconds: 6));
+            } catch (e) {
+              print('FCM: unsubscribe current topic failed: $e');
+            }
+            try {
+              await _unsubscribeFromLegacyTopics()
+                  .timeout(const Duration(seconds: 6));
+            } catch (e) {
+              print('FCM: unsubscribe legacy topics failed: $e');
+            }
             return;
           }
 
@@ -140,6 +173,14 @@ class FCMService {
       playSound: true,
     );
 
+    const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
+      'chat_messages',
+      'Mensajes',
+      description: 'Notificaciones de mensajes de chat',
+      importance: Importance.high,
+      playSound: true,
+    );
+
     const AndroidNotificationChannel nearbyChannel = AndroidNotificationChannel(
       'nearby_orders',
       'Pedidos Cercanos',
@@ -161,6 +202,7 @@ class FCMService {
         >();
 
     await androidPlugin?.createNotificationChannel(orderChannel);
+    await androidPlugin?.createNotificationChannel(chatChannel);
     await androidPlugin?.createNotificationChannel(nearbyChannel);
     await androidPlugin?.createNotificationChannel(systemChannel);
   }
@@ -197,19 +239,40 @@ class FCMService {
   }
 
   Future<void> cleanupBeforeSignOut() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print('FCM cleanupBeforeSignOut: no current user');
+      return;
+    }
+
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+      await _unsubscribeFromCurrentTopic().timeout(const Duration(seconds: 6));
+    } catch (e) {
+      print('FCM cleanupBeforeSignOut: unsubscribe current topic failed: $e');
+    }
 
-      await _unsubscribeFromCurrentTopic();
-      await _unsubscribeFromLegacyTopics();
+    try {
+      await _unsubscribeFromLegacyTopics().timeout(const Duration(seconds: 6));
+    } catch (e) {
+      print('FCM cleanupBeforeSignOut: unsubscribe legacy topics failed: $e');
+    }
 
+    try {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'fcmToken': FieldValue.delete(),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (_) {
-      // ignore
+      }, SetOptions(merge: true)).timeout(const Duration(seconds: 6));
+      print('FCM cleanupBeforeSignOut: fcmToken deleted from Firestore');
+    } catch (e) {
+      print('FCM cleanupBeforeSignOut: Firestore delete token failed: $e');
+    }
+
+    try {
+      await _firebaseMessaging.deleteToken().timeout(const Duration(seconds: 6));
+      _fcmToken = null;
+      print('FCM cleanupBeforeSignOut: local FCM token deleted');
+    } catch (e) {
+      print('FCM cleanupBeforeSignOut: deleteToken failed: $e');
     }
   }
 
@@ -221,11 +284,17 @@ class FCMService {
     final data = message.data;
 
     if (notification != null) {
-      _showLocalNotification(
-        title: notification.title ?? 'The Hero',
-        body: notification.body ?? '',
-        data: data,
-      );
+      final type = data['type']?.toString();
+      final isChat = type == 'chat' || type == 'chat_message' || type == 'open_chat';
+      final chatId = data['chatId']?.toString();
+
+      if (!(isChat && _isChatCurrentlyOpen(chatId))) {
+        _showLocalNotification(
+          title: notification.title ?? 'The Hero',
+          body: notification.body ?? '',
+          data: data,
+        );
+      }
     }
 
     // Save notification to Firestore
@@ -254,6 +323,11 @@ class FCMService {
       case 'order_status':
         channelId = 'order_updates';
         break;
+      case 'chat':
+      case 'chat_message':
+      case 'open_chat':
+        channelId = 'chat_messages';
+        break;
       case 'nearby_order':
         channelId = 'nearby_orders';
         break;
@@ -261,23 +335,33 @@ class FCMService {
         channelId = 'system_notifications';
     }
 
-    final AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-          channelId,
-          channelId == 'order_updates'
-              ? 'Actualizaciones de Pedidos'
-              : channelId == 'nearby_orders'
-              ? 'Pedidos Cercanos'
-              : 'Notificaciones del Sistema',
-          importance: Importance.high,
-          priority: Priority.high,
-          showWhen: true,
-        );
+    final chatId = data?['chatId']?.toString();
+    final isChat = channelId == 'chat_messages' && chatId != null && chatId.isNotEmpty;
+    final groupKey = isChat ? 'chat_$chatId' : null;
+    final notificationId = isChat
+        ? _stableNotificationIdForChat(chatId)
+        : DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      channelId,
+      channelId == 'order_updates'
+          ? 'Actualizaciones de Pedidos'
+          : channelId == 'nearby_orders'
+              ? 'Pedidos Cercanos'
+              : channelId == 'chat_messages'
+                  ? 'Mensajes'
+                  : 'Notificaciones del Sistema',
+      importance: Importance.high,
+      priority: Priority.high,
+      showWhen: true,
+      groupKey: groupKey,
+    );
+
+    final DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      threadIdentifier: isChat ? groupKey : null,
     );
 
     final NotificationDetails details = NotificationDetails(
@@ -286,7 +370,7 @@ class FCMService {
     );
 
     await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      notificationId,
       title,
       body,
       details,
@@ -305,9 +389,7 @@ class FCMService {
 
   /// Handle notification navigation
   void _handleNotificationNavigation(Map<String, dynamic> data) {
-    // This will be implemented in the notification handler
-    // For now, just print the data
-    print('Navigate to: ${data['action']} with data: $data');
+    NotificationHandler().handleNotificationTap(data);
   }
 
   /// Save notification to Firestore
@@ -342,19 +424,21 @@ class FCMService {
 
   /// Encode payload for local notification
   String _encodePayload(Map<String, dynamic> data) {
-    return data.entries.map((e) => '${e.key}=${e.value}').join('&');
+    return jsonEncode(data);
   }
 
   /// Decode payload from local notification
   Map<String, dynamic> _decodePayload(String payload) {
-    final map = <String, dynamic>{};
-    for (final pair in payload.split('&')) {
-      final parts = pair.split('=');
-      if (parts.length == 2) {
-        map[parts[0]] = parts[1];
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v));
       }
+    } catch (_) {
+      // ignore
     }
-    return map;
+    return <String, dynamic>{};
   }
 
   /// Get current FCM token

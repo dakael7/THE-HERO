@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:the_hero/domain/entities/notification.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../data/providers/repository_providers.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
@@ -42,9 +43,69 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     }
   }
 
+  Future<void> _clearAllVisible(List<AppNotification> visible) async {
+    if (visible.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Limpiar avisos'),
+          content: const Text('¿Quieres eliminar todos los avisos?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Limpiar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _removedNotificationIds.addAll(visible.map((n) => n.id));
+    });
+
+    try {
+      final repo = ref.read(notificationRepositoryProvider);
+      for (final n in visible) {
+        await repo.deleteNotification(n.id);
+      }
+      ref.invalidate(notificationsProvider);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          for (final n in visible) {
+            _removedNotificationIds.remove(n.id);
+          }
+        });
+      }
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudieron limpiar los avisos: $e'),
+        ),
+      );
+      ref.invalidate(notificationsProvider);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final asyncNotifications = ref.watch(notificationsProvider);
+    final visibleForActions = asyncNotifications.maybeWhen(
+      data: (notifications) => notifications
+          .where((n) => !_removedNotificationIds.contains(n.id))
+          .toList(),
+      orElse: () => const <AppNotification>[],
+    );
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -68,6 +129,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             fontWeight: FontWeight.w700,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Limpiar',
+            onPressed: visibleForActions.isEmpty
+                ? null
+                : () => _clearAllVisible(visibleForActions),
+            icon: const Icon(Icons.delete_sweep_outlined),
+          ),
+        ],
       ),
       body: asyncNotifications.when(
         data: (notifications) {

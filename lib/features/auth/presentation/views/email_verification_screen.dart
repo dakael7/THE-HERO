@@ -32,9 +32,9 @@ class _EmailVerificationScreenState
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _accountExists = false;
+  bool _requiresGoogleSignIn = false;
   bool _obscurePassword = true;
   bool _navigated = false;
-  bool _acceptedTerms = false;
 
   static final Uri _termsAndConditionsUri = Uri.parse(
     'https://theheroprojects.com/privacy-policy',
@@ -61,6 +61,7 @@ class _EmailVerificationScreenState
   }
 
   void _showErrorDialog(String errorMessage) {
+    final isGoogleFallback = errorMessage.toLowerCase().contains('google');
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -77,17 +78,19 @@ class _EmailVerificationScreenState
                   color: Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
-                  Icons.lock_outline,
+                child: Icon(
+                  isGoogleFallback ? Icons.g_mobiledata : Icons.lock_outline,
                   color: Colors.red,
                   size: 24,
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Error de Autenticación',
-                  style: TextStyle(
+                  isGoogleFallback
+                      ? 'Inicia sesión con Google'
+                      : 'Error de Autenticación',
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: textGray900,
@@ -119,14 +122,20 @@ class _EmailVerificationScreenState
                     width: 1,
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.info_outline, color: primaryOrange, size: 18),
-                    SizedBox(width: 8),
+                    const Icon(
+                      Icons.info_outline,
+                      color: primaryOrange,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Verifica tus credenciales',
-                        style: TextStyle(
+                        isGoogleFallback
+                            ? 'Usa el botón “Continuar con Google” para entrar.'
+                            : 'Verifica tus credenciales',
+                        style: const TextStyle(
                           fontSize: 12,
                           color: primaryOrange,
                           fontWeight: FontWeight.w500,
@@ -157,6 +166,100 @@ class _EmailVerificationScreenState
     );
   }
 
+  Future<void> _handleGoogleSignIn() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+
+    try {
+      final authNotifier = ref.read(authNotifierProvider.notifier);
+      await authNotifier.signInWithGoogleAndCreateUser(widget.userRole);
+
+      final currentUser = await ref.read(getCurrentUserUseCaseProvider).execute();
+      if (!mounted) return;
+
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al obtener datos del usuario')),
+        );
+        return;
+      }
+
+      final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+      final isEmailVerified = authUser?.emailVerified ?? false;
+
+      if (!isEmailVerified || !currentUser.contact.emailVerified) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => UnverifiedEmailScreen(
+              userRole: widget.userRole,
+              email: currentUser.email,
+            ),
+          ),
+        );
+        return;
+      }
+
+      final needsCriticalData =
+          currentUser.identity.documentId.trim().isEmpty ||
+              currentUser.contact.phoneNumber.trim().isEmpty;
+
+      if (widget.userRole == UserRole.hero) {
+        if (needsCriticalData || !currentUser.isHero) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RegisterHeroScreen(
+                email: currentUser.email,
+                existingUser: currentUser,
+              ),
+            ),
+          );
+          return;
+        }
+
+        await ref.read(authNotifierProvider.notifier).saveLastRole('hero');
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
+        );
+        return;
+      }
+
+      if (needsCriticalData || !currentUser.isRider) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RegisterRiderScreen(
+              email: currentUser.email,
+              existingUser: currentUser,
+            ),
+          ),
+        );
+        return;
+      }
+
+      await ref.read(authNotifierProvider.notifier).saveLastRole('rider');
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          duration: const Duration(milliseconds: 2000),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _checkEmail() async {
     if (_emailController.text.trim().isEmpty) {
       return;
@@ -173,19 +276,34 @@ class _EmailVerificationScreenState
 
     try {
       final email = _emailController.text.trim();
-      final accountExists = await ref
-          .read(authNotifierProvider.notifier)
-          .checkEmailExists(email);
+      final normalizedEmail = email.trim().toLowerCase();
+      final querySnapshot = await ref
+          .read(firebaseFirestoreProvider)
+          .collection('users')
+          .where('contact.email', isEqualTo: normalizedEmail)
+          .limit(1)
+          .get();
+
+      final exists = querySnapshot.docs.isNotEmpty;
+      final authProvider = exists
+          ? (querySnapshot.docs.first.data()['authProvider']?.toString() ?? '')
+          : '';
+
+      final requiresGoogle = exists && authProvider == 'google';
+      final accountExists = exists && !requiresGoogle;
 
       if (mounted) {
         setState(() {
           _accountExists = accountExists;
+          _requiresGoogleSignIn = requiresGoogle;
           _isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
+          _accountExists = false;
+          _requiresGoogleSignIn = false;
           _isLoading = false;
         });
       }
@@ -193,18 +311,6 @@ class _EmailVerificationScreenState
   }
 
   Future<void> _submitForm() async {
-    if (!_acceptedTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Debes aceptar los Términos y Condiciones para continuar.',
-          ),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
@@ -265,6 +371,7 @@ class _EmailVerificationScreenState
                   }
                   return;
                 }
+                await ref.read(authNotifierProvider.notifier).saveLastRole('hero');
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
@@ -287,7 +394,9 @@ class _EmailVerificationScreenState
                   return;
                 }
 
-                final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
+                await ref.read(authNotifierProvider.notifier).saveLastRole('rider');
+
+                final uid = (await ref.read(firebaseAuthUserProvider.future))?.uid;
                 if (uid != null && currentUser.riderProfile?.isActive != true) {
                   try {
                     await ref
@@ -312,7 +421,6 @@ class _EmailVerificationScreenState
             }
           }
         } else {
-          // La cuenta no existe: navegar a registro
           if (widget.userRole == UserRole.hero) {
             Navigator.push(
               context,
@@ -443,9 +551,10 @@ class _EmailVerificationScreenState
                   keyboardType: TextInputType.emailAddress,
                   enabled: !_isLoading,
                   onChanged: (value) {
-                    if (_accountExists) {
+                    if (_accountExists || _requiresGoogleSignIn) {
                       setState(() {
                         _accountExists = false;
+                        _requiresGoogleSignIn = false;
                         _passwordController.clear();
                       });
                     }
@@ -533,51 +642,53 @@ class _EmailVerificationScreenState
                     },
                   ),
                   const SizedBox(height: 20),
-                ],
-
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Checkbox(
-                      value: _acceptedTerms,
-                      activeColor: primaryOrange,
-                      onChanged: _isLoading
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _isLoading
                           ? null
-                          : (value) {
-                              setState(() {
-                                _acceptedTerms = value ?? false;
-                              });
+                          : () async {
+                              final email = _emailController.text.trim();
+                              if (email.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Por favor ingresa tu correo para recuperar tu contraseña.',
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
+                              try {
+                                await ref
+                                    .read(authNotifierProvider.notifier)
+                                    .resetPassword(email);
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Te enviamos un correo para recuperar tu contraseña.',
+                                    ),
+                                  ),
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(e.toString())),
+                                );
+                              }
                             },
-                    ),
-                    Expanded(
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          const Text(
-                            'Acepto los ',
-                            style: TextStyle(color: textGray600),
-                          ),
-                          InkWell(
-                            onTap: () async {
-                              await launchUrl(
-                                _termsAndConditionsUri,
-                                mode: LaunchMode.externalApplication,
-                              );
-                            },
-                            child: const Text(
-                              'Términos y Condiciones',
-                              style: TextStyle(
-                                color: primaryOrange,
-                                fontWeight: FontWeight.w600,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: const Text(
+                        '¿Olvidaste tu contraseña?',
+                        style: TextStyle(
+                          color: primaryOrange,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
 
                 SizedBox(
                   width: double.infinity,
@@ -588,6 +699,12 @@ class _EmailVerificationScreenState
                             if (!_accountExists &&
                                 _emailController.text.trim().isNotEmpty) {
                               await _checkEmail();
+                              if (_requiresGoogleSignIn) {
+                                _showErrorDialog(
+                                  'Esta cuenta está registrada con Google. Inicia sesión con Google.',
+                                );
+                                return;
+                              }
                               if (_accountExists) {
                                 return;
                               }
@@ -614,7 +731,11 @@ class _EmailVerificationScreenState
                             ),
                           )
                         : Text(
-                            _accountExists ? 'Ingresar' : 'Continuar',
+                            _accountExists
+                                ? 'Ingresar'
+                                : (_requiresGoogleSignIn
+                                    ? 'Continuar con Google'
+                                    : 'Continuar'),
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
@@ -704,113 +825,7 @@ class _EmailVerificationScreenState
                   onTap: _isLoading
                       ? null
                       : () async {
-                          if (!_acceptedTerms) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Debes aceptar los Términos y Condiciones para continuar.',
-                                ),
-                                duration: Duration(seconds: 2),
-                              ),
-                            );
-                            return;
-                          }
-                          try {
-                            final authNotifier = ref.read(
-                              authNotifierProvider.notifier,
-                            );
-                            await authNotifier.signInWithGoogleAndCreateUser(
-                              widget.userRole,
-                            );
-
-                            if (mounted) {
-                              final currentUser = await ref
-                                  .read(getCurrentUserUseCaseProvider)
-                                  .execute();
-
-                              if (currentUser == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Error al obtener datos del usuario',
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              final authUser =
-                                  fb_auth.FirebaseAuth.instance.currentUser;
-                              final isEmailVerified =
-                                  authUser?.emailVerified ?? false;
-
-                              if (!isEmailVerified ||
-                                  !currentUser.contact.emailVerified) {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => UnverifiedEmailScreen(
-                                      userRole: widget.userRole,
-                                      email: currentUser.email,
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              if (widget.userRole == UserRole.hero) {
-                                if (!currentUser.isHero) {
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => RegisterHeroScreen(
-                                        email: currentUser.email,
-                                        existingUser: currentUser,
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const HeroHomeScreen(),
-                                  ),
-                                );
-                              } else {
-                                if (!currentUser.isRider) {
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => RegisterRiderScreen(
-                                        email: currentUser.email,
-                                        existingUser: currentUser,
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
-                                // Tiene perfil Rider, navegar a Rider Home
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const RiderHomeScreen(),
-                                  ),
-                                );
-                              }
-                            }
-                          } catch (e) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Error: ${e.toString()}'),
-                                  duration: const Duration(milliseconds: 2000),
-                                ),
-                              );
-                            }
-                          }
+                          await _handleGoogleSignIn();
                         },
                 ),
 
@@ -818,13 +833,42 @@ class _EmailVerificationScreenState
 
                 Padding(
                   padding: const EdgeInsets.only(bottom: 20),
-                  child: Text(
-                    'Al hacer clic en continuar, aceptas nuestros\nTérminos de Servicio y nuestra Política de\nPrivacidad',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: textGray600.withValues(alpha: 0.7),
-                    ),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        'Al hacer clic en continuar, aceptas nuestros ',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: textGray600.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () async {
+                          await launchUrl(
+                            _termsAndConditionsUri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        },
+                        child: const Text(
+                          'Términos y Condiciones',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: primaryOrange,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: textGray600.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 ],

@@ -15,20 +15,21 @@ class FilterChipsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final isCompact = width < 380;
+
     return Container(
-      height: 50,
-      margin: const EdgeInsets.only(left: 16, top: 8),
+      height: isCompact ? 46 : 50,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          // "Todos" chip
           _buildChip(
             label: 'Todos',
             isSelected: selectedCategory == null,
             onTap: () => onCategorySelected(null),
           ),
           const SizedBox(width: 8),
-          // Category chips
           ...categories.map(
             (category) => Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -57,7 +58,7 @@ class FilterChipsWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
             color: isSelected ? primaryOrange : Colors.white,
             borderRadius: BorderRadius.circular(20),

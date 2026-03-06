@@ -301,43 +301,59 @@ class ProductListSheet extends StatelessWidget {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: backgroundGray50,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Icon(
-              Icons.search_off,
-              size: 50,
-              color: textGray600.withValues(alpha: 0.5),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isTight = constraints.maxHeight > 0 && constraints.maxHeight < 170;
+        final boxSize = isTight ? 72.0 : 100.0;
+        final iconSize = isTight ? 40.0 : 50.0;
+        final gapAfterIcon = isTight ? 12.0 : 20.0;
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: boxSize,
+                  height: boxSize,
+                  decoration: BoxDecoration(
+                    color: backgroundGray50,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Icon(
+                    Icons.search_off,
+                    size: iconSize,
+                    color: textGray600.withValues(alpha: 0.5),
+                  ),
+                ),
+                SizedBox(height: gapAfterIcon),
+                const Text(
+                  'No hay productos cercanos',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: textGray900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Intenta aumentar el radio de búsqueda',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: textGray600,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 20),
-          const Text(
-            'No hay productos cercanos',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: textGray900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Intenta aumentar el radio de búsqueda',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: textGray600,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

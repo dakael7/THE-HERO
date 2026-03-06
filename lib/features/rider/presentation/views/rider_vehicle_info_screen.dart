@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/vehicle.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
-import 'rider_vehicle_verification_screen.dart';
+import 'rider_vehicle_sequential_verification_flow_screen.dart';
 
 class RiderVehicleInfoScreen extends ConsumerStatefulWidget {
   const RiderVehicleInfoScreen({super.key});
@@ -16,9 +18,34 @@ class RiderVehicleInfoScreen extends ConsumerStatefulWidget {
 }
 
 class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen> {
+  static const _devBypassVehicleDocsKey = 'dev_bypass_vehicle_docs';
+
   VehicleType? _selected;
   bool _saving = false;
   bool _bootstrappedVehicles = false;
+  bool _devBypassVehicleDocs = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDevBypassFlag();
+  }
+
+  Future<void> _loadDevBypassFlag() async {
+    if (kReleaseMode) return;
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool(_devBypassVehicleDocsKey) ?? false;
+    if (!mounted) return;
+    setState(() => _devBypassVehicleDocs = enabled);
+  }
+
+  Future<void> _setDevBypassFlag(bool enabled) async {
+    if (kReleaseMode) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_devBypassVehicleDocsKey, enabled);
+    if (!mounted) return;
+    setState(() => _devBypassVehicleDocs = enabled);
+  }
 
   void _showInfoDialog(
     BuildContext context, {
@@ -178,6 +205,9 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
           }
 
           bool isVehicleVerified(VehicleType type) {
+            if (!kReleaseMode && _devBypassVehicleDocs) {
+              return true;
+            }
             final status = vehicleVerificationStatus(type);
             return status == 'approved' || status == 'not_required';
           }
@@ -243,6 +273,31 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              if (!kReleaseMode)
+                Container(
+                  decoration: BoxDecoration(
+                    color: backgroundWhite,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: borderGray100, width: 1),
+                  ),
+                  child: SwitchListTile(
+                    value: _devBypassVehicleDocs,
+                    onChanged: _setDevBypassFlag,
+                    activeThumbColor: primaryOrange,
+                    title: const Text(
+                      'Desarrollador: habilitar vehículos sin documentos',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: textGray900,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Ignora la verificación y permite activar cualquier vehículo.',
+                      style: TextStyle(color: textGray600),
+                    ),
+                  ),
+                ),
+              if (!kReleaseMode) const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -366,7 +421,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                         }
                         await Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const RiderVehicleVerificationScreen(
+                            builder: (_) => const RiderVehicleSequentialVerificationFlowScreen(
                               vehicleType: VehicleType.motorcycle,
                             ),
                           ),
@@ -411,7 +466,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                         }
                         await Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const RiderVehicleVerificationScreen(
+                            builder: (_) => const RiderVehicleSequentialVerificationFlowScreen(
                               vehicleType: VehicleType.car,
                             ),
                           ),
@@ -456,7 +511,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                         }
                         await Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const RiderVehicleVerificationScreen(
+                            builder: (_) => const RiderVehicleSequentialVerificationFlowScreen(
                               vehicleType: VehicleType.truck,
                             ),
                           ),

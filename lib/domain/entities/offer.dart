@@ -39,6 +39,7 @@ class Offer {
   final PickupSchedule? pickupSchedule;
   final bool useConcierge;
   final ConciergeInfo? conciergeInfo;
+  final bool allowInPersonPickup;
 
   Offer({
     required this.offerId,
@@ -70,6 +71,7 @@ class Offer {
     this.pickupSchedule,
     this.useConcierge = false,
     this.conciergeInfo,
+    this.allowInPersonPickup = true,
   });
 
   bool get isPublished => status.isPublished;
@@ -108,6 +110,7 @@ class Offer {
     PickupSchedule? pickupSchedule,
     bool? useConcierge,
     ConciergeInfo? conciergeInfo,
+    bool? allowInPersonPickup,
   }) {
     return Offer(
       offerId: offerId ?? this.offerId,
@@ -139,6 +142,7 @@ class Offer {
       pickupSchedule: pickupSchedule ?? this.pickupSchedule,
       useConcierge: useConcierge ?? this.useConcierge,
       conciergeInfo: conciergeInfo ?? this.conciergeInfo,
+      allowInPersonPickup: allowInPersonPickup ?? this.allowInPersonPickup,
     );
   }
 }

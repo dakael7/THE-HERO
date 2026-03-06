@@ -10,11 +10,17 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/config/env.dart';
 import '../../../core/config/mercadopago_config.dart';
+import '../../../core/utils/price_formatter.dart';
 import '../../../core/utils/weight_utils.dart';
-import '../../../features/shared/profile/presentation/providers/profile_provider.dart';
+import '../../../domain/config/transport_pricing_config.dart';
+import '../../../domain/entities/order_requirements.dart';
+import '../../../domain/entities/order.dart';
 import '../../../domain/entities/user.dart';
 import '../../../domain/entities/order_status.dart';
+import '../../../domain/entities/vehicle.dart';
+import '../../../domain/entities/payment.dart' as domain_payment;
 import '../../../domain/providers/orders_usecase_providers.dart';
+import '../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../shared/profile/presentation/views/location_picker_screen.dart';
 import '../payment/widgets/payment_method_selector.dart';
 import '../payment/providers/payment_providers.dart';
@@ -32,12 +38,81 @@ class CheckoutScreen extends ConsumerStatefulWidget {
   ConsumerState<CheckoutScreen> createState() => _CheckoutScreenState();
 }
 
+class _TipOptionCard extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _TipOptionCard({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final border = selected
+        ? primaryOrange
+        : textGray900.withValues(alpha: 0.12);
+
+    final bg = selected ? const Color(0xFFFFF7ED) : backgroundWhite;
+
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: border, width: selected ? 2 : 1),
+          ),
+          child: Stack(
+            children: [
+              Center(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                    color: textGray900,
+                  ),
+                ),
+              ),
+              if (selected)
+                Positioned(
+                  left: 12,
+                  bottom: 10,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: const BoxDecoration(
+                      color: primaryOrange,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      size: 12,
+                      color: backgroundWhite,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _instructionsController = TextEditingController();
+  final _customTipController = TextEditingController();
   static const _defaultCountryCode = '+56 ';
   bool _prefilled = false;
   bool _isSubmitting = false;
@@ -45,49 +120,65 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   bool _useAccountAddress = false;
   double? _deliveryLatitude;
   double? _deliveryLongitude;
+
+  ({firestore.GeoPoint? geo, String address}) _resolvePickupFromCart(
+    List<CartItem> cartItems,
+  ) {
+    final firstWithGeo = cartItems.cast<CartItem?>().firstWhere(
+          (it) => _isValidGeo(it?.pickupGeo),
+          orElse: () => null,
+        );
+
+    final geo = firstWithGeo?.pickupGeo;
+    final address =
+        (firstWithGeo?.pickupAddressSnapshot ?? '').trim().isNotEmpty
+            ? firstWithGeo!.pickupAddressSnapshot!.trim()
+            : 'Dirección del vendedor';
+
+    return (geo: geo, address: address);
+  }
+
+  Future<void> _createPaymentPreferenceWithBackoff(Order order) async {
+    final paymentNotifier = ref.read(paymentNotifierProvider.notifier);
+
+    const delays = <Duration>[
+      Duration(milliseconds: 500),
+      Duration(milliseconds: 1500),
+      Duration(milliseconds: 3000),
+    ];
+
+    for (var attempt = 0; attempt < delays.length; attempt++) {
+      await paymentNotifier.createPreference(order);
+      final paymentState = ref.read(paymentNotifierProvider);
+
+      final raw = paymentState.error ?? '';
+      if (raw.isEmpty) return;
+
+      final msg = raw.toLowerCase();
+      final isResourceExhausted =
+          msg.contains('resource-exhausted') || msg.contains('resource_exhausted');
+
+      if (!isResourceExhausted || attempt == delays.length - 1) {
+        return;
+      }
+
+      await Future<void>.delayed(delays[attempt]);
+    }
+  }
+  String? _deliveryCountryCode;
   String? _manualAddress;
   double? _manualDeliveryLatitude;
   double? _manualDeliveryLongitude;
   ProviderSubscription<AsyncValue<User?>>? _profileSub;
   PaymentMethod _selectedPaymentMethod = PaymentMethod.mercadopago;
 
+  int _selectedTip = 0;
+
   String? _lastRoutesSignature;
   bool _isLoadingRoutes = false;
   Object? _routesError;
   _OsrmTrip? _trip;
 
-  firestore.GeoPoint? _tryParseGeoFromText(String text) {
-    final input = text.trim();
-    if (input.isEmpty) return null;
-
-    final latLngMatch = RegExp(
-      r'lat\s*[:=]?\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*lng\s*[:=]?\s*(-?\d+(?:\.\d+)?)',
-      caseSensitive: false,
-    ).firstMatch(input);
-
-    if (latLngMatch != null) {
-      final lat = double.tryParse(latLngMatch.group(1) ?? '');
-      final lng = double.tryParse(latLngMatch.group(2) ?? '');
-      if (lat != null && lng != null) {
-        return firestore.GeoPoint(lat, lng);
-      }
-    }
-
-    final pairMatch = RegExp(
-      r'(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)',
-      caseSensitive: false,
-    ).firstMatch(input);
-
-    if (pairMatch != null) {
-      final lat = double.tryParse(pairMatch.group(1) ?? '');
-      final lng = double.tryParse(pairMatch.group(2) ?? '');
-      if (lat != null && lng != null) {
-        return firestore.GeoPoint(lat, lng);
-      }
-    }
-
-    return null;
-  }
 
   bool _isValidGeo(firestore.GeoPoint? geo) {
     if (geo == null) return false;
@@ -105,6 +196,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _phoneController.dispose();
     _addressController.dispose();
     _instructionsController.dispose();
+    _customTipController.dispose();
     super.dispose();
   }
 
@@ -152,10 +244,53 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
+    final cartItems = ref.read(cartProvider);
+
+    final deliveryCc = addr.countryCode?.trim().toUpperCase();
+    final pickupCcs = cartItems
+        .map((e) => e.pickupCountryCode?.trim().toUpperCase())
+        .whereType<String>()
+        .where((e) => e.isNotEmpty)
+        .toSet();
+
+    final hasAnyMissingPickupCountry =
+        cartItems.any((e) => (e.pickupCountryCode?.trim().isEmpty ?? true));
+
+    if (deliveryCc == null || deliveryCc.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo determinar el país de la dirección de entrega.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    if (hasAnyMissingPickupCountry) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo determinar el país de una o más ubicaciones de retiro.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    if (pickupCcs.length != 1 || pickupCcs.first != deliveryCc) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se permiten pedidos entre países distintos.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _addressController.text = addr.fullAddress;
       _deliveryLatitude = addr.latitude;
       _deliveryLongitude = addr.longitude;
+      _deliveryCountryCode = addr.countryCode;
     });
 
     ref.read(deliveryGeoProvider.notifier).state =
@@ -186,10 +321,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     );
 
     if (result != null && mounted) {
+      final cc = result.countryCode?.toUpperCase();
+      if (cc == null || cc.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo determinar el país de la ubicación seleccionada.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
       setState(() {
         _addressController.text = result.address;
         _deliveryLatitude = result.latitude;
         _deliveryLongitude = result.longitude;
+        _deliveryCountryCode = cc;
       });
 
       ref.read(deliveryGeoProvider.notifier).state =
@@ -208,7 +354,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     final cartItems = ref.read(cartProvider);
     final summary = ref.read(cartSummaryProvider);
-    final user = ref.read(profileStreamProvider).value;
+    final effectiveDistanceKm = ref.read(effectiveDistanceKmProvider);
+    final inPersonPickupSelected = ref.read(inPersonPickupSelectedProvider);
+    final allItemsAllowInPersonPickup =
+        ref.read(allItemsAllowInPersonPickupProvider);
+    final user = await ref.read(profileProvider.future);
+
+    if (inPersonPickupSelected && _selectedPaymentMethod == PaymentMethod.cash) {
+      setState(() => _selectedPaymentMethod = PaymentMethod.mercadopago);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'El pago en efectivo no está disponible para retiro en persona. Se cambió a pago en línea.',
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
 
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -220,11 +382,214 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
-    if (!user.isRutVerified) {
+    final totalWeightKg = cartItems.fold<double>(
+      0.0,
+      (sum, item) => sum + (item.weight * item.quantity),
+    );
+
+    if (inPersonPickupSelected && !allItemsAllowInPersonPickup) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Debes verificar tu RUT para hacer pedidos.'),
+          content: Text(
+            'Retiro en persona no disponible: uno o más productos no lo permiten.',
+          ),
           duration: Duration(seconds: 3),
+        ),
+      );
+      ref.read(inPersonPickupSelectedProvider.notifier).state = false;
+      return;
+    }
+
+    if (inPersonPickupSelected && allItemsAllowInPersonPickup) {
+      if (_isSubmitting) return;
+      setState(() => _isSubmitting = true);
+
+      try {
+        if (_selectedPaymentMethod == PaymentMethod.cash) {
+          setState(() => _selectedPaymentMethod = PaymentMethod.mercadopago);
+        }
+
+        final delivery = OrderBuilder.createDelivery(
+          address: '',
+          recipientName: _nameController.text.trim(),
+          recipientPhone: _phoneController.text.trim(),
+          instructions: '',
+          deliverToReception: false,
+          geo: const firestore.GeoPoint(0, 0),
+        );
+
+        final pickup = _resolvePickupFromCart(cartItems);
+
+        if (!_isValidGeo(pickup.geo)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No se pudo determinar la ubicación de retiro. Pide al vendedor actualizar la ubicación de la publicación.',
+              ),
+              duration: Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        final firstItem = cartItems.first;
+        final pickupSchedule = firstItem.pickupSchedule;
+        final useConcierge = firstItem.useConcierge;
+        final conciergeInfo = firstItem.conciergeInfo;
+
+        final shouldUseMercadoPago =
+            _selectedPaymentMethod == PaymentMethod.mercadopago;
+
+        final preGeneratedOrderId = firestore.FirebaseFirestore.instance
+            .collection('orders')
+            .doc()
+            .id;
+
+        final order = OrderBuilder.buildOrderFromCart(
+          orderId: shouldUseMercadoPago ? preGeneratedOrderId : '',
+          cartItems: cartItems,
+          cartSummary: summary,
+          tip: 0.0,
+          estimatedDistanceKm: 0.0,
+          heroId: user.id,
+          delivery: delivery,
+          status: shouldUseMercadoPago
+              ? OrderStatus.pendingPayment
+              : OrderStatus.queued,
+          pickupAddress: pickup.address,
+          pickupGeo: pickup.geo,
+          pickupContactName: user.fullName,
+          pickupContactPhone: user.phoneNumber,
+          pickupSchedule: pickupSchedule,
+          useConcierge: useConcierge,
+          conciergeInfo: conciergeInfo,
+          inPersonPickup: true,
+        );
+
+        if (shouldUseMercadoPago) {
+          final paymentNotifier = ref.read(paymentNotifierProvider.notifier);
+          await paymentNotifier.createPreference(order);
+          final paymentState = ref.read(paymentNotifierProvider);
+          if (paymentState.error != null) {
+            throw Exception(
+              'Error al crear preferencia de pago: ${paymentState.error}',
+            );
+          }
+          if (paymentState.initPoint == null) {
+            throw Exception('No se pudo obtener el link de pago');
+          }
+
+          final createOrderUseCase = ref.read(createOrderUseCaseProvider);
+          final createdOrder = await createOrderUseCase.execute(order);
+          ref.read(cartProvider.notifier).clear();
+
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => PaymentProcessingScreen(
+                  initPoint: paymentState.initPoint!,
+                  orderId: createdOrder.orderId,
+                  preferenceId: paymentState.preferenceId ?? '',
+                ),
+              ),
+            );
+          }
+        } else {
+          final createOrderUseCase = ref.read(createOrderUseCaseProvider);
+          final createdOrder = await createOrderUseCase.execute(order);
+
+          if (_selectedPaymentMethod == PaymentMethod.cash) {
+            final paymentRepo = ref.read(paymentRepositoryProvider);
+            final cashPayment = domain_payment.Payment(
+              id: 'cash-${createdOrder.orderId}',
+              orderId: createdOrder.orderId,
+              preferenceId: 'cash-${createdOrder.orderId}',
+              paymentId: null,
+              status: domain_payment.PaymentStatus.pending,
+              amount: createdOrder.amountTotal,
+              currency: createdOrder.currency,
+              paymentMethod: domain_payment.PaymentMethod.cash,
+              paymentMethodId: 'cash',
+              statusDetail: 'cash_on_delivery',
+              createdAt: DateTime.now(),
+              approvedAt: null,
+              updatedAt: DateTime.now(),
+              metadata: const <String, dynamic>{
+                'flow': 'cash',
+                'note': 'Pago en efectivo pendiente. Se confirma en la entrega.',
+              },
+            );
+
+            await paymentRepo.savePayment(cashPayment);
+          }
+
+          ref.read(cartProvider.notifier).clear();
+          if (mounted) {
+            await _showPaymentResult(
+              success: true,
+              message:
+                  'Pedido HRO-${createdOrder.orderId} creado y publicado. Total: \$${createdOrder.amountTotal.toStringAsFixed(0)} CLP',
+            );
+
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      WaitingRiderScreen(orderId: createdOrder.orderId),
+                ),
+              );
+            }
+          }
+        }
+      } catch (e) {
+        await _showPaymentResult(
+          success: false,
+          message: 'Error al crear orden: $e',
+        );
+      } finally {
+        if (mounted) {
+          setState(() => _isSubmitting = false);
+        }
+      }
+
+      return;
+    }
+
+    if (effectiveDistanceKm == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo calcular la distancia de la ruta.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    VehicleType requiredVehicle;
+    try {
+      requiredVehicle = OrderRequirements.calculateRequiredVehicleFor(
+        weightKg: totalWeightKg,
+        distanceKm: effectiveDistanceKm,
+      );
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La distancia excede la cobertura disponible.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    final maxDistanceKm = TransportPricingConfig.getMaxDistance(requiredVehicle);
+
+    if (effectiveDistanceKm > maxDistanceKm) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'La distancia (${effectiveDistanceKm.toStringAsFixed(1)} km) excede el límite permitido (${maxDistanceKm.toStringAsFixed(1)} km).',
+          ),
+          duration: const Duration(seconds: 4),
         ),
       );
       return;
@@ -238,8 +603,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       var deliveryGeo = _deliveryLatitude != null && _deliveryLongitude != null
           ? firestore.GeoPoint(_deliveryLatitude!, _deliveryLongitude!)
           : null;
-
-      deliveryGeo ??= _tryParseGeoFromText(_addressController.text);
 
       if (!_isValidGeo(deliveryGeo)) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -267,19 +630,22 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         '📦 [Checkout] Creating order with delivery geo: ${delivery.geo.latitude}, ${delivery.geo.longitude}',
       );
 
-      final pickupGeo =
-          user.address?.latitude != null && user.address?.longitude != null
-          ? firestore.GeoPoint(user.address!.latitude, user.address!.longitude)
-          : null;
+      final pickup = _resolvePickupFromCart(cartItems);
 
-      final pickupAddress =
-          user.address?.fullAddress ?? 'Dirección del vendedor';
-
-      final resolvedPickupGeo =
-          pickupGeo ?? _tryParseGeoFromText(pickupAddress);
+      if (!_isValidGeo(pickup.geo)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo determinar la ubicación de retiro. Pide al vendedor actualizar la ubicación de la publicación.',
+            ),
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
 
       print(
-        '📍 [Checkout] Pickup geo from profile: ${pickupGeo?.latitude}, ${pickupGeo?.longitude}',
+        '📍 [Checkout] Pickup geo from cart: ${pickup.geo?.latitude}, ${pickup.geo?.longitude}',
       );
 
       final firstItem = cartItems.first;
@@ -299,17 +665,20 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         orderId: shouldUseMercadoPago ? preGeneratedOrderId : '',
         cartItems: cartItems,
         cartSummary: summary,
+        tip: _selectedTip.toDouble(),
+        estimatedDistanceKm: effectiveDistanceKm,
         heroId: user.id,
         delivery: delivery,
         status:
             shouldUseMercadoPago ? OrderStatus.pendingPayment : OrderStatus.queued,
-        pickupAddress: pickupAddress,
-        pickupGeo: resolvedPickupGeo,
+        pickupAddress: pickup.address,
+        pickupGeo: pickup.geo,
         pickupContactName: user.fullName,
         pickupContactPhone: user.phoneNumber,
         pickupSchedule: pickupSchedule,
         useConcierge: useConcierge,
         conciergeInfo: conciergeInfo,
+        inPersonPickup: false,
       );
 
       if (shouldUseMercadoPago) {
@@ -317,14 +686,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         debugPrint('💳 [Checkout] Using MercadoPago payment flow');
 
         // Create payment preference
-        final paymentNotifier = ref.read(paymentNotifierProvider.notifier);
-        await paymentNotifier.createPreference(order);
+        await _createPaymentPreferenceWithBackoff(order);
 
         final paymentState = ref.read(paymentNotifierProvider);
 
         if (paymentState.error != null) {
           final raw = paymentState.error ?? '';
           final message = raw.toLowerCase();
+
+          if (message.contains('resource-exhausted') ||
+              message.contains('resource_exhausted')) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.',
+                ),
+                duration: Duration(seconds: 4),
+              ),
+            );
+            return;
+          }
 
           if (message.contains('stock insuficiente') ||
               message.contains('failed-precondition')) {
@@ -423,6 +804,31 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
         final createOrderUseCase = ref.read(createOrderUseCaseProvider);
         final createdOrder = await createOrderUseCase.execute(order);
+
+        if (_selectedPaymentMethod == PaymentMethod.cash) {
+          final paymentRepo = ref.read(paymentRepositoryProvider);
+          final cashPayment = domain_payment.Payment(
+            id: 'cash-${createdOrder.orderId}',
+            orderId: createdOrder.orderId,
+            preferenceId: 'cash-${createdOrder.orderId}',
+            paymentId: null,
+            status: domain_payment.PaymentStatus.pending,
+            amount: createdOrder.amountTotal,
+            currency: createdOrder.currency,
+            paymentMethod: domain_payment.PaymentMethod.cash,
+            paymentMethodId: 'cash',
+            statusDetail: 'cash_on_delivery',
+            createdAt: DateTime.now(),
+            approvedAt: null,
+            updatedAt: DateTime.now(),
+            metadata: const <String, dynamic>{
+              'flow': 'cash',
+              'note': 'Pago en efectivo pendiente. Se confirma en la entrega.',
+            },
+          );
+
+          await paymentRepo.savePayment(cashPayment);
+        }
 
         // Clear cart after successful order creation
         ref.read(cartProvider.notifier).clear();
@@ -541,6 +947,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final cartItems = ref.watch(cartProvider);
     final summary = ref.watch(cartSummaryProvider);
     final deliveryGeo = ref.watch(deliveryGeoProvider);
+    final effectiveDistanceKm = ref.watch(effectiveDistanceKmProvider);
+    final allItemsAllowInPersonPickup =
+        ref.watch(allItemsAllowInPersonPickupProvider);
+    final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
     final profile = ref.watch(profileProvider);
     final user = profile.value;
     final totalItems = cartItems.fold<int>(
@@ -548,15 +958,83 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       (sum, item) => sum + item.quantity,
     );
 
-    final hasValidDelivery =
-        _deliveryLatitude != null && _deliveryLongitude != null;
+    if (inPersonPickupSelected && !allItemsAllowInPersonPickup) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(inPersonPickupSelectedProvider.notifier).state = false;
+      });
+    }
+
+    if (inPersonPickupSelected &&
+        _selectedPaymentMethod == PaymentMethod.cash) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _selectedPaymentMethod = PaymentMethod.mercadopago);
+      });
+    }
+
+    final hasValidDelivery = inPersonPickupSelected
+        ? true
+        : (_deliveryLatitude != null && _deliveryLongitude != null);
 
     final hasDeliveryGeo = deliveryGeo != null;
-    final hasCalculatedShipping =
-        hasDeliveryGeo && summary.shippingBreakdown != null;
-    final canProceed = hasValidDelivery && hasCalculatedShipping;
+    final hasCalculatedShipping = inPersonPickupSelected
+        ? true
+        : (hasDeliveryGeo && summary.shippingBreakdown != null);
 
-    _scheduleRoutesLoad(cartItems: cartItems, deliveryGeo: deliveryGeo);
+    final deliveryCc = _deliveryCountryCode?.trim().toUpperCase();
+    final pickupCcs = cartItems
+        .map((e) => e.pickupCountryCode?.trim().toUpperCase())
+        .whereType<String>()
+        .where((e) => e.isNotEmpty)
+        .toSet();
+    final hasAnyMissingPickupCountry =
+        cartItems.any((e) => (e.pickupCountryCode?.trim().isEmpty ?? true));
+    final sameCountry = deliveryCc != null &&
+        deliveryCc.isNotEmpty &&
+        !hasAnyMissingPickupCountry &&
+        pickupCcs.length == 1 &&
+        pickupCcs.first == deliveryCc;
+
+    final totalWeightKg = cartItems.fold<double>(
+      0.0,
+      (sum, item) => sum + (item.weight * item.quantity),
+    );
+
+    VehicleType? requiredVehicle;
+    double? maxDistanceKm;
+    if (effectiveDistanceKm != null) {
+      try {
+        requiredVehicle = OrderRequirements.calculateRequiredVehicleFor(
+          weightKg: totalWeightKg,
+          distanceKm: effectiveDistanceKm,
+        );
+        maxDistanceKm = TransportPricingConfig.getMaxDistance(requiredVehicle);
+      } catch (_) {
+        requiredVehicle = null;
+        maxDistanceKm = null;
+      }
+    }
+
+    final withinDistanceLimit = inPersonPickupSelected
+        ? true
+        : (effectiveDistanceKm != null &&
+            requiredVehicle != null &&
+            maxDistanceKm != null &&
+            (effectiveDistanceKm <= maxDistanceKm));
+
+    final canProceed = inPersonPickupSelected
+        ? allItemsAllowInPersonPickup
+        : (hasValidDelivery &&
+            hasCalculatedShipping &&
+            withinDistanceLimit &&
+            sameCountry);
+
+    final effectiveTip = inPersonPickupSelected ? 0 : _selectedTip;
+    final totalWithTip = summary.total + effectiveTip.toDouble();
+
+    if (!inPersonPickupSelected) {
+      _scheduleRoutesLoad(cartItems: cartItems, deliveryGeo: deliveryGeo);
+    }
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -573,24 +1051,72 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _CheckoutItemsRouteMap(
-              cartItems: cartItems,
-              deliveryGeo: deliveryGeo,
-              isLoading: _isLoadingRoutes,
-              error: _routesError,
-              trip: _trip,
-            ),
-            const SizedBox(height: 16),
-            // Delivery Address Section
-            const Text(
-              'Dirección de entrega',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: textGray900,
+            if (!inPersonPickupSelected)
+              _CheckoutItemsRouteMap(
+                cartItems: cartItems,
+                deliveryGeo: deliveryGeo,
+                isLoading: _isLoadingRoutes,
+                error: _routesError,
+                trip: _trip,
               ),
-            ),
             const SizedBox(height: 16),
+            if (allItemsAllowInPersonPickup) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: textGray900.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  value: inPersonPickupSelected,
+                  onChanged: _isSubmitting
+                      ? null
+                      : (val) {
+                          if (val) {
+                            setState(() => _selectedTip = 0);
+                          }
+                          ref
+                              .read(inPersonPickupSelectedProvider.notifier)
+                              .state = val;
+                        },
+                  title: const Text(
+                    'Retiro en persona',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: textGray900,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Si lo activas, no se cobrará envío. Solo se cobra comisión e impuestos.',
+                    style: TextStyle(color: textGray600, fontSize: 12),
+                  ),
+                  activeThumbColor: primaryOrange,
+                  activeTrackColor: primaryOrange.withValues(alpha: 0.12),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (!inPersonPickupSelected) ...[
+              // Delivery Address Section
+              const Text(
+                'Dirección de entrega',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: textGray900,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -606,6 +1132,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               ),
               child: Column(
                 children: [
+                  if (!inPersonPickupSelected)
                   SwitchListTile.adaptive(
                     contentPadding: EdgeInsets.zero,
                     value: _useAccountAddress,
@@ -690,79 +1217,196 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _addressController,
-                    enabled: !_useAccountAddress && !_isSubmitting,
-                    decoration: InputDecoration(
-                      labelText: 'Dirección',
-                      hintText: 'Escribe o elige en el mapa',
-                      prefixIcon: const Icon(Icons.location_on_outlined),
-                      suffixIcon: IconButton(
-                        onPressed:
-                            _useAccountAddress || _isSubmitting ? null : _openMapPicker,
-                        icon: const Icon(Icons.map_outlined),
-                        tooltip: 'Elegir en mapa',
+                  if (!inPersonPickupSelected) ...[
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _addressController,
+                      readOnly: true,
+                      decoration: InputDecoration(
+                        labelText: 'Dirección',
+                        hintText: 'Elige en el mapa',
+                        prefixIcon: const Icon(Icons.location_on_outlined),
+                        suffixIcon: IconButton(
+                          onPressed: _useAccountAddress || _isSubmitting
+                              ? null
+                              : _openMapPicker,
+                          icon: const Icon(Icons.map_outlined),
+                          tooltip: 'Elegir en mapa',
+                        ),
+                      ),
+                      maxLines: 2,
+                      onTap: _useAccountAddress || _isSubmitting
+                          ? null
+                          : _openMapPicker,
+                      validator: (value) {
+                        final hasGeo = _deliveryLatitude != null &&
+                            _deliveryLongitude != null;
+                        if (!hasGeo) return 'Selecciona tu dirección en el mapa';
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Selecciona tu dirección en el mapa';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _useAccountAddress || _isSubmitting
+                            ? null
+                            : _openMapPicker,
+                        icon: const Icon(Icons.place_outlined),
+                        label:
+                            const Text('Elegir dirección con Google Maps'),
                       ),
                     ),
-                    maxLines: 2,
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Ingresa tu dirección';
-                      }
-                      if (value.trim().length < 10) {
-                        return 'Ingresa una dirección más detallada';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed:
-                          _useAccountAddress || _isSubmitting ? null : _openMapPicker,
-                      icon: const Icon(Icons.place_outlined),
-                      label: const Text('Elegir dirección con Google Maps'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _instructionsController,
-                    decoration: const InputDecoration(
-                      labelText: 'Instrucciones de entrega (opcional)',
-                      hintText: 'Ej: Tocar el timbre 2 veces',
-                      prefixIcon: Icon(Icons.notes_outlined),
-                    ),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 6),
-                  SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    value: _deliverToReception,
-                    onChanged: _isSubmitting
-                        ? null
-                        : (val) {
-                            setState(() => _deliverToReception = val);
-                          },
-                    title: const Text(
-                      'Recibir en portería',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: textGray900,
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _instructionsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Instrucciones de entrega (opcional)',
+                        hintText: 'Ej: Tocar el timbre 2 veces',
+                        prefixIcon: Icon(Icons.notes_outlined),
                       ),
+                      maxLines: 2,
                     ),
-                    subtitle: const Text(
-                      'Actívalo si quieres que el repartidor entregue en recepción/portería.',
-                      style: TextStyle(color: textGray600, fontSize: 12),
+                    const SizedBox(height: 6),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: _deliverToReception,
+                      onChanged: _isSubmitting
+                          ? null
+                          : (val) {
+                              setState(() => _deliverToReception = val);
+                            },
+                      title: const Text(
+                        'Recibir en portería',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: textGray900,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Actívalo si quieres que el repartidor entregue en recepción/portería.',
+                        style: TextStyle(color: textGray600, fontSize: 12),
+                      ),
+                      activeThumbColor: primaryOrange,
+                      activeTrackColor:
+                          primaryOrange.withValues(alpha: 0.12),
                     ),
-                    activeThumbColor: primaryOrange,
-                    activeTrackColor: primaryOrange.withValues(alpha: 0.12),
-                  ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 24),
+
+            if (!inPersonPickupSelected) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: textGray900.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Propina para el rider',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Tu propina va 100% para el rider que entrega tu pedido',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: textGray600,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 2.2,
+                      children: [
+                        _TipOptionCard(
+                          label: '\$0',
+                          selected: _selectedTip == 0,
+                          onTap: _isSubmitting
+                              ? null
+                              : () => setState(() => _selectedTip = 0),
+                        ),
+                        _TipOptionCard(
+                          label: '\$500',
+                          selected: _selectedTip == 500,
+                          onTap: _isSubmitting
+                              ? null
+                              : () => setState(() => _selectedTip = 500),
+                        ),
+                        _TipOptionCard(
+                          label: '\$1.000',
+                          selected: _selectedTip == 1000,
+                          onTap: _isSubmitting
+                              ? null
+                              : () => setState(() => _selectedTip = 1000),
+                        ),
+                        _TipOptionCard(
+                          label: '\$1.500',
+                          selected: _selectedTip == 1500,
+                          onTap: _isSubmitting
+                              ? null
+                              : () => setState(() => _selectedTip = 1500),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: _isSubmitting
+                            ? null
+                            : () async {
+                                final value = await _askForCustomTip(context);
+                                if (!mounted) return;
+                                if (value == null) return;
+                                setState(() => _selectedTip = value);
+                              },
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          side: BorderSide(
+                            color: textGray900.withValues(alpha: 0.12),
+                          ),
+                          foregroundColor: textGray900,
+                        ),
+                        child: const Text(
+                          'Otro monto',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
 
             // Order Summary Section
             const Text(
@@ -801,17 +1445,47 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Icon(
+                        children: [
+                          const Icon(
                             Icons.location_on_outlined,
                             size: 18,
                             color: Color(0xFFEA580C),
                           ),
-                          SizedBox(width: 8),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Selecciona una ubicación en el mapa para calcular el envío y el total.',
-                              style: TextStyle(
+                              () {
+                                if (!hasValidDelivery) {
+                                  return 'Selecciona una ubicación en el mapa para calcular el envío y el total.';
+                                }
+
+                                if (effectiveDistanceKm == null) {
+                                  return 'No se pudo calcular la distancia de la ruta. Intenta seleccionar la ubicación nuevamente.';
+                                }
+
+                                if (!sameCountry) {
+                                  if (deliveryCc == null || deliveryCc.isEmpty) {
+                                    return 'No se pudo determinar el país de la dirección de entrega. Selecciona la dirección con el mapa.';
+                                  }
+
+                                  if (hasAnyMissingPickupCountry) {
+                                    return 'Uno o más productos no tienen país de retiro configurado. Pide al vendedor actualizar la publicación (editar ubicación y volver a publicar).';
+                                  }
+
+                                  return 'No se permiten pedidos entre países distintos. Cambia la dirección de entrega o los productos.';
+                                }
+
+                                if (requiredVehicle == null || maxDistanceKm == null) {
+                                  return 'Fuera de cobertura: la distancia excede la cobertura disponible.';
+                                }
+
+                                if (effectiveDistanceKm > maxDistanceKm) {
+                                  return 'Fuera de cobertura: la distancia (${effectiveDistanceKm.toStringAsFixed(1)} km) excede el límite (${maxDistanceKm.toStringAsFixed(1)} km).';
+                                }
+
+                                return 'Completa los datos requeridos para continuar.';
+                              }(),
+                              style: const TextStyle(
                                 fontSize: 12,
                                 color: Color(0xFF9A3412),
                                 fontWeight: FontWeight.w700,
@@ -822,7 +1496,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
                   ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -850,7 +1524,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   const SizedBox(height: 12),
                   _buildSummaryRow(
                     'Subtotal (Donación):',
-                    '\$${summary.subtotal.toStringAsFixed(0)}',
+                    '\$${formatPriceCLP(summary.subtotal)}',
                   ),
                   const SizedBox(height: 8),
                   Column(
@@ -859,7 +1533,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       _buildSummaryRow(
                         'Envío:',
                         canProceed
-                            ? '\$${summary.shippingCost.toStringAsFixed(0)}'
+                            ? '\$${formatPriceCLP(summary.shippingCost)}'
                             : '—',
                       ),
                       if (summary.shippingBreakdown != null) ...[
@@ -882,15 +1556,24 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   _buildSummaryRow(
                     'Comisión de servicio:',
                     canProceed
-                        ? '\$${summary.serviceFee.toStringAsFixed(0)}'
+                        ? '\$${formatPriceCLP(summary.serviceFee)}'
                         : '—',
                   ),
                   const SizedBox(height: 8),
                   _buildSummaryRow(
                     'Impuestos (IVA 19%):',
-                    canProceed ? '\$${summary.tax.toStringAsFixed(0)}' : '—',
+                    canProceed ? '\$${formatPriceCLP(summary.tax)}' : '—',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  if (!inPersonPickupSelected) ...[
+                    _buildSummaryRow(
+                      'Propina:',
+                      canProceed
+                          ? '\$${formatPriceCLP(_selectedTip.toDouble())}'
+                          : '—',
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   const Divider(height: 1, color: borderGray100),
                   const SizedBox(height: 12),
                   Row(
@@ -906,7 +1589,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                       Text(
                         canProceed
-                            ? '\$${summary.total.toStringAsFixed(0)} CLP'
+                            ? '\$${formatPriceCLP(totalWithTip)} CLP'
                             : '—',
                         style: const TextStyle(
                           fontSize: 18,
@@ -933,6 +1616,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             const SizedBox(height: 16),
             PaymentMethodSelector(
               selectedMethod: _selectedPaymentMethod,
+              cashEnabled: !inPersonPickupSelected,
               onMethodChanged: (method) {
                 setState(() => _selectedPaymentMethod = method);
               },
@@ -992,6 +1676,54 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     );
   }
 
+  Future<int?> _askForCustomTip(BuildContext context) async {
+    _customTipController.text = _selectedTip > 0 ? _selectedTip.toString() : '';
+
+    final res = await showDialog<int>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text(
+            'Propina',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: TextField(
+            controller: _customTipController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Monto (CLP)',
+              prefixText: '\$ ',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                final raw = _customTipController.text.trim();
+                final sanitized = raw.replaceAll('.', '').replaceAll(',', '');
+                final parsed = int.tryParse(sanitized);
+                if (parsed == null || parsed < 0) {
+                  Navigator.of(ctx).pop();
+                  return;
+                }
+                Navigator.of(ctx).pop(parsed);
+              },
+              child: const Text(
+                'Guardar',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    return res;
+  }
+
   void _scheduleRoutesLoad({
     required List<CartItem> cartItems,
     required firestore.GeoPoint? deliveryGeo,
@@ -1038,6 +1770,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       _trip = null;
     });
 
+    ref.read(routeDistanceKmProvider.notifier).state = null;
+
     try {
       final trip = await _fetchOsrmTrip(
         pickupKeysToGeo: uniquePickups,
@@ -1050,6 +1784,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _routesError = e);
+      ref.read(routeDistanceKmProvider.notifier).state = null;
     } finally {
       if (!mounted) return;
       setState(() => _isLoadingRoutes = false);

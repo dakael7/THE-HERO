@@ -5,8 +5,6 @@ import '../../../core/constants/app_colors.dart';
 import 'cart_item.dart';
 import 'cart_provider.dart';
 import 'checkout_screen.dart';
-import '../../shared/profile/presentation/providers/profile_provider.dart';
-import '../../shared/profile/presentation/views/rut_verification_screen.dart';
 
 class HeroCartSheet extends ConsumerWidget {
   const HeroCartSheet({super.key});
@@ -165,24 +163,6 @@ class HeroCartSheet extends ConsumerWidget {
                                 ),
                               ),
                               onPressed: () {
-                                final user = ref.read(profileStreamProvider).value;
-                                if (user != null && !user.isRutVerified) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Debes verificar tu RUT para proceder al pago.',
-                                      ),
-                                      duration: Duration(seconds: 3),
-                                    ),
-                                  );
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          const RutVerificationScreen(),
-                                    ),
-                                  );
-                                  return;
-                                }
                                 Navigator.of(
                                   context,
                                 ).pop(); // Close sheet first
@@ -289,8 +269,13 @@ class _CartItemTile extends ConsumerWidget {
                       name: item.name,
                       condition: item.condition,
                       price: item.price,
-                      weight: item.weight,
                       imageUrl: item.imageUrl,
+                      availableQty: item.availableQty,
+                      weight: item.weight,
+                      pickupGeo: item.pickupGeo,
+                      pickupCountryCode: item.pickupCountryCode,
+                      sellerHeroId: item.sellerHeroId,
+                      allowInPersonPickup: item.allowInPersonPickup,
                     );
               },
             ),

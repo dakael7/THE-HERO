@@ -8,11 +8,13 @@ enum PaymentMethod { mercadopago, cash }
 class PaymentMethodSelector extends StatelessWidget {
   final PaymentMethod selectedMethod;
   final ValueChanged<PaymentMethod> onMethodChanged;
+  final bool cashEnabled;
 
   const PaymentMethodSelector({
     super.key,
     required this.selectedMethod,
     required this.onMethodChanged,
+    this.cashEnabled = true,
   });
 
   @override
@@ -47,7 +49,8 @@ class PaymentMethodSelector extends StatelessWidget {
           title: 'Pago en efectivo',
           subtitle: 'Paga al rider al recibir',
           isSelected: selectedMethod == PaymentMethod.cash,
-          onTap: () => onMethodChanged(PaymentMethod.cash),
+          onTap: cashEnabled ? () => onMethodChanged(PaymentMethod.cash) : null,
+          enabled: cashEnabled,
         ),
       ],
     );
@@ -59,8 +62,9 @@ class _PaymentMethodCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool isSelected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final String? badge;
+  final bool enabled;
 
   const _PaymentMethodCard({
     required this.icon,
@@ -69,17 +73,23 @@ class _PaymentMethodCard extends StatelessWidget {
     required this.isSelected,
     required this.onTap,
     this.badge,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isEnabled = enabled;
+    final isInteractive = isEnabled && onTap != null;
+
     return GestureDetector(
-      onTap: onTap,
+      onTap: isInteractive ? onTap : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? primaryYellow.withOpacity(0.1) : backgroundWhite,
+          color: isSelected
+              ? primaryYellow.withOpacity(0.1)
+              : (isEnabled ? backgroundWhite : backgroundGray50),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected ? primaryOrange : borderGray100,
@@ -109,7 +119,9 @@ class _PaymentMethodCard extends StatelessWidget {
               ),
               child: Icon(
                 icon,
-                color: isSelected ? primaryOrange : textGray600,
+                color: !isEnabled
+                    ? textGray600.withOpacity(0.5)
+                    : (isSelected ? primaryOrange : textGray600),
                 size: 24,
               ),
             ),
@@ -127,7 +139,9 @@ class _PaymentMethodCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: isSelected ? textGray900 : textGray700,
+                          color: !isEnabled
+                              ? textGray700.withOpacity(0.6)
+                              : (isSelected ? textGray900 : textGray700),
                         ),
                       ),
                       if (badge != null) ...[

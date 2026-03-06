@@ -24,12 +24,18 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<void> resetPassword(String email) async {
+    await _remoteDataSource.resetPassword(email);
+  }
+
+  @override
   Future<User> registerHero({
     required String email,
     required String password,
     required String firstName,
     required String lastName,
-    required String rut,
+    required String documentType,
+    required String documentId,
     required String phone,
   }) async {
     final userModel = await _remoteDataSource.registerHero(
@@ -37,7 +43,8 @@ class AuthRepositoryImpl implements AuthRepository {
       password: password,
       firstName: firstName,
       lastName: lastName,
-      rut: rut,
+      documentType: documentType,
+      documentId: documentId,
       phone: phone,
     );
 
@@ -157,14 +164,16 @@ class AuthRepositoryImpl implements AuthRepository {
     required String uid,
     required String firstName,
     required String lastName,
-    required String rut,
+    required String documentType,
+    required String documentId,
     required String phone,
   }) async {
     final userModel = await _remoteDataSource.upgradeToHero(
       uid: uid,
       firstName: firstName,
       lastName: lastName,
-      rut: rut,
+      documentType: documentType,
+      documentId: documentId,
       phone: phone,
     );
 

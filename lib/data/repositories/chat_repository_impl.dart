@@ -24,6 +24,23 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<void> setTyping({
+    required String chatId,
+    required String userId,
+    required bool isTyping,
+  }) async {
+    try {
+      await _remoteDataSource.setTyping(
+        chatId: chatId,
+        userId: userId,
+        isTyping: isTyping,
+      );
+    } catch (e) {
+      throw Exception('Error al actualizar typing: $e');
+    }
+  }
+
+  @override
   Stream<List<ChatMessage>> watchChatMessages(String chatId, {int limit = 50}) {
     try {
       return _remoteDataSource

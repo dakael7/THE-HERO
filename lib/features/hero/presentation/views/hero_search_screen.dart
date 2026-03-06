@@ -146,7 +146,7 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
                           border: Border.all(color: borderGray100),
                           boxShadow: [
                             BoxShadow(
-                              color: textGray900.withOpacity(0.05),
+                              color: textGray900.withValues(alpha: 0.05),
                               blurRadius: 12,
                               offset: const Offset(0, 8),
                             ),
@@ -175,10 +175,10 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
                                       colorCondition: product['colorCondition'],
                                       category:
                                           (product['category'] as String?) ??
-                                          'Donación',
+                                              'Donación',
                                       availableQty:
                                           (product['availableQty'] as int?) ??
-                                          1,
+                                              1,
                                       viewCount:
                                           (product['viewCount'] as int?) ?? 0,
                                       orderCount:

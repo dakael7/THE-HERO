@@ -121,6 +121,8 @@ class PaymentNotifier extends Notifier<PaymentState> {
 
   /// Creates a payment preference for an order
   Future<void> createPreference(dynamic order) async {
+    if (state.isProcessing) return;
+
     state = state.copyWith(isProcessing: true, error: null);
 
     try {

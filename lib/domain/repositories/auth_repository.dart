@@ -4,13 +4,16 @@ abstract class AuthRepository {
   /// Inicia sesión con email y contraseña
   Future<User> signInWithEmail(String email, String password);
 
+  Future<void> resetPassword(String email);
+
   /// Registra un nuevo usuario Hero
   Future<User> registerHero({
     required String email,
     required String password,
     required String firstName,
     required String lastName,
-    required String rut,
+    required String documentType,
+    required String documentId,
     required String phone,
   });
 
@@ -56,7 +59,8 @@ abstract class AuthRepository {
     required String uid,
     required String firstName,
     required String lastName,
-    required String rut,
+    required String documentType,
+    required String documentId,
     required String phone,
   });
 

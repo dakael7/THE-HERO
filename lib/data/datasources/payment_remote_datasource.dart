@@ -1,18 +1,26 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-/// Remote data source for payment operations via Firebase Functions
 class PaymentRemoteDataSource {
   final FirebaseFunctions _functions;
 
   PaymentRemoteDataSource({FirebaseFunctions? functions})
-    : _functions = functions ?? FirebaseFunctions.instance;
+    : _functions = functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
-  /// Creates a payment preference in MercadoPago
-  /// Calls the createPaymentPreference Firebase Function
+  Future<void> _ensureFreshAuthToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('Debes iniciar sesión para continuar');
+    }
+
+    await user.getIdToken(true);
+  }
+
   Future<Map<String, dynamic>> createPreference(
     Map<String, dynamic> orderData,
   ) async {
     try {
+      await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('createPaymentPreference');
       final result = await callable.call(orderData);
 
@@ -34,6 +42,7 @@ class PaymentRemoteDataSource {
   /// Calls the verifyPayment Firebase Function
   Future<Map<String, dynamic>> verifyPayment(String paymentId) async {
     try {
+      await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('verifyPayment');
       final result = await callable.call({'paymentId': paymentId});
 
@@ -53,6 +62,7 @@ class PaymentRemoteDataSource {
   /// Calls the getPaymentByOrderId Firebase Function
   Future<Map<String, dynamic>?> getPaymentByOrderId(String orderId) async {
     try {
+      await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('getPaymentByOrderId');
       final result = await callable.call({'orderId': orderId});
 

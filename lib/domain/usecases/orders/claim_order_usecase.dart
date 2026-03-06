@@ -17,6 +17,10 @@ class ClaimOrderUseCase {
     required String riderPhone,
     required Order order,
   }) async {
+    if (order.inPersonPickup) {
+      throw Exception('Este pedido es retiro en persona y no requiere rider.');
+    }
+
     final compatibleVehicles = OrderRequirements.getCompatibleVehicles(riderVehicleType);
     
     if (!compatibleVehicles.contains(order.requirements.requiredVehicle)) {
@@ -32,14 +36,5 @@ class ClaimOrderUseCase {
       riderName,
       riderPhone,
     );
-
-    // Ensure the order is no longer considered claimable (queued).
-    // This complements the transaction update and helps avoid UI showing stale data.
-    try {
-      await _repository.updateOrderStatus(orderId, 'assigned');
-    } catch (_) {
-      // Best-effort: the transaction in assignRider already sets status=assigned.
-      // Avoid showing an error to the user if this redundant update fails.
-    }
   }
 }

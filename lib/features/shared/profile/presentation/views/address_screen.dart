@@ -21,6 +21,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
   String? _selectedAddress;
   double? _selectedLatitude;
   double? _selectedLongitude;
+  String? _selectedCountryCode;
   bool _isSaving = false;
 
   @override
@@ -30,6 +31,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
       _selectedAddress = widget.currentAddress!.fullAddress;
       _selectedLatitude = widget.currentAddress!.latitude;
       _selectedLongitude = widget.currentAddress!.longitude;
+      _selectedCountryCode = widget.currentAddress!.countryCode;
     }
   }
 
@@ -64,6 +66,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
         _selectedAddress = result.address;
         _selectedLatitude = result.latitude;
         _selectedLongitude = result.longitude;
+        _selectedCountryCode = result.countryCode;
       });
     }
   }
@@ -102,6 +105,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
           'fullAddress': _selectedAddress,
           'latitude': _selectedLatitude,
           'longitude': _selectedLongitude,
+          'countryCode': _selectedCountryCode,
         },
       }, SetOptions(merge: true));
 

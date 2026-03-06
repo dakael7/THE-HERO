@@ -58,7 +58,10 @@ class RiderProfile {
         color: v['color']?.toString(),
       );
     }
-    return vehicle;
+    // Fallback for legacy riders without `vehicles[activeVehicleType]` entry.
+    // Respect the selected activeVehicleType to avoid fetching/claiming orders
+    // with an incorrect vehicle type.
+    return vehicle.copyWith(type: activeVehicleTypeEnum);
   }
 
   Documents get activeDocuments {

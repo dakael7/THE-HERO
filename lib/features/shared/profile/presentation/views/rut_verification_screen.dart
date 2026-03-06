@@ -45,12 +45,11 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
     switch (status) {
       case null:
       case 'pending':
-      case 'needs_review':
       case 'rejected':
       case 'failed':
-      case 'submitted':
         return true;
       case 'processing':
+      case 'submitted':
       case 'approved':
       default:
         return false;
@@ -72,9 +71,8 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
     required String label,
     required void Function(Uint8List bytes, String name) onPicked,
   }) async {
-    final status =
-        ref.read(profileStreamProvider).value?.rutVerificationStatus ??
-        ref.read(profileProvider).value?.rutVerificationStatus;
+    final profile = await ref.read(profileProvider.future);
+    final status = profile?.rutVerificationStatus;
     if (!_canEditForStatus(status)) {
       _showLockedSnackBar();
       return;
@@ -82,6 +80,7 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
     try {
       final picked = await _imagePicker.pickImage(
         source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
         imageQuality: 85,
         maxWidth: 2000,
       );
@@ -160,15 +159,14 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
   Future<void> _submit() async {
     if (_saving) return;
 
-    final status =
-        ref.read(profileStreamProvider).value?.rutVerificationStatus ??
-        ref.read(profileProvider).value?.rutVerificationStatus;
+    final profile = await ref.read(profileProvider.future);
+    final status = profile?.rutVerificationStatus;
     if (!_canEditForStatus(status)) {
       _showLockedSnackBar();
       return;
     }
 
-    final user = ref.read(profileStreamProvider).value ?? ref.read(profileProvider).value;
+    final user = profile;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

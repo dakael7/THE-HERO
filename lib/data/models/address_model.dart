@@ -5,11 +5,13 @@ class AddressModel {
   final String fullAddress;
   final GeoPoint geopoint;
   final bool locationCheck;
+  final String? countryCode;
 
   AddressModel({
     required this.fullAddress,
     required this.geopoint,
     this.locationCheck = false,
+    this.countryCode,
   });
 
   factory AddressModel.fromJson(Map<String, dynamic> json) {
@@ -37,6 +39,7 @@ class AddressModel {
       fullAddress: json['fullAddress'] as String? ?? '',
       geopoint: geopoint,
       locationCheck: json['locationCheck'] as bool? ?? false,
+      countryCode: json['countryCode'] as String?,
     );
   }
 
@@ -47,6 +50,7 @@ class AddressModel {
       'latitude': geopoint.latitude,
       'longitude': geopoint.longitude,
       'locationCheck': locationCheck,
+      'countryCode': countryCode,
     };
   }
 
@@ -55,6 +59,7 @@ class AddressModel {
       fullAddress: fullAddress,
       geopoint: geopoint,
       locationCheck: locationCheck,
+      countryCode: countryCode,
     );
   }
 
@@ -63,6 +68,7 @@ class AddressModel {
       fullAddress: entity.fullAddress,
       geopoint: entity.geopoint,
       locationCheck: entity.locationCheck,
+      countryCode: entity.countryCode,
     );
   }
 }

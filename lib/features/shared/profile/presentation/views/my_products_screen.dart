@@ -8,8 +8,8 @@ import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 import 'donation_questions_screen.dart';
+import 'my_donation_orders_screen.dart';
 import 'seller_offer_detail_screen.dart';
-import 'rut_verification_screen.dart';
 
 class MyProductsScreen extends ConsumerStatefulWidget {
   const MyProductsScreen({super.key});
@@ -41,36 +41,6 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     super.dispose();
   }
 
-  Color _statusTextColor(OfferStatus status) {
-    switch (status) {
-      case OfferStatus.active:
-        return const Color(0xFF0F766E);
-      case OfferStatus.draft:
-        return const Color(0xFF7C3AED);
-      case OfferStatus.paused:
-        return const Color(0xFFB45309);
-      case OfferStatus.soldOut:
-        return const Color(0xFFDC2626);
-      case OfferStatus.archived:
-        return textGray600;
-    }
-  }
-
-  Color _statusBgColor(OfferStatus status) {
-    switch (status) {
-      case OfferStatus.active:
-        return const Color(0xFFCCFBF1);
-      case OfferStatus.draft:
-        return const Color(0xFFEDE9FE);
-      case OfferStatus.paused:
-        return const Color(0xFFFFEDD5);
-      case OfferStatus.soldOut:
-        return const Color(0xFFFEE2E2);
-      case OfferStatus.archived:
-        return borderGray100;
-    }
-  }
-
   List<Offer> _applyFilters(List<Offer> offers) {
     final query = _searchController.text.trim().toLowerCase();
     final filtered = offers.where((offer) {
@@ -91,36 +61,45 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     required String label,
     required int value,
     required Color color,
+    double scale = 1.0,
   }) {
+    final paddingH = (12.0 * scale).clamp(10.0, 16.0);
+    final paddingV = (10.0 * scale).clamp(8.0, 12.0);
+    final dotSize = (8.0 * scale).clamp(6.0, 10.0);
+    final valueFontSize = (13.0 * scale).clamp(11.0, 15.0);
+    final labelFontSize = (12.0 * scale).clamp(10.0, 14.0);
+    final spacing1 = (8.0 * scale).clamp(6.0, 10.0);
+    final spacing2 = (6.0 * scale).clamp(4.0, 8.0);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: paddingH, vertical: paddingV),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(14 * scale),
         border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 8,
-            height: 8,
+            width: dotSize,
+            height: dotSize,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: spacing1),
           Text(
             '$value',
-            style: const TextStyle(
-              fontSize: 13,
+            style: TextStyle(
+              fontSize: valueFontSize,
               fontWeight: FontWeight.w900,
               color: textGray900,
             ),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: spacing2),
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 12,
+            style: TextStyle(
+              fontSize: labelFontSize,
               fontWeight: FontWeight.w700,
               color: textGray700,
             ),
@@ -161,43 +140,6 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     );
 
     return result ?? false;
-  }
-
-  Future<void> _setOfferStatus({
-    required BuildContext context,
-    required Offer offer,
-    required String status,
-    required String successMessage,
-  }) async {
-    if (_busyOfferIds.contains(offer.offerId)) return;
-
-    setState(() => _busyOfferIds.add(offer.offerId));
-    try {
-      await ref
-          .read(offersRepositoryProvider)
-          .updateOfferStatus(offer.offerId, status);
-      if (!mounted) return;
-
-      ref.invalidate(myOffersProvider(offer.heroId));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(successMessage),
-          duration: const Duration(milliseconds: 1600),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo actualizar el estado: $e'),
-          duration: const Duration(milliseconds: 2200),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _busyOfferIds.remove(offer.offerId));
-      }
-    }
   }
 
   Widget _buildSearchBar(BuildContext context) {
@@ -338,392 +280,391 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
   }
 
   Widget _buildOfferCard(BuildContext context, Offer offer) {
-    final statusTextColor = _statusTextColor(offer.status);
-    final statusBg = _statusBgColor(offer.status);
-
     final isBusy = _busyOfferIds.contains(offer.offerId);
 
     final cover = offer.coverImageUrl.trim();
     final hasImage = cover.isNotEmpty;
     final isAsset = cover.startsWith('assets/');
 
-    return Material(
-      color: backgroundWhite,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => SellerOfferDetailScreen(offer: offer),
+    String formatDate(DateTime dt) {
+      const months = [
+        'ene',
+        'feb',
+        'mar',
+        'abr',
+        'may',
+        'jun',
+        'jul',
+        'ago',
+        'sep',
+        'oct',
+        'nov',
+        'dic',
+      ];
+      final m = months[dt.month - 1];
+      return '${dt.day.toString().padLeft(2, '0')} $m ${dt.year}';
+    }
+
+    Future<void> handleDelete() async {
+      final confirmed = await _confirmAction(
+        context: context,
+        title: 'Eliminar publicación',
+        message: 'Esta acción es permanente. ¿Eliminar esta donación?',
+        confirmText: 'Eliminar',
+      );
+      if (!confirmed) return;
+      if (_busyOfferIds.contains(offer.offerId)) return;
+      setState(() => _busyOfferIds.add(offer.offerId));
+      try {
+        await ref.read(offersRepositoryProvider).deleteOffer(offer.offerId);
+        ref.invalidate(myOffersProvider(offer.heroId));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Donación eliminada'),
+            duration: Duration(milliseconds: 1500),
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo eliminar: $e'),
+            duration: const Duration(milliseconds: 2200),
+          ),
+        );
+      } finally {
+        if (mounted) {
+          setState(() => _busyOfferIds.remove(offer.offerId));
+        }
+      }
+    }
+
+    Widget imageWidget() {
+      if (!hasImage) {
+        return Container(
+          color: borderGray100,
+          child: const Center(
+            child: Icon(
+              Icons.image_outlined,
+              color: textGray600,
+            ),
+          ),
+        );
+      }
+
+      if (isAsset) {
+        return Image.asset(cover, fit: BoxFit.cover);
+      }
+
+      return Image.network(
+        cover,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: borderGray100,
+            child: const Center(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                color: textGray600,
+              ),
             ),
           );
         },
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: borderGray100),
-            boxShadow: [
-              BoxShadow(
-                color: textGray900.withValues(alpha: 0.05),
-                blurRadius: 18,
-                offset: const Offset(0, 10),
-              ),
-            ],
+      );
+    }
+
+    final date = offer.publishedAt ?? offer.updatedAt;
+
+    ({Color fg, Color bg}) statusColors(OfferStatus status) {
+      switch (status) {
+        case OfferStatus.active:
+          return (fg: const Color(0xFF15803D), bg: const Color(0xFFDCFCE7));
+        case OfferStatus.draft:
+          return (fg: const Color(0xFF7C3AED), bg: const Color(0xFFEDE9FE));
+        case OfferStatus.paused:
+          return (fg: const Color(0xFFB45309), bg: const Color(0xFFFFEDD5));
+        case OfferStatus.soldOut:
+          return (fg: const Color(0xFFDC2626), bg: const Color(0xFFFEE2E2));
+        case OfferStatus.archived:
+          return (fg: textGray600, bg: borderGray100);
+      }
+    }
+
+    final statusPalette = statusColors(offer.status);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: backgroundWhite,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: borderGray100),
+        boxShadow: [
+          BoxShadow(
+            color: textGray900.withValues(alpha: 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  width: 78,
-                  height: 78,
-                  color: borderGray100,
-                  child: hasImage
-                      ? isAsset
-                            ? Image.asset(cover, fit: BoxFit.cover)
-                            : Image.network(
-                                cover,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Center(
-                                    child: Icon(
-                                      Icons.image_not_supported_outlined,
-                                      color: textGray600,
-                                    ),
-                                  );
-                                },
-                              )
-                      : const Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.2,
-                              color: primaryOrange,
-                            ),
-                          ),
-                        ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(18),
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SellerOfferDetailScreen(offer: offer),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      width: 74,
+                      height: 74,
+                      child: imageWidget(),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            offer.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                              color: textGray900,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                offer.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                  color: textGray900,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        if (isBusy)
-                          const SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: Center(
-                              child: SizedBox(
-                                width: 18,
-                                height: 18,
+                            const SizedBox(width: 8),
+                            if (isBusy)
+                              const SizedBox(
+                                width: 22,
+                                height: 22,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.2,
                                   color: primaryOrange,
                                 ),
-                              ),
-                            ),
-                          )
-                        else
-                          PopupMenuButton<String>(
-                            tooltip: 'Acciones',
-                            onSelected: (value) async {
-                              switch (value) {
-                                case 'edit':
-                                  await _openOfferForm(offer: offer);
-                                  break;
-                                case 'publish':
-                                  await _setOfferStatus(
-                                    context: context,
-                                    offer: offer,
-                                    status: 'active',
-                                    successMessage: 'Publicación activada',
-                                  );
-                                  break;
-                                case 'pause':
-                                  await _setOfferStatus(
-                                    context: context,
-                                    offer: offer,
-                                    status: 'paused',
-                                    successMessage: 'Publicación pausada',
-                                  );
-                                  break;
-                                case 'archive':
-                                  {
-                                    final confirmed = await _confirmAction(
-                                      context: context,
-                                      title: 'Archivar publicación',
-                                      message:
-                                          'Tu donación dejará de estar visible para los usuarios. Puedes reactivarla cuando quieras.',
-                                      confirmText: 'Archivar',
-                                    );
-                                    if (!confirmed) break;
-                                    await _setOfferStatus(
-                                      context: context,
-                                      offer: offer,
-                                      status: 'archived',
-                                      successMessage: 'Publicación archivada',
-                                    );
-                                  }
-                                  break;
-                                case 'delete':
-                                  {
-                                    final confirmed = await _confirmAction(
-                                      context: context,
-                                      title: 'Eliminar publicación',
-                                      message:
-                                          'Esta acción es permanente. ¿Eliminar esta donación?',
-                                      confirmText: 'Eliminar',
-                                    );
-                                    if (!confirmed) break;
-                                    if (_busyOfferIds.contains(offer.offerId))
-                                      break;
-                                    setState(
-                                      () => _busyOfferIds.add(offer.offerId),
-                                    );
-                                    try {
-                                      await ref
-                                          .read(offersRepositoryProvider)
-                                          .deleteOffer(offer.offerId);
-                                      ref.invalidate(
-                                        myOffersProvider(offer.heroId),
-                                      );
-                                      if (!mounted) break;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Donación eliminada'),
-                                          duration: Duration(
-                                            milliseconds: 1500,
-                                          ),
-                                        ),
-                                      );
-                                    } catch (e) {
-                                      if (!mounted) break;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'No se pudo eliminar: $e',
-                                          ),
-                                          duration: const Duration(
-                                            milliseconds: 2200,
-                                          ),
-                                        ),
-                                      );
-                                    } finally {
-                                      if (mounted) {
-                                        setState(
-                                          () => _busyOfferIds.remove(
-                                            offer.offerId,
-                                          ),
-                                        );
-                                      }
-                                    }
-                                  }
-                                  break;
-                              }
-                            },
-                            itemBuilder: (context) {
-                              final items = <PopupMenuEntry<String>>[];
-
-                              if (offer.canBeEdited) {
-                                items.add(
-                                  const PopupMenuItem(
-                                    value: 'edit',
-                                    child: Text('Editar'),
-                                  ),
-                                );
-                              }
-
-                              if (offer.status == OfferStatus.draft ||
-                                  offer.status == OfferStatus.paused ||
-                                  offer.status == OfferStatus.archived ||
-                                  offer.status == OfferStatus.soldOut) {
-                                items.add(
-                                  const PopupMenuItem(
-                                    value: 'publish',
-                                    child: Text('Publicar'),
-                                  ),
-                                );
-                              }
-
-                              if (offer.status == OfferStatus.active) {
-                                items.add(
-                                  const PopupMenuItem(
-                                    value: 'pause',
-                                    child: Text('Pausar'),
-                                  ),
-                                );
-                              }
-
-                              if (offer.status != OfferStatus.archived) {
-                                items.add(
-                                  const PopupMenuItem(
-                                    value: 'archive',
-                                    child: Text('Archivar'),
-                                  ),
-                                );
-                              }
-
-                              items.add(
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('Eliminar'),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
                                 ),
-                              );
-
-                              return items;
-                            },
-                            icon: const Icon(
-                              Icons.more_horiz,
-                              color: textGray600,
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusBg,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            offer.status.displayName,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              color: statusTextColor,
-                            ),
-                          ),
+                                decoration: BoxDecoration(
+                                  color: statusPalette.bg,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  offer.status.displayName,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                    color: statusPalette.fg,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: backgroundGray50,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            offer.category,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: textGray700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Donación',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              color: primaryOrange,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
+                        const SizedBox(height: 6),
                         Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(
-                              Icons.inventory_2_outlined,
-                              size: 16,
+                              Icons.remove_red_eye_outlined,
+                              size: 14,
                               color: textGray600,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '${offer.availableQty}/${offer.stock}',
+                              '${offer.viewCount}',
                               style: const TextStyle(
                                 fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: textGray700,
+                                fontWeight: FontWeight.w700,
+                                color: textGray600,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Icon(
+                              Icons.shopping_bag_outlined,
+                              size: 14,
+                              color: textGray600,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${offer.orderCount}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: textGray600,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Icon(
+                              Icons.star_outline_rounded,
+                              size: 14,
+                              color: textGray600,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              offer.ratingCount > 0
+                                  ? '${offer.avgRating.toStringAsFixed(1)} (${offer.ratingCount})'
+                                  : '0.0 (0)',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: textGray600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.inventory_2_outlined,
+                              size: 14,
+                              color: textGray600,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Disponibles: ${offer.availableQty}/${offer.stock}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: textGray600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.visibility_outlined,
-                          size: 16,
-                          color: textGray600,
-                        ),
-                        const SizedBox(width: 4),
+                        const SizedBox(height: 6),
                         Text(
-                          '${offer.viewCount}',
+                          'Actualizado: ${formatDate(date)}',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: textGray600,
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Icon(
-                          Icons.shopping_bag_outlined,
-                          size: 16,
-                          color: textGray600,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${offer.orderCount}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: textGray600,
-                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
-                  ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: borderGray100),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: offer.canBeEdited && !isBusy
+                      ? () => _openOfferForm(offer: offer)
+                      : null,
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    size: 18,
+                    color: textGray700,
+                  ),
+                  label: const Text(
+                    'Editar',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: textGray700,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.zero,
+                    ),
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 44, color: borderGray100),
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SellerOfferDetailScreen(offer: offer),
+                      ),
+                    );
+                  },
+                  icon: const Icon(
+                    Icons.remove_red_eye_outlined,
+                    size: 18,
+                    color: textGray700,
+                  ),
+                  label: const Text(
+                    'Ver',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: textGray700,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.zero,
+                    ),
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 44, color: borderGray100),
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: !isBusy ? handleDelete : null,
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    size: 18,
+                    color: Colors.red,
+                  ),
+                  label: const Text(
+                    'Eliminar',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.red,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.zero,
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
@@ -752,6 +693,19 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           'Mis Donaciones',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Pedidos de mis donaciones',
+            icon: const Icon(Icons.receipt_long_outlined),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const MyDonationOrdersScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: profileAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -1080,29 +1034,6 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                             ),
                                                             ElevatedButton.icon(
                                                               onPressed: () {
-                                                                final user =
-                                                                    ref.read(profileStreamProvider).value;
-                                                                if (user != null &&
-                                                                    !user.isRutVerified) {
-                                                                  ScaffoldMessenger.of(context)
-                                                                      .showSnackBar(
-                                                                    const SnackBar(
-                                                                      content: Text(
-                                                                        'Debes verificar tu RUT para publicar donaciones.',
-                                                                      ),
-                                                                      duration:
-                                                                          Duration(seconds: 3),
-                                                                    ),
-                                                                  );
-                                                                  Navigator.of(context).push(
-                                                                    MaterialPageRoute(
-                                                                      builder: (_) =>
-                                                                          const RutVerificationScreen(),
-                                                                    ),
-                                                                  );
-                                                                  return;
-                                                                }
-
                                                                 _openOfferForm();
                                                               },
                                                               icon: Icon(
@@ -1113,17 +1044,40 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                                 size:
                                                                     buttonIconSize,
                                                               ),
-                                                              label: Text(
-                                                                'Publicar donación',
-                                                                style: TextStyle(
-                                                                  color:
-                                                                      primaryOrange,
-                                                                  fontSize:
-                                                                      buttonFontSize,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w700,
-                                                                ),
+                                                              label: Column(
+                                                                mainAxisSize:
+                                                                    MainAxisSize
+                                                                        .min,
+                                                                crossAxisAlignment:
+                                                                    CrossAxisAlignment
+                                                                        .start,
+                                                                children: [
+                                                                  Text(
+                                                                    'Sé un Hero',
+                                                                    style: TextStyle(
+                                                                      color:
+                                                                          primaryOrange,
+                                                                      fontSize:
+                                                                          buttonFontSize,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w800,
+                                                                    ),
+                                                                  ),
+                                                                  Text(
+                                                                    'Dona tus productos',
+                                                                    style: TextStyle(
+                                                                      color:
+                                                                          primaryOrange,
+                                                                      fontSize:
+                                                                          buttonFontSize -
+                                                                              2,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w600,
+                                                                    ),
+                                                                  ),
+                                                                ],
                                                               ),
                                                               style: ElevatedButton.styleFrom(
                                                                 backgroundColor:
@@ -1158,23 +1112,27 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                 ),
                                 const SizedBox(height: 14),
                                 Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
+                                  spacing: (10.0 * scale).clamp(8.0, 12.0),
+                                  runSpacing: (10.0 * scale).clamp(8.0, 12.0),
+                                  alignment: WrapAlignment.center,
                                   children: [
                                     _buildStatPill(
                                       label: 'Activos',
                                       value: activeCount,
                                       color: const Color(0xFF0F766E),
+                                      scale: scale,
                                     ),
                                     _buildStatPill(
                                       label: 'Borradores',
                                       value: draftCount,
                                       color: const Color(0xFF7C3AED),
+                                      scale: scale,
                                     ),
                                     _buildStatPill(
                                       label: 'Agotados',
                                       value: soldOutCount,
                                       color: const Color(0xFFDC2626),
+                                      scale: scale,
                                     ),
                                   ],
                                 ),

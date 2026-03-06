@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod/riverpod.dart';
 
+import '../../../../domain/entities/offer.dart';
+import '../providers/catalog_filters_provider.dart';
+
 class SearchState {
   final String query;
   final List<Map<String, dynamic>> results;
@@ -238,4 +241,79 @@ class SearchViewModel extends Notifier<SearchState> {
 
 final searchViewModelProvider = NotifierProvider<SearchViewModel, SearchState>(
   () => SearchViewModel(),
+);
+
+final searchOffersProvider = Provider.family<AsyncValue<List<Offer>>, String>(
+  (ref, query) {
+    final offersAsync = ref.watch(filteredOffersProvider);
+    final q = query.trim().toLowerCase();
+
+    return offersAsync.whenData((offers) {
+      if (q.isEmpty || q.length < 2) {
+        return <Offer>[];
+      }
+
+      final tokens = q
+          .split(RegExp(r'\s+'))
+          .map((e) => e.trim())
+          .where((e) => e.length >= 2)
+          .toList(growable: false);
+
+      if (tokens.isEmpty) return <Offer>[];
+
+      final scored = <({Offer offer, double score})>[];
+
+      for (final offer in offers) {
+        final title = offer.title.toLowerCase();
+        final description = offer.description.toLowerCase();
+        final category = offer.category.toLowerCase();
+        final keywords = offer.searchKeywords
+            .map((e) => e.toLowerCase())
+            .toList(growable: false);
+
+        var score = 0.0;
+        var matchesAll = true;
+
+        for (final token in tokens) {
+          final titleIdx = title.indexOf(token);
+          final descriptionIdx = description.indexOf(token);
+          final categoryIdx = category.indexOf(token);
+          final keywordIdx = keywords.indexWhere((k) => k.contains(token));
+
+          final hasMatch =
+              titleIdx >= 0 || descriptionIdx >= 0 || categoryIdx >= 0 || keywordIdx >= 0;
+          if (!hasMatch) {
+            matchesAll = false;
+            break;
+          }
+
+          if (titleIdx == 0) {
+            score += 3;
+          } else if (titleIdx > 0) {
+            score += 2;
+          }
+          if (keywordIdx >= 0) {
+            score += 1.5;
+          }
+          if (categoryIdx >= 0) {
+            score += 1;
+          }
+          if (descriptionIdx >= 0) {
+            score += 0.5;
+          }
+        }
+
+        if (!matchesAll) continue;
+        scored.add((offer: offer, score: score));
+      }
+
+      scored.sort((a, b) {
+        final byScore = b.score.compareTo(a.score);
+        if (byScore != 0) return byScore;
+        return b.offer.createdAt.compareTo(a.offer.createdAt);
+      });
+
+      return scored.map((e) => e.offer).toList(growable: false);
+    });
+  },
 );

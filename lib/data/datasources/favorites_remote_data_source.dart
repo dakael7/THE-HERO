@@ -50,15 +50,23 @@ class FavoritesRemoteDataSourceImpl implements FavoritesRemoteDataSource {
   }
 
   @override
-  Stream<List<String>> getFavoriteOfferIds(String userId) {
+  Stream<List<String>> getFavoriteOfferIds(String userId) async* {
+    final query = _firestore
+        .collection('favorites')
+        .doc(userId)
+        .collection('offers')
+        .orderBy('createdAt', descending: true);
+
     try {
-      return _firestore
-          .collection('favorites')
-          .doc(userId)
-          .collection('offers')
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .map((snapshot) => snapshot.docs.map((doc) => doc.id).toList());
+      await for (final snapshot in query.snapshots()) {
+        yield snapshot.docs.map((doc) => doc.id).toList();
+      }
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        yield <String>[];
+        return;
+      }
+      throw Exception('Error al obtener favoritos: $e');
     } catch (e) {
       throw Exception('Error al obtener favoritos: $e');
     }

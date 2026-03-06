@@ -49,7 +49,8 @@ class AuthViewModel extends ChangeNotifier {
     required String password,
     required String firstName,
     required String lastName,
-    required String rut,
+    required String documentType,
+    required String documentId,
     required String phone,
   }) async {
     _isLoading = true;
@@ -62,7 +63,8 @@ class AuthViewModel extends ChangeNotifier {
         password: password,
         firstName: firstName,
         lastName: lastName,
-        rut: rut,
+        documentType: documentType,
+        documentId: documentId,
         phone: phone,
       );
       _isAuthenticated = true;

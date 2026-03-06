@@ -64,6 +64,7 @@ class DirectionsService {
         deliveryLng,
         waypointLat: waypointLat,
         waypointLng: waypointLng,
+        waypoints: waypoints,
       );
     }
 
@@ -252,6 +253,7 @@ class DirectionsService {
       deliveryLng,
       waypointLat: waypointLat,
       waypointLng: waypointLng,
+      waypoints: waypoints,
     );
   }
 
@@ -263,6 +265,7 @@ class DirectionsService {
     {
     double? waypointLat,
     double? waypointLng,
+    List<DirectionsPoint>? waypoints,
   }
   ) {
     final distanceCalc = Distance();
@@ -270,17 +273,24 @@ class DirectionsService {
     final wLng = waypointLng;
     final hasWaypoint = wLat != null && wLng != null;
 
-    final segments = <List<DirectionsPoint>>[];
+    final mergedWaypoints = <DirectionsPoint>[];
+    if (waypoints != null && waypoints.isNotEmpty) {
+      mergedWaypoints.addAll(waypoints);
+    }
     if (hasWaypoint) {
+      mergedWaypoints.add(DirectionsPoint(latitude: wLat, longitude: wLng));
+    }
+
+    final segments = <List<DirectionsPoint>>[];
+    if (mergedWaypoints.isNotEmpty) {
+      var prev = DirectionsPoint(latitude: pickupLat, longitude: pickupLng);
+      for (final wp in mergedWaypoints) {
+        segments.add([prev, wp]);
+        prev = wp;
+      }
       segments.add(
         [
-          DirectionsPoint(latitude: pickupLat, longitude: pickupLng),
-          DirectionsPoint(latitude: wLat, longitude: wLng),
-        ],
-      );
-      segments.add(
-        [
-          DirectionsPoint(latitude: wLat, longitude: wLng),
+          prev,
           DirectionsPoint(latitude: deliveryLat, longitude: deliveryLng),
         ],
       );

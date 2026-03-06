@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../../domain/entities/offer.dart';
 import '../../../../domain/usecases/get_current_location_usecase.dart';
 import '../../../../domain/providers/offers_usecase_providers.dart';
+import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../providers/map_providers.dart';
 import '../state/map_state.dart';
 
@@ -71,7 +72,13 @@ class MapViewModel extends Notifier<MapState> {
     if (state.userLocation == null) return;
     final userLatLng = LatLng(state.userLocation!.latitude, state.userLocation!.longitude);
 
+    final currentUserId = ref.read(profileProvider).maybeWhen(
+          data: (user) => user?.id,
+          orElse: () => null,
+        );
+
     final products = _cachedOffers
+        .where((offer) => currentUserId == null || offer.heroId != currentUserId)
         .where((offer) => offer.itemLocationSnapshot != null)
         .map((offer) {
           final snap = offer.itemLocationSnapshot!;

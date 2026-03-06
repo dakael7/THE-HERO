@@ -16,6 +16,7 @@ class UserModel {
   final RiderProfileModel? riderProfile;
   final String? verificationStatus;
   final String? rutVerificationStatus;
+  final String? licenseVerificationStatus;
 
   UserModel({
     required this.id,
@@ -28,6 +29,7 @@ class UserModel {
     this.riderProfile,
     this.verificationStatus,
     this.rutVerificationStatus,
+    this.licenseVerificationStatus,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -83,6 +85,9 @@ class UserModel {
       rutVerificationStatus: (json['rutVerification'] is Map)
           ? (json['rutVerification'] as Map)['status']?.toString()
           : null,
+      licenseVerificationStatus: (json['licenseVerification'] is Map)
+          ? (json['licenseVerification'] as Map)['status']?.toString()
+          : null,
     );
   }
 
@@ -100,6 +105,10 @@ class UserModel {
       if (rutVerificationStatus != null)
         'rutVerification': {
           'status': rutVerificationStatus,
+        },
+      if (licenseVerificationStatus != null)
+        'licenseVerification': {
+          'status': licenseVerificationStatus,
         },
     };
   }

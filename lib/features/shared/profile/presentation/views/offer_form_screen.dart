@@ -68,6 +68,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   String _weightUnit = 'kg';
   final String _placesApiKey = Env.placesApiKey;
   PickupSchedule? _pickupSchedule;
+  bool _allowInPersonPickup = true;
   bool _submitted = false;
 
   static const _categories = <String>[
@@ -115,6 +116,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       _publishNow = offer.status == OfferStatus.active;
 
       _pickupSchedule = offer.pickupSchedule;
+      _allowInPersonPickup = offer.allowInPersonPickup;
 
       // Prefill ubicación desde la oferta si existe snapshot
       final snapshot = offer.itemLocationSnapshot;
@@ -127,6 +129,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       _priceController.text = '0,00';
       _isInGoodState = widget.initialIsInGoodState;
       _worksCorrectly = widget.initialWorksCorrectly;
+      _allowInPersonPickup = true;
     }
   }
 
@@ -602,6 +605,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         itemLocationId: widget.initialOffer?.itemLocationId,
         itemLocationSnapshot: locationSnapshot,
         pickupSchedule: _pickupSchedule,
+        allowInPersonPickup: _allowInPersonPickup,
       );
 
       if (isEdit) {

@@ -21,6 +21,7 @@ class UserMapper {
       riderProfile: model.riderProfile?.toEntity(),
       verificationStatus: model.verificationStatus,
       rutVerificationStatus: model.rutVerificationStatus,
+      licenseVerificationStatus: model.licenseVerificationStatus,
     );
   }
 
@@ -37,6 +38,7 @@ class UserMapper {
       riderProfile: entity.riderProfile != null ? RiderProfileModel.fromEntity(entity.riderProfile!) : null,
       verificationStatus: entity.verificationStatus,
       rutVerificationStatus: entity.rutVerificationStatus,
+      licenseVerificationStatus: entity.licenseVerificationStatus,
     );
   }
 }

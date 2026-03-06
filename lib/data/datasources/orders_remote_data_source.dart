@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/order_model.dart';
+import '../../domain/services/rider_commission_calculator.dart';
 
 abstract class OrdersRemoteDataSource {
   Future<OrderModel> createOrder(OrderModel order);
@@ -19,6 +20,10 @@ abstract class OrdersRemoteDataSource {
     String riderName,
     String riderPhone,
   );
+  Future<void> unassignRiderAndRequeue(
+    String orderId,
+    String riderId,
+  );
   Future<void> cancelOrder(String orderId, String reason, String canceledBy);
 }
 
@@ -27,6 +32,52 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
 
   OrdersRemoteDataSourceImpl({required FirebaseFirestore firestore})
     : _firestore = firestore;
+
+  bool _isVehicleCompatible({
+    required String riderVehicleType,
+    required String requiredVehicle,
+  }) {
+    final rider = riderVehicleType.toLowerCase().trim();
+    final required = requiredVehicle.toLowerCase().trim();
+
+    // Compatibility rule (same as domain layer intent):
+    // - car can take car/motorcycle/bicycle
+    // - motorcycle can take motorcycle/bicycle
+    // - bicycle can take bicycle
+    if (rider == 'car') {
+      return required == 'car' || required == 'motorcycle' || required == 'bicycle';
+    }
+    if (rider == 'motorcycle') {
+      return required == 'motorcycle' || required == 'bicycle';
+    }
+    if (rider == 'bicycle') {
+      return required == 'bicycle';
+    }
+
+    // Unknown rider type => reject for safety.
+    return false;
+  }
+
+  bool _isCashPaymentDoc(Map<String, dynamic> paymentData) {
+    final methodId = paymentData['paymentMethodId']?.toString().toLowerCase();
+    final statusDetail = paymentData['statusDetail']?.toString().toLowerCase();
+    final method = paymentData['paymentMethod']?.toString().toLowerCase();
+
+    return methodId == 'cash' ||
+        statusDetail == 'cash_on_delivery' ||
+        statusDetail == 'cash_collected' ||
+        method == 'cash';
+  }
+
+  double _cashAmountToCollectFromOrder(Map<String, dynamic> orderData) {
+    final total = (orderData['amountTotal'] as num?)?.toDouble() ?? 0.0;
+    final tip = (orderData['tip'] as num?)?.toDouble() ?? 0.0;
+    return (total - tip).clamp(0.0, double.infinity);
+  }
+
+  int _toCents(num value) {
+    return (value.toDouble() * 100).round();
+  }
 
   Future<T> _withRetry<T>(Future<T> Function() action) async {
     int attempt = 0;
@@ -48,6 +99,94 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     }
   }
 
+  @override
+  Future<void> unassignRiderAndRequeue(
+    String orderId,
+    String riderId,
+  ) async {
+    try {
+      if (orderId.trim().isEmpty) {
+        throw Exception('orderId inválido');
+      }
+      if (riderId.trim().isEmpty) {
+        throw Exception('riderId inválido');
+      }
+
+      await _withRetry(() async {
+        await _firestore.runTransaction((transaction) async {
+          final orderRef = _firestore.collection('orders').doc(orderId);
+          final orderDoc = await transaction.get(orderRef);
+          if (!orderDoc.exists) {
+            throw Exception('Pedido no encontrado');
+          }
+
+          final data = orderDoc.data()!;
+          if (data['status'] != 'assigned') {
+            throw Exception('Solo puedes cancelar antes de recoger');
+          }
+
+          final riderMap = (data['rider'] is Map) ? (data['rider'] as Map) : null;
+          final assignedId = (riderMap?['assignedRiderId'] as String?) ?? '';
+          if (assignedId.isEmpty || assignedId != riderId) {
+            throw Exception('Pedido no asignado a este rider');
+          }
+
+          final timestamps =
+              (data['timestamps'] is Map) ? (data['timestamps'] as Map) : null;
+          if (timestamps != null && timestamps['pickedUpAt'] != null) {
+            throw Exception('No puedes cancelar: ya marcaste recogido');
+          }
+
+          final paymentRef =
+              _firestore.collection('payments').doc('cash-$orderId');
+          final paymentSnap = await transaction.get(paymentRef);
+          final isCashOrder = paymentSnap.exists &&
+              _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
+
+          final holdAlreadyReleased = data['cashHoldReleased'] == true;
+          if (isCashOrder && !holdAlreadyReleased) {
+            final holdRaw = riderMap?['cashHoldAmount'];
+            final holdAmount = (holdRaw is num)
+                ? holdRaw.toDouble()
+                : _cashAmountToCollectFromOrder(data);
+            final holdCents = _toCents(holdAmount);
+
+            final riderRef = _firestore.collection('users').doc(riderId);
+            transaction.update(riderRef, {
+              'riderWallet.cashOnHold': FieldValue.increment(-holdAmount),
+              'riderWallet.cashOnHoldCents': FieldValue.increment(-holdCents),
+            });
+
+            final txRef = riderRef.collection('riderWalletTransactions').doc();
+            transaction.set(txRef, {
+              'type': 'cash_hold_release',
+              'orderId': orderId,
+              'amount': -holdAmount,
+              'amountCents': -holdCents,
+              'currency': data['currency']?.toString() ?? 'CLP',
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
+
+          transaction.update(orderRef, {
+            'status': 'queued',
+            'rider': <String, dynamic>{},
+            'pickupProgress': FieldValue.delete(),
+            'timestamps.assignedAt': FieldValue.delete(),
+            'timestamps.pickedUpAt': FieldValue.delete(),
+            'timestamps.deliveredAt': FieldValue.delete(),
+            if (isCashOrder && !holdAlreadyReleased)
+              'cashHoldReleased': true,
+            'timestamps.queuedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        });
+      });
+    } catch (e) {
+      throw Exception('Error al cancelar pedido como rider: $e');
+    }
+  }
+
   Map<String, dynamic> _withOrderId(Map<String, dynamic> data, String docId) {
     final orderId = (data['orderId'] as String?)?.trim() ?? '';
     if (orderId.isNotEmpty) return data;
@@ -55,6 +194,53 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     final copy = Map<String, dynamic>.from(data);
     copy['orderId'] = docId;
     return copy;
+  }
+
+  Future<void> _writeUserOrdersIndex({
+    required WriteBatch batch,
+    required Map<String, dynamic> createdOrder,
+  }) async {
+    final orderId = (createdOrder['orderId'] as String?)?.trim() ?? '';
+    final buyerId = (createdOrder['heroId'] as String?)?.trim() ?? '';
+
+    if (orderId.isEmpty || buyerId.isEmpty) return;
+
+    final buyerIndexRef = _firestore
+        .collection('user_orders')
+        .doc(buyerId)
+        .collection('orders')
+        .doc(orderId);
+    batch.set(
+      buyerIndexRef,
+      {
+        ...createdOrder,
+        'role': 'buyer',
+      },
+    );
+
+    final sellerIdsRaw = createdOrder['sellerHeroIds'];
+    if (sellerIdsRaw is! List) return;
+
+    final sellerIds = sellerIdsRaw
+        .whereType<String>()
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+
+    for (final sellerId in sellerIds) {
+      final sellerIndexRef = _firestore
+          .collection('user_orders')
+          .doc(sellerId)
+          .collection('orders')
+          .doc(orderId);
+      batch.set(
+        sellerIndexRef,
+        {
+          ...createdOrder,
+          'role': 'seller',
+        },
+      );
+    }
   }
 
   @override
@@ -67,13 +253,27 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
         final createdOrder = order.toJson();
         createdOrder['orderId'] = docRef.id;
         await docRef.set(createdOrder);
+
+        final indexBatch = _firestore.batch();
+        await _writeUserOrdersIndex(
+          batch: indexBatch,
+          createdOrder: createdOrder,
+        );
+        await indexBatch.commit();
         return OrderModel.fromJson(createdOrder);
       }
 
-      final docRef = await _firestore.collection('orders').add(order.toJson());
+      final docRef = _firestore.collection('orders').doc();
       final createdOrder = order.toJson();
       createdOrder['orderId'] = docRef.id;
-      await docRef.update({'orderId': docRef.id});
+      await docRef.set(createdOrder);
+
+      final indexBatch = _firestore.batch();
+      await _writeUserOrdersIndex(
+        batch: indexBatch,
+        createdOrder: createdOrder,
+      );
+      await indexBatch.commit();
       return OrderModel.fromJson(createdOrder);
     } catch (e) {
       throw Exception('Error al crear pedido: $e');
@@ -182,29 +382,157 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
       if (orderId.trim().isEmpty) {
         throw Exception('orderId inválido');
       }
-      final updateData = {
-        'status': status,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
 
-      switch (status) {
-        case 'paid':
-          updateData['timestamps.paidAt'] = FieldValue.serverTimestamp();
-          break;
-        case 'queued':
-          updateData['timestamps.queuedAt'] = FieldValue.serverTimestamp();
-          break;
-        case 'picked_up':
-          updateData['timestamps.pickedUpAt'] = FieldValue.serverTimestamp();
-          break;
-        case 'in_transit':
-          break;
-        case 'delivered':
-          updateData['timestamps.deliveredAt'] = FieldValue.serverTimestamp();
-          break;
-      }
+      await _withRetry(() async {
+        await _firestore.runTransaction((transaction) async {
+          final orderRef = _firestore.collection('orders').doc(orderId);
+          final orderSnap = await transaction.get(orderRef);
+          if (!orderSnap.exists) {
+            throw Exception('Pedido no encontrado');
+          }
 
-      await _firestore.collection('orders').doc(orderId).update(updateData);
+          final data = orderSnap.data() ?? <String, dynamic>{};
+          final updateData = <String, Object?>{
+            'status': status,
+            'updatedAt': FieldValue.serverTimestamp(),
+          };
+
+          switch (status) {
+            case 'paid':
+              updateData['timestamps.paidAt'] = FieldValue.serverTimestamp();
+              break;
+            case 'queued':
+              updateData['timestamps.queuedAt'] = FieldValue.serverTimestamp();
+              break;
+            case 'picked_up':
+              updateData['timestamps.pickedUpAt'] = FieldValue.serverTimestamp();
+              break;
+            case 'in_transit':
+              break;
+            case 'delivered':
+              updateData['timestamps.deliveredAt'] = FieldValue.serverTimestamp();
+              break;
+          }
+
+          if (status == 'delivered') {
+            final riderMap = (data['rider'] is Map) ? (data['rider'] as Map) : null;
+            final riderId = riderMap?['assignedRiderId']?.toString() ?? '';
+            final alreadyProcessed = data['riderEarningsProcessed'] == true;
+            if (riderId.isNotEmpty && !alreadyProcessed) {
+              final deliveryFee = (data['deliveryFee'] as num?)?.toDouble() ?? 0.0;
+              final tip = (data['tip'] as num?)?.toDouble() ?? 0.0;
+              final earnings = RiderCommissionCalculator.calculateCommission(
+                deliveryFee: deliveryFee,
+              );
+
+              final paymentRef =
+                  _firestore.collection('payments').doc('cash-$orderId');
+              final paymentSnap = await transaction.get(paymentRef);
+              final isCash = paymentSnap.exists &&
+                  _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
+
+              final tipCents = _toCents(tip);
+              final earningsAmount = isCash
+                  ? earnings.netEarnings
+                  : (earnings.netEarnings + tip);
+              final earningsCents = _toCents(earningsAmount);
+
+              final riderRef = _firestore.collection('users').doc(riderId);
+              final riderSnap = await transaction.get(riderRef);
+              if (!riderSnap.exists) {
+                throw Exception('Rider no encontrado');
+              }
+
+              final riderData = riderSnap.data() ?? <String, dynamic>{};
+              final wallet = (riderData['riderWallet'] is Map)
+                  ? (riderData['riderWallet'] as Map)
+                  : const <String, dynamic>{};
+              final cashBalance = (wallet['cashBalance'] as num?)?.toDouble() ?? 0.0;
+              final cashOnHold = (wallet['cashOnHold'] as num?)?.toDouble() ?? 0.0;
+
+              final txCollection = riderRef.collection('riderWalletTransactions');
+              final earningsTxRef = txCollection.doc();
+
+              transaction.set(earningsTxRef, {
+                'type': 'delivery_earnings',
+                'orderId': orderId,
+                'amount': earningsAmount,
+                'amountCents': earningsCents,
+                'currency': data['currency']?.toString() ?? 'CLP',
+                'createdAt': FieldValue.serverTimestamp(),
+                'meta': {
+                  'deliveryFee': deliveryFee,
+                  'tip': tip,
+                  'tipCents': tipCents,
+                  'breakdown': earnings.breakdown,
+                  'isCashOrder': isCash,
+                },
+              });
+
+              final walletUpdate = <String, Object?>{
+                'riderWallet.earningsBalance': FieldValue.increment(earningsAmount),
+                'riderWallet.totalEarnings': FieldValue.increment(earningsAmount),
+                'riderWallet.earningsBalanceCents': FieldValue.increment(earningsCents),
+                'riderWallet.totalEarningsCents': FieldValue.increment(earningsCents),
+              };
+
+              if (isCash) {
+                final cashSettlementProcessed = data['cashSettlementProcessed'] == true;
+                if (!cashSettlementProcessed) {
+                  final holdRaw = riderMap?['cashHoldAmount'];
+                  final holdAmount = (holdRaw is num)
+                      ? holdRaw.toDouble()
+                      : _cashAmountToCollectFromOrder(data);
+                  final holdCents = _toCents(holdAmount);
+
+                  final settlementTxRef = txCollection.doc();
+                  transaction.set(settlementTxRef, {
+                    'type': 'cash_settlement',
+                    'orderId': orderId,
+                    'amount': -holdAmount,
+                    'amountCents': -holdCents,
+                    'currency': data['currency']?.toString() ?? 'CLP',
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+
+                  walletUpdate['riderWallet.cashOnHold'] =
+                      FieldValue.increment(-holdAmount);
+                  walletUpdate['riderWallet.cashOnHoldCents'] =
+                      FieldValue.increment(-holdCents);
+
+                  walletUpdate['riderWallet.earningsBalance'] =
+                      FieldValue.increment(-holdAmount);
+                  walletUpdate['riderWallet.earningsBalanceCents'] =
+                      FieldValue.increment(-holdCents);
+
+                  updateData['cashSettlementProcessed'] = true;
+                }
+              }
+
+              transaction.update(riderRef, walletUpdate);
+
+              updateData['riderEarningsProcessed'] = true;
+              updateData['riderEarningsProcessedAt'] = FieldValue.serverTimestamp();
+              updateData['riderEarningsSnapshot'] = {
+                'deliveryFee': deliveryFee,
+                'tip': tip,
+                'netEarnings': earnings.netEarnings,
+                'serviceFee': earnings.serviceFee,
+                'taxDeduction': earnings.taxDeduction,
+              };
+
+              if (isCash) {
+                updateData['riderCashSnapshot'] = {
+                  'cashBalanceBefore': cashBalance,
+                  'cashOnHoldBefore': cashOnHold,
+                };
+              }
+            }
+          }
+
+          transaction.update(orderRef, updateData);
+        });
+      });
     } catch (e) {
       throw Exception('Error al actualizar estado del pedido: $e');
     }
@@ -243,12 +571,90 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
             throw Exception('Pedido ya tiene rider asignado');
           }
 
+          final requirements = orderData['requirements'];
+          final requiredVehicle = requirements is Map
+              ? (requirements['requiredVehicle']?.toString() ?? '')
+              : '';
+          if (requiredVehicle.isEmpty) {
+            throw Exception('Pedido inválido: falta vehículo requerido');
+          }
+
+          if (!_isVehicleCompatible(
+            riderVehicleType: vehicleType,
+            requiredVehicle: requiredVehicle,
+          )) {
+            throw Exception(
+              'Tu vehículo ($vehicleType) no es compatible con este pedido (requiere $requiredVehicle)',
+            );
+          }
+
+          final paymentRef = _firestore.collection('payments').doc('cash-$orderId');
+          final paymentSnap = await transaction.get(paymentRef);
+          final isCashOrder = paymentSnap.exists &&
+              _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
+
+          double? cashHoldAmount;
+          if (isCashOrder) {
+            final holdAmount = _cashAmountToCollectFromOrder(orderData);
+            final holdCents = _toCents(holdAmount);
+            final riderRef = _firestore.collection('users').doc(riderId);
+            final riderSnap = await transaction.get(riderRef);
+            if (!riderSnap.exists) {
+              throw Exception('Rider no encontrado');
+            }
+
+            final riderData = riderSnap.data() ?? <String, dynamic>{};
+            final wallet = (riderData['riderWallet'] is Map)
+                ? (riderData['riderWallet'] as Map)
+                : const <String, dynamic>{};
+
+            final earningsBalanceCents =
+                (wallet['earningsBalanceCents'] as num?)?.toInt();
+            final earningsBalance = earningsBalanceCents != null
+                ? (earningsBalanceCents / 100.0)
+                : (wallet['earningsBalance'] as num?)?.toDouble() ?? 0.0;
+
+            final cashOnHoldCents = (wallet['cashOnHoldCents'] as num?)?.toInt();
+            final cashOnHold = cashOnHoldCents != null
+                ? (cashOnHoldCents / 100.0)
+                : (wallet['cashOnHold'] as num?)?.toDouble() ?? 0.0;
+
+            final available =
+                (earningsBalance - cashOnHold).clamp(0.0, double.infinity);
+
+            if (available < holdAmount) {
+              throw Exception(
+                'Este pedido requiere pago en efectivo (\$${holdAmount.toStringAsFixed(0)}). '
+                'Tu pendiente por pagar (\$${available.toStringAsFixed(0)}) no alcanza para tomarlo. '
+                'Debes tener al menos \$${holdAmount.toStringAsFixed(0)} pendiente por pagar disponible.',
+              );
+            }
+
+            transaction.update(riderRef, {
+              'riderWallet.cashOnHold': FieldValue.increment(holdAmount),
+              'riderWallet.cashOnHoldCents': FieldValue.increment(holdCents),
+            });
+
+            final txRef = riderRef.collection('riderWalletTransactions').doc();
+            transaction.set(txRef, {
+              'type': 'cash_hold',
+              'orderId': orderId,
+              'amount': holdAmount,
+              'amountCents': holdCents,
+              'currency': orderData['currency']?.toString() ?? 'CLP',
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+
+            cashHoldAmount = holdAmount;
+          }
+
           final riderUpdate = {
             'assignedRiderId': riderId,
             'assignedAt': FieldValue.serverTimestamp(),
             'vehicleTypeSnapshot': vehicleType,
             'riderNameSnapshot': riderName,
             'riderPhoneSnapshot': riderPhone,
+            if (cashHoldAmount != null) 'cashHoldAmount': cashHoldAmount,
           };
 
           transaction.update(orderRef, {

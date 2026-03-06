@@ -5,19 +5,12 @@ import 'package:the_hero/domain/entities/user.dart';
 import 'package:the_hero/data/models/user_model.dart';
 import 'package:the_hero/data/mappers/user_mapper.dart';
 import 'package:the_hero/features/auth/domain/providers/get_user_profile_usecase_provider.dart';
-import '../../../../auth/presentation/providers/auth_provider.dart';
 
 // Provider que depende de la autenticación y recarga el perfil cuando cambia
 final profileProvider = FutureProvider<User?>((ref) async {
-  // Observar cambios en la autenticación
-  final isAuthenticated = ref.watch(
-    authNotifierProvider.select((state) => state.isAuthenticated),
-  );
-  
-  // Si no está autenticado, retornar null
-  if (!isAuthenticated) {
-    return null;
-  }
+  final authUser = await ref.watch(firebaseAuthUserProvider.future);
+  final uid = authUser?.uid;
+  if (uid == null) return null;
   
   try {
     // Si está autenticado, cargar el perfil
@@ -31,19 +24,9 @@ final profileProvider = FutureProvider<User?>((ref) async {
 });
 
 final profileStreamProvider = StreamProvider<User?>((ref) {
-  final isAuthenticated = ref.watch(
-    authNotifierProvider.select((state) => state.isAuthenticated),
-  );
-
-  if (!isAuthenticated) {
-    return const Stream<User?>.empty();
-  }
-
-  final auth = ref.watch(firebaseAuthProvider);
-  final uid = auth.currentUser?.uid;
-  if (uid == null) {
-    return const Stream<User?>.empty();
-  }
+  final authAsync = ref.watch(firebaseAuthUserProvider);
+  final uid = authAsync.value?.uid;
+  if (uid == null) return const Stream<User?>.empty();
 
   final firestore = ref.watch(firebaseFirestoreProvider);
   return firestore.collection('users').doc(uid).snapshots().map((snap) {

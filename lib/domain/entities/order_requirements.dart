@@ -1,4 +1,5 @@
 import 'vehicle.dart';
+import '../config/transport_pricing_config.dart';
 
 class OrderRequirements {
   final double weightKg;
@@ -23,6 +24,31 @@ class OrderRequirements {
     } else {
       throw Exception('Pedido excede capacidad máxima (80kg)');
     }
+  }
+
+  static VehicleType calculateRequiredVehicleFor({
+    required double weightKg,
+    required double distanceKm,
+  }) {
+    final base = calculateRequiredVehicle(weightKg);
+
+    final ordered = <VehicleType>[
+      VehicleType.bicycle,
+      VehicleType.motorcycle,
+      VehicleType.car,
+      VehicleType.truck,
+    ];
+
+    final startIndex = ordered.indexOf(base);
+    if (startIndex < 0) return base;
+
+    for (var i = startIndex; i < ordered.length; i++) {
+      final candidate = ordered[i];
+      final maxKm = TransportPricingConfig.getMaxDistance(candidate);
+      if (distanceKm <= maxKm) return candidate;
+    }
+
+    throw Exception('La distancia excede la cobertura disponible.');
   }
 
   static List<VehicleType> getCompatibleVehicles(VehicleType riderVehicle) {

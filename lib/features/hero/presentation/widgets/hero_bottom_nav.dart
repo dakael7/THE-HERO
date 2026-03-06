@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
-import '../../../shared/chat/presentation/providers/chat_providers.dart';
+import '../../../shared/notifications/presentation/providers/notifications_provider.dart';
 
 class HeroBottomNav extends ConsumerWidget {
   const HeroBottomNav({super.key});
@@ -73,21 +73,7 @@ class HeroBottomNav extends ConsumerWidget {
     final badgeFontSize = (8.0 * scaleFactor).clamp(7.0, 10.0);
     final badgeMinSize = (14.0 * scaleFactor).clamp(12.0, 18.0);
 
-    final int chatCount = ref.watch(
-      userChatsProvider.select(
-        (async) => async.maybeWhen(
-          data: (chats) {
-            // Sum up unreadCount from all chats
-            int totalUnread = 0;
-            for (final chat in chats) {
-              totalUnread += chat.unreadCount;
-            }
-            return totalUnread;
-          },
-          orElse: () => 0,
-        ),
-      ),
-    );
+    final notificationsCount = ref.watch(notificationsUnseenCountProvider);
 
     return SafeArea(
       top: false,
@@ -167,12 +153,13 @@ class HeroBottomNav extends ConsumerWidget {
                         Expanded(
                           child: _buildNavItem(
                             context,
-                            Icons.chat_bubble_outline,
-                            'Chat',
+                            Icons.notifications_none_outlined,
+                            'Avisos',
                             3,
                             selectedIndex,
                             () => viewModel.selectNavItem(3),
-                            badgeCount: chatCount > 0 ? chatCount : null,
+                            badgeCount:
+                                notificationsCount > 0 ? notificationsCount : null,
                             itemPadding: itemPadding,
                             fontSize: fontSize,
                             iconSize: iconSize,

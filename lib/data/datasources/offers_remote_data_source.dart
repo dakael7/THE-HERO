@@ -77,8 +77,33 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
           .child(offerId)
           .child('${DateTime.now().millisecondsSinceEpoch}.$ext');
 
-      await ref.putData(bytes, SettableMetadata(contentType: contentType));
-      return await ref.getDownloadURL();
+      final uploadTask = ref.putData(
+        bytes,
+        SettableMetadata(
+          contentType: contentType,
+          cacheControl: 'public,max-age=604800',
+        ),
+      );
+
+      TaskSnapshot snapshot;
+      try {
+        snapshot = await uploadTask.timeout(const Duration(seconds: 45));
+      } catch (e) {
+        if (uploadTask.snapshot.state == TaskState.running) {
+          await uploadTask.cancel();
+        }
+        rethrow;
+      }
+
+      if (snapshot.state != TaskState.success) {
+        throw Exception('Subida incompleta: ${snapshot.state}');
+      }
+
+      final url = await ref.getDownloadURL().timeout(const Duration(seconds: 15));
+      if (url.trim().isEmpty) {
+        throw Exception('URL de descarga vacía');
+      }
+      return url;
     } catch (e) {
       throw Exception('Error al subir imagen: $e');
     }
@@ -118,18 +143,24 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
   }
 
   @override
-  Stream<List<OfferModel>> getOffersByHero(String heroId) {
+  Stream<List<OfferModel>> getOffersByHero(String heroId) async* {
+    final query = _firestore
+        .collection('offers')
+        .where('heroId', isEqualTo: heroId)
+        .orderBy('createdAt', descending: true);
+
     try {
-      return _firestore
-          .collection('offers')
-          .where('heroId', isEqualTo: heroId)
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .map(
-            (snapshot) => snapshot.docs
-                .map((doc) => OfferModel.fromJson(doc.data()))
-                .toList(),
-          );
+      await for (final snapshot in query.snapshots()) {
+        yield snapshot.docs
+            .map((doc) => OfferModel.fromJson(doc.data()))
+            .toList();
+      }
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        yield <OfferModel>[];
+        return;
+      }
+      throw Exception('Error al obtener ofertas del hero: $e');
     } catch (e) {
       throw Exception('Error al obtener ofertas del hero: $e');
     }
@@ -192,7 +223,11 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
           throw Exception('Oferta no encontrada');
         }
 
-        final currentQty = offerDoc.data()!['availableQty'] as int;
+        final data = offerDoc.data()!;
+        final currentAvailableQty = data['availableQty'] as int;
+        final currentStock = (data['stock'] as int?) ?? currentAvailableQty;
+        final currentQty =
+            currentAvailableQty < currentStock ? currentAvailableQty : currentStock;
         final newQty = currentQty - qty;
 
         if (newQty < 0) {
@@ -200,6 +235,7 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
         }
 
         final updateData = {
+          'stock': newQty,
           'availableQty': newQty,
           'orderCount': FieldValue.increment(1),
           'updatedAt': FieldValue.serverTimestamp(),

@@ -2,22 +2,26 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 
 class RiderHomeMetricsDashboard extends StatelessWidget {
-  final double totalEarnings;
-  final double weeklyEarnings;
+  final String headlineTitle;
+  final double headlineAmount;
+  final String headlineSecondaryLabel;
+  final double headlineSecondaryAmount;
   final int totalTrips;
   final double averageRating;
-  final double bonuses;
+  final double tips;
   final int canceledTrips;
   final double completionRate;
   final VoidCallback? onTapViewRequests;
 
   const RiderHomeMetricsDashboard({
     super.key,
-    required this.totalEarnings,
-    required this.weeklyEarnings,
+    required this.headlineTitle,
+    required this.headlineAmount,
+    required this.headlineSecondaryLabel,
+    required this.headlineSecondaryAmount,
     required this.totalTrips,
     required this.averageRating,
-    required this.bonuses,
+    required this.tips,
     required this.canceledTrips,
     required this.completionRate,
     this.onTapViewRequests,
@@ -31,8 +35,10 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _TotalEarningsCard(
-          totalEarnings: totalEarnings,
-          weeklyEarnings: weeklyEarnings,
+          title: headlineTitle,
+          headlineAmount: headlineAmount,
+          secondaryLabel: headlineSecondaryLabel,
+          secondaryAmount: headlineSecondaryAmount,
           onTapViewRequests: onTapViewRequests,
         ),
         const SizedBox(height: 14),
@@ -42,7 +48,7 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.55,
+          childAspectRatio: 1.35,
           children: [
             _MetricCard(
               icon: Icons.show_chart,
@@ -59,8 +65,8 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
             _MetricCard(
               icon: Icons.emoji_events_outlined,
               iconColor: const Color(0xFF16A34A),
-              value: _formatCurrency(bonuses),
-              label: 'Bonificaciones',
+              value: _formatCurrency(tips),
+              label: 'Propinas',
               valuePrefix: '',
             ),
             _MetricCard(
@@ -178,13 +184,17 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
 }
 
 class _TotalEarningsCard extends StatelessWidget {
-  final double totalEarnings;
-  final double weeklyEarnings;
+  final String title;
+  final double headlineAmount;
+  final String secondaryLabel;
+  final double secondaryAmount;
   final VoidCallback? onTapViewRequests;
 
   const _TotalEarningsCard({
-    required this.totalEarnings,
-    required this.weeklyEarnings,
+    required this.title,
+    required this.headlineAmount,
+    required this.secondaryLabel,
+    required this.secondaryAmount,
     required this.onTapViewRequests,
   });
 
@@ -238,7 +248,7 @@ class _TotalEarningsCard extends StatelessWidget {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Ganancias totales',
+                          title,
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -267,7 +277,7 @@ class _TotalEarningsCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    _formatCurrency(totalEarnings),
+                    _formatCurrency(headlineAmount),
                     style: const TextStyle(
                       fontSize: 30,
                       fontWeight: FontWeight.w900,
@@ -295,7 +305,7 @@ class _TotalEarningsCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Esta semana',
+                                secondaryLabel,
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -304,7 +314,7 @@ class _TotalEarningsCard extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _formatCurrency(weeklyEarnings),
+                                _formatCurrency(secondaryAmount),
                                 style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w900,
@@ -369,7 +379,7 @@ class _MetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: backgroundWhite,
         borderRadius: BorderRadius.circular(16),
@@ -380,27 +390,33 @@ class _MetricCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
               color: iconColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: iconColor, size: 18),
           ),
-          const SizedBox(height: 10),
-          Text(
-            '$valuePrefix$value',
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: textGray900,
-              letterSpacing: -0.2,
+          const SizedBox(height: 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '$valuePrefix$value',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: textGray900,
+                letterSpacing: -0.2,
+              ),
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w600,

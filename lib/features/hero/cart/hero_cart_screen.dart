@@ -2,13 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
-import '../../../core/utils/price_formatter.dart';
 import '../../../core/utils/weight_utils.dart';
 import 'cart_provider.dart';
 import 'cart_item.dart';
 import 'checkout_screen.dart';
-import '../../shared/profile/presentation/providers/profile_provider.dart';
-import '../../shared/profile/presentation/views/rut_verification_screen.dart';
 
 class HeroCartScreen extends ConsumerWidget {
   const HeroCartScreen({super.key});
@@ -108,24 +105,6 @@ class HeroCartScreen extends ConsumerWidget {
                               ),
                             ),
                             onPressed: () {
-                              final user = ref.read(profileStreamProvider).value;
-                              if (user != null && !user.isRutVerified) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Debes verificar tu RUT para proceder al pago.',
-                                    ),
-                                    duration: Duration(seconds: 3),
-                                  ),
-                                );
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const RutVerificationScreen(),
-                                  ),
-                                );
-                                return;
-                              }
                               Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) => const CheckoutScreen(),
@@ -268,7 +247,7 @@ class _CartItemTile extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '\$${formatPriceCL(item.price)}',
+                        '\$${_formatPriceCLP(item.price)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14,
@@ -321,6 +300,11 @@ class _CartItemTile extends ConsumerWidget {
                           price: item.price,
                           weight: item.weight,
                           imageUrl: item.imageUrl,
+                          availableQty: item.availableQty,
+                          pickupGeo: item.pickupGeo,
+                          pickupCountryCode: item.pickupCountryCode,
+                          sellerHeroId: item.sellerHeroId,
+                          allowInPersonPickup: item.allowInPersonPickup,
                         ),
                   ),
                 ],
@@ -367,4 +351,26 @@ class _QtyButton extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatPriceCLP(double value) {
+  final negative = value < 0;
+  final abs = value.abs();
+
+  final rounded = abs.round().toString();
+  final groupedInt = _groupThousands(rounded);
+  final sign = negative ? '-' : '';
+  return '$sign$groupedInt';
+}
+
+String _groupThousands(String digits) {
+  final buffer = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    final remaining = digits.length - i;
+    buffer.write(digits[i]);
+    if (remaining > 1 && remaining % 3 == 1) {
+      buffer.write('.');
+    }
+  }
+  return buffer.toString();
 }

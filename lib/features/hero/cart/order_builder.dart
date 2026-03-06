@@ -13,16 +13,14 @@ import '../../../domain/entities/concierge_info.dart';
 import 'cart_item.dart';
 import 'cart_summary_provider.dart';
 
-/// Utility class to build Order objects from cart data
 class OrderBuilder {
-  /// Builds a complete Order object from cart items and summary
-  ///
-  /// This creates a local preview of the order before submission.
-  /// The orderId will be empty and should be set by Firestore when creating the order.
+
   static Order buildOrderFromCart({
     String orderId = '',
     required List<CartItem> cartItems,
     required CartSummary cartSummary,
+    double tip = 0.0,
+    double estimatedDistanceKm = 0.0,
     required String heroId,
     required OrderDelivery delivery,
     OrderStatus status = OrderStatus.pendingPayment,
@@ -35,6 +33,7 @@ class OrderBuilder {
     PickupSchedule? pickupSchedule,
     bool useConcierge = false,
     ConciergeInfo? conciergeInfo,
+    bool inPersonPickup = false,
   }) {
     if (cartItems.isEmpty) {
       throw Exception('Cannot create order from empty cart');
@@ -45,13 +44,14 @@ class OrderBuilder {
     // Convert cart items to order items
     final orderItems = cartItems.map((item) => item.toOrderItem()).toList();
 
+    final sellerHeroIds = cartItems
+        .map((i) => i.sellerHeroId?.trim() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
     // Calculate total weight
     final totalWeight = cartSummary.totalWeight;
-
-    // Determine required vehicle based on weight
-    final requiredVehicle = OrderRequirements.calculateRequiredVehicle(
-      totalWeight,
-    );
 
     // Create order pickup (seller's location)
     final pickup = OrderPickup(
@@ -92,10 +92,26 @@ class OrderBuilder {
     }
 
     // Create order requirements
+    final safeEstimatedKm =
+        estimatedDistanceKm.isNaN || estimatedDistanceKm.isInfinite
+            ? 0.0
+            : estimatedDistanceKm;
+
+    final requiredVehicle = (() {
+      try {
+        return OrderRequirements.calculateRequiredVehicleFor(
+          weightKg: totalWeight,
+          distanceKm: safeEstimatedKm,
+        );
+      } catch (_) {
+        return OrderRequirements.calculateRequiredVehicle(totalWeight);
+      }
+    })();
+
     final requirements = OrderRequirements(
       weightKg: totalWeight,
       requiredVehicle: requiredVehicle,
-      estimatedDistanceKm: 0.0, // Will be calculated when addresses are known
+      estimatedDistanceKm: safeEstimatedKm,
     );
 
     // Create unassigned rider
@@ -104,16 +120,20 @@ class OrderBuilder {
     // Create timestamps
     final timestamps = OrderTimestamps(createdAt: now);
 
+    final safeTip = tip.isNaN || tip.isInfinite ? 0.0 : tip;
+
     // Build the order
     return Order(
       orderId: orderId,
       heroId: heroId,
+      sellerHeroIds: sellerHeroIds,
       items: orderItems,
       subtotal: cartSummary.subtotal,
       deliveryFee: cartSummary.shippingCost,
       serviceFee: cartSummary.serviceFee,
       tax: cartSummary.tax,
-      amountTotal: cartSummary.total,
+      tip: safeTip,
+      amountTotal: cartSummary.total + safeTip,
       currency: 'CLP',
       pickup: pickup,
       pickupStops: pickupStops.isEmpty ? null : pickupStops,
@@ -127,6 +147,7 @@ class OrderBuilder {
       pickupSchedule: pickupSchedule,
       useConcierge: useConcierge,
       conciergeInfo: conciergeInfo,
+      inPersonPickup: inPersonPickup,
     );
   }
 

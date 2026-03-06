@@ -16,6 +16,7 @@ class User {
   final RiderProfile? riderProfile;
   final String? verificationStatus;
   final String? rutVerificationStatus;
+  final String? licenseVerificationStatus;
 
   User({
     required this.id,
@@ -28,12 +29,14 @@ class User {
     this.riderProfile,
     this.verificationStatus,
     this.rutVerificationStatus,
+    this.licenseVerificationStatus,
   });
 
   String get fullName => identity.fullName;
   String get email => contact.email;
   String get firstName => identity.firstName;
   String get lastName => identity.lastName;
+  String get documentType => identity.documentType;
   String get documentId => identity.documentId;
   String get phoneNumber => contact.phoneNumber;
   DateTime get createdAt => status.createdAt;
@@ -43,8 +46,14 @@ class User {
   bool get hasMultipleRoles => roles.length > 1;
 
   bool get isRutVerified {
+    if (identity.documentType.trim().toLowerCase() != 'rut') return true;
     final v = (rutVerificationStatus ?? verificationStatus)?.trim().toLowerCase();
     return v == 'verified' || v == 'aprobado' || v == 'approved';
+  }
+
+  bool get isLicenseVerified {
+    final v = licenseVerificationStatus?.trim().toLowerCase();
+    return v == 'approved';
   }
 
   bool get canActAsHero => isHero && heroProfile != null && heroProfile!.isActive;
@@ -62,6 +71,7 @@ class User {
     RiderProfile? riderProfile,
     String? verificationStatus,
     String? rutVerificationStatus,
+    String? licenseVerificationStatus,
   }) {
     return User(
       id: id ?? this.id,
@@ -74,6 +84,8 @@ class User {
       riderProfile: riderProfile ?? this.riderProfile,
       verificationStatus: verificationStatus ?? this.verificationStatus,
       rutVerificationStatus: rutVerificationStatus ?? this.rutVerificationStatus,
+      licenseVerificationStatus:
+          licenseVerificationStatus ?? this.licenseVerificationStatus,
     );
   }
 }

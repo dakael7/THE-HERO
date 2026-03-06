@@ -5,6 +5,7 @@ import '../usecases/orders/get_orders_by_hero_usecase.dart';
 import '../usecases/orders/get_orders_by_rider_usecase.dart';
 import '../usecases/orders/get_available_orders_usecase.dart';
 import '../usecases/orders/claim_order_usecase.dart';
+import '../usecases/orders/unassign_rider_and_requeue_usecase.dart';
 import '../usecases/orders/update_order_status_usecase.dart';
 
 final createOrderUseCaseProvider = Provider<CreateOrderUseCase>((ref) {
@@ -39,4 +40,10 @@ final claimOrderUseCaseProvider = Provider<ClaimOrderUseCase>((ref) {
 final updateOrderStatusUseCaseProvider = Provider<UpdateOrderStatusUseCase>((ref) {
   final repository = ref.read(ordersRepositoryProvider);
   return UpdateOrderStatusUseCase(repository: repository);
+});
+
+final unassignRiderAndRequeueUseCaseProvider =
+    Provider<UnassignRiderAndRequeueUseCase>((ref) {
+  final repository = ref.read(ordersRepositoryProvider);
+  return UnassignRiderAndRequeueUseCase(repository: repository);
 });

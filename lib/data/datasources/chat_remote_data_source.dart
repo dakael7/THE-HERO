@@ -15,6 +15,12 @@ abstract class ChatRemoteDataSource {
     required String text,
   });
 
+  Future<void> setTyping({
+    required String chatId,
+    required String userId,
+    required bool isTyping,
+  });
+
   Future<void> ensureChatExists(ChatModel chat);
   Future<void> markMessagesAsRead({
     required String chatId,
@@ -48,10 +54,67 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       )) {
         yield chats;
       }
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        yield <ChatModel>[];
+        return;
+      }
+      try {
+        await for (final chats in streamFromQuery(baseQuery)) {
+          yield chats;
+        }
+      } on FirebaseException catch (e) {
+        if (e.code == 'permission-denied') {
+          yield <ChatModel>[];
+          return;
+        }
+        rethrow;
+      }
     } catch (e) {
       await for (final chats in streamFromQuery(baseQuery)) {
         yield chats;
       }
+    }
+  }
+
+  @override
+  Future<void> setTyping({
+    required String chatId,
+    required String userId,
+    required bool isTyping,
+  }) async {
+    final chatRef = _firestore.collection('chats').doc(chatId);
+    final nowServer = FieldValue.serverTimestamp();
+    final fieldPath = FieldPath(<String>['typing', userId]);
+
+    try {
+      if (isTyping) {
+        await chatRef.update({fieldPath: nowServer});
+      } else {
+        await chatRef.update({fieldPath: FieldValue.delete()});
+      }
+    } on FirebaseException catch (e) {
+      // If the chat document doesn't exist yet, create it with merge.
+      if (e.code == 'not-found') {
+        if (isTyping) {
+          await chatRef.set(
+            {
+              'typing': {userId: nowServer},
+            },
+            SetOptions(merge: true),
+          );
+        } else {
+          await chatRef.set(
+            {
+              'typing': {userId: FieldValue.delete()},
+            },
+            SetOptions(merge: true),
+          );
+        }
+        return;
+      }
+      if (e.code == 'permission-denied') return;
+      rethrow;
     }
   }
 
@@ -77,7 +140,14 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
                   }),
                 )
                 .toList(),
-          );
+          )
+          .handleError((error) {
+            if (error is FirebaseException &&
+                error.code == 'permission-denied') {
+              return;
+            }
+            throw error;
+          });
     } catch (e) {
       throw Exception('Error al obtener mensajes del chat: $e');
     }
@@ -112,7 +182,9 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
 
         transaction.update(chatRef, {
           'lastMessageText': text,
+          'lastMessageSenderId': senderId,
           'lastMessageAt': nowServer,
+          'unreadCount': FieldValue.increment(1),
           'updatedAt': nowServer,
         });
       });
@@ -131,12 +203,53 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       final data = chat.toJson();
 
       if (existing.exists) {
-        // Chat exists, update only participant names and metadata
-        await chatRef.set({
-          'buyerName': data['buyerName'],
-          'riderName': data['riderName'],
+        // Only update names if the new value is a real name (not a fallback).
+        // This prevents a viewer who can't resolve a name from overwriting
+        // the correct name already stored by the original participant.
+        final existingData = existing.data() ?? {};
+        final _generic = {
+          'Hero',
+          'Comprador',
+          'Rider',
+          'Cliente',
+          'Vendedor',
+          '',
+        };
+
+        String? _pickName(String key, String? incoming) {
+          if (incoming == null || _generic.contains(incoming.trim())) {
+            return existingData[key]?.toString();
+          }
+          return incoming;
+        }
+
+        final resolvedBuyerName = _pickName(
+          'buyerName',
+          data['buyerName'] as String?,
+        );
+        final resolvedRiderName = _pickName(
+          'riderName',
+          data['riderName'] as String?,
+        );
+
+        final updateData = <String, dynamic>{
           'updatedAt': nowServer,
-        }, SetOptions(merge: true));
+          'participantIds': data['participantIds'],
+        };
+
+        final type = (data['type'] as String?) ?? '';
+        if (type == 'hero_rider') {
+          updateData['sellerId'] = FieldValue.delete();
+        }
+        if (type == 'hero_seller') {
+          updateData['riderId'] = FieldValue.delete();
+        }
+        if (resolvedBuyerName != null)
+          updateData['buyerName'] = resolvedBuyerName;
+        if (resolvedRiderName != null)
+          updateData['riderName'] = resolvedRiderName;
+
+        await chatRef.set(updateData, SetOptions(merge: true));
       } else {
         // Chat doesn't exist, create it
         await chatRef.set({
@@ -160,19 +273,24 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       final chatRef = _firestore.collection('chats').doc(chatId);
       final messagesRef = chatRef.collection('messages');
 
-      // Get all unread messages (messages without readAt that were not sent by current user)
-      final unreadMessages = await messagesRef
+      final unreadSnapshot = await messagesRef
           .where('readAt', isNull: true)
-          .where('senderId', isNotEqualTo: userId)
           .get();
+      if (unreadSnapshot.docs.isEmpty) return;
 
-      if (unreadMessages.docs.isEmpty) return;
+      final unreadMessages = unreadSnapshot.docs.where((doc) {
+        final data = doc.data();
+        final senderId = (data['senderId'] as String?) ?? '';
+        return senderId.isNotEmpty && senderId != userId;
+      }).toList();
+
+      if (unreadMessages.isEmpty) return;
 
       // Update all unread messages with readAt timestamp
       final batch = _firestore.batch();
       final nowServer = FieldValue.serverTimestamp();
 
-      for (final doc in unreadMessages.docs) {
+      for (final doc in unreadMessages) {
         batch.update(doc.reference, {'readAt': nowServer});
       }
 
@@ -180,6 +298,11 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       batch.update(chatRef, {'unreadCount': 0, 'updatedAt': nowServer});
 
       await batch.commit();
+    } on FirebaseException catch (e) {
+      if (e.code == 'failed-precondition' || e.code == 'permission-denied') {
+        return;
+      }
+      rethrow;
     } catch (e) {
       throw Exception('Error al marcar mensajes como leídos: $e');
     }

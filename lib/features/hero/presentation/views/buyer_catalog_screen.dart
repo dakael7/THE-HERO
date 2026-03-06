@@ -144,6 +144,7 @@ class BuyerCatalogScreen extends ConsumerWidget {
                                     child: ProductCard(
                                       offerId: offer.offerId,
                                       name: offer.title,
+                                      sellerHeroId: offer.heroId,
                                       condition: offer.condition.displayName,
                                       colorCondition: _conditionColor(
                                         offer.condition,
@@ -155,6 +156,12 @@ class BuyerCatalogScreen extends ConsumerWidget {
                                       weight: offer.weight,
                                       pickupGeo:
                                           offer.itemLocationSnapshot?.geopoint,
+                                      pickupAddressSnapshot:
+                                          offer.itemLocationSnapshot?.fullAddress,
+                                      pickupCountryCode:
+                                          offer.itemLocationSnapshot?.countryCode,
+                                      allowInPersonPickup:
+                                          offer.allowInPersonPickup,
                                       showShadow: false,
                                       imageUrl: offer.coverImageUrl,
                                       avgRating: offer.avgRating,
@@ -334,6 +341,16 @@ class OfferDetailScreen extends ConsumerStatefulWidget {
 class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   bool _incremented = false;
   int _optimisticViewsDelta = 0;
+  bool _addedToCartFeedback = false;
+
+  Future<void> _triggerAddedToCartFeedback() async {
+    if (!mounted) return;
+    if (_addedToCartFeedback) return;
+    setState(() => _addedToCartFeedback = true);
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (!mounted) return;
+    setState(() => _addedToCartFeedback = false);
+  }
 
   @override
   void initState() {
@@ -1019,6 +1036,33 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
             width: double.infinity,
             child: GestureDetector(
               onTap: () {
+                final currentUserId = ref.read(profileProvider).maybeWhen(
+                      data: (user) => user?.id,
+                      orElse: () => null,
+                    );
+                if (currentUserId != null && offer.heroId == currentUserId) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'No puedes agregar al carrito tus propias donaciones. Puedes gestionarlas desde “Mis donaciones”.',
+                      ),
+                      duration: Duration(seconds: 4),
+                    ),
+                  );
+                  return;
+                }
+
+                final pickupCc = offer.itemLocationSnapshot?.countryCode?.trim();
+                if (pickupCc == null || pickupCc.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Este producto no tiene país de retiro configurado. Podrás agregarlo al carrito, pero el checkout se bloqueará hasta que el vendedor actualice la ubicación de la publicación.',
+                      ),
+                      duration: Duration(seconds: 5),
+                    ),
+                  );
+                }
                 ref
                     .read(cartProvider.notifier)
                     .addItem(
@@ -1028,8 +1072,16 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       price: 0.0,
                       weight: offer.weight,
                       imageUrl: offer.coverImageUrl,
+                      availableQty: offer.availableQty,
                       pickupGeo: offer.itemLocationSnapshot?.geopoint,
+                      pickupAddressSnapshot:
+                          offer.itemLocationSnapshot?.fullAddress,
+                      pickupCountryCode:
+                          offer.itemLocationSnapshot?.countryCode,
+                      sellerHeroId: offer.heroId,
+                      allowInPersonPickup: offer.allowInPersonPickup,
                     );
+                _triggerAddedToCartFeedback();
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(
@@ -1037,24 +1089,62 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   vertical: 14,
                 ),
                 decoration: BoxDecoration(
-                  color: primaryOrange,
+                  color:
+                      _addedToCartFeedback ? const Color(0xFF16A34A) : primaryOrange,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: primaryOrange.withOpacity(0.3),
+                      color: (_addedToCartFeedback
+                              ? const Color(0xFF16A34A)
+                              : primaryOrange)
+                          .withOpacity(0.3),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                child: const Text(
-                  'Agregar al carrito',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: backgroundWhite,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutBack,
+                  switchOutCurve: Curves.easeIn,
+                  transitionBuilder: (child, anim) {
+                    return FadeTransition(
+                      opacity: anim,
+                      child: ScaleTransition(scale: anim, child: child),
+                    );
+                  },
+                  child: _addedToCartFeedback
+                      ? const Row(
+                          key: ValueKey('added'),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle_outline,
+                              color: backgroundWhite,
+                              size: 18,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Agregado',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: backgroundWhite,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        )
+                      : const Text(
+                          key: ValueKey('add'),
+                          'Agregar al carrito',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: backgroundWhite,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                 ),
               ),
             ),

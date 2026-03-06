@@ -10,11 +10,13 @@ class MapLocationResult {
   final double latitude;
   final double longitude;
   final String address;
+  final String? countryCode;
 
   const MapLocationResult({
     required this.latitude,
     required this.longitude,
     required this.address,
+    this.countryCode,
   });
 }
 
@@ -46,6 +48,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   GoogleMapController? _controller;
   bool _isLocating = false;
   bool _isResolvingAddress = false;
+  String? _selectedCountryCode;
 
   @override
   void initState() {
@@ -111,6 +114,22 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       final first = results.first;
       if (first is! Map<String, dynamic>) return;
 
+      String? countryCode;
+      final addressComponents = first['address_components'];
+      if (addressComponents is List) {
+        for (final c in addressComponents) {
+          if (c is! Map<String, dynamic>) continue;
+          final types = c['types'];
+          final shortName = c['short_name'];
+          if (types is List && types.contains('country')) {
+            if (shortName is String && shortName.trim().isNotEmpty) {
+              countryCode = shortName.trim().toUpperCase();
+              break;
+            }
+          }
+        }
+      }
+
       final formatted = first['formatted_address'];
       if (formatted is! String || formatted.trim().isEmpty) return;
 
@@ -121,6 +140,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       );
       if (!mounted) return;
       setState(() {
+        _selectedCountryCode = countryCode;
         if (compoundPlusCode != null) {
           _addressController.text = resolved;
           return;
@@ -150,6 +170,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         latitude: _selected.latitude,
         longitude: _selected.longitude,
         address: _sanitizeAddress(resolvedAddress),
+        countryCode: _selectedCountryCode,
       ),
     );
   }

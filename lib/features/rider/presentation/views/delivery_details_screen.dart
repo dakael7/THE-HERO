@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,16 +9,26 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../../core/config/env.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../domain/entities/location_entity.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/services/rider_commission_calculator.dart';
 import '../../../../data/repositories/location_repository_impl.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../shared/profile/presentation/views/rut_verification_screen.dart';
+import '../../../hero/payment/providers/payment_providers.dart';
 import '../../domain/services/rider_tracking_service.dart';
 import '../../domain/services/directions_service.dart';
 import '../providers/rider_nearby_providers.dart';
 import 'rider_delivery_map_screen.dart';
+import '../../../../domain/entities/payment.dart';
+
+final _currentDeviceLocationProvider = FutureProvider.autoDispose<LocationEntity>((
+  ref,
+) {
+  final repo = LocationRepositoryImpl();
+  return repo.getCurrentLocation();
+});
 
 final _routeProvider = FutureProvider.autoDispose
     .family<DirectionsRoute, _RouteRequestParams>((ref, params) {
@@ -85,6 +96,13 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
 
   double _roundCoord(double v) => double.parse(v.toStringAsFixed(5));
 
+  bool _isValidLatLng(gmap.LatLng p) {
+    if (!p.latitude.isFinite || !p.longitude.isFinite) return false;
+    if (p.latitude == 0.0 && p.longitude == 0.0) return false;
+    if (p.latitude.abs() > 90 || p.longitude.abs() > 180) return false;
+    return true;
+  }
+
   @override
   void dispose() {
     _mapController?.dispose();
@@ -95,11 +113,22 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
   Widget build(BuildContext context) {
     final claimState = ref.watch(orderNotifierProvider);
 
-    // Extract data from order
     final stops = widget.order.pickupStops ?? const [];
     final earnings = RiderCommissionCalculator.calculateCommission(
       deliveryFee: widget.order.deliveryFee,
     );
+
+    final paymentAsync = ref.watch(
+      watchPaymentByOrderIdProvider(widget.order.orderId),
+    );
+    final payment = paymentAsync.asData?.value;
+    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
+        (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
+    final baseAmountToShow = isCashPayment
+        ? (widget.order.amountTotal - widget.order.tip)
+            .clamp(0, double.infinity)
+        : earnings.netEarnings;
     final primaryPickupGeo = (stops.isNotEmpty) ? stops.first.geo : widget.order.pickup.geo;
     final pickupLat = primaryPickupGeo.latitude;
     final pickupLng = primaryPickupGeo.longitude;
@@ -111,27 +140,41 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       data: (loc) => gmap.LatLng(loc.latitude, loc.longitude),
       orElse: () => null,
     );
-    final riderLatLngStable = deviceLatLng == null
+
+    final currentLocationAsync = ref.watch(_currentDeviceLocationProvider);
+    final currentLatLng = currentLocationAsync.maybeWhen(
+      data: (loc) => gmap.LatLng(loc.latitude, loc.longitude),
+      orElse: () => null,
+    );
+
+    final effectiveRiderLatLng = (deviceLatLng != null && _isValidLatLng(deviceLatLng))
+        ? deviceLatLng
+        : ((currentLatLng != null && _isValidLatLng(currentLatLng))
+            ? currentLatLng
+            : null);
+
+    final riderLatLngStable = effectiveRiderLatLng == null
         ? null
         : gmap.LatLng(
-            _roundCoord(deviceLatLng.latitude),
-            _roundCoord(deviceLatLng.longitude),
+            _roundCoord(effectiveRiderLatLng.latitude),
+            _roundCoord(effectiveRiderLatLng.longitude),
           );
 
-    final showFullRoute = riderLatLngStable != null;
+    final showFullRoute = riderLatLngStable != null && _isValidLatLng(riderLatLngStable);
 
-    final pickupWaypoints = stops
+    final pickupPoints = stops.isNotEmpty ? stops.map((s) => s.geo).toList() : <GeoPoint>[widget.order.pickup.geo];
+    final pickupWaypoints = pickupPoints
         .map(
-          (s) => DirectionsPoint(
-            latitude: s.geo.latitude,
-            longitude: s.geo.longitude,
+          (geo) => DirectionsPoint(
+            latitude: geo.latitude,
+            longitude: geo.longitude,
           ),
         )
-        .toList();
-    final pickupWaypointsKey = stops
+        .toList(growable: false);
+    final pickupWaypointsKey = pickupPoints
         .map(
-          (s) =>
-              '${s.geo.latitude.toStringAsFixed(5)},${s.geo.longitude.toStringAsFixed(5)}',
+          (geo) =>
+              '${geo.latitude.toStringAsFixed(5)},${geo.longitude.toStringAsFixed(5)}',
         )
         .join('|');
 
@@ -178,7 +221,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
 
     final debug = 'rider=${riderLatLngStable == null ? '-' : '${riderLatLngStable.latitude},${riderLatLngStable.longitude}'} '
         'pickup=$pickupLat,$pickupLng delivery=$deliveryLat,$deliveryLng '
-        'fullRoute=$showFullRoute';
+        'fullRoute=$showFullRoute '
+        'src=${effectiveRiderLatLng == null ? '-' : (deviceLatLng != null ? 'stream' : 'current')}';
     if (_lastRouteDebug != debug) {
       _lastRouteDebug = debug;
       // ignore: avoid_print
@@ -226,7 +270,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
     }
 
     final cameraPoints = <gmap.LatLng>[
-      if (riderLatLngStable != null) riderLatLngStable,
+      if (showFullRoute) riderLatLngStable,
       ...allPickupLocations,
       deliveryLocation,
     ];
@@ -237,64 +281,68 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
         children: [
           // Mapa con la ruta
           Positioned.fill(
-            child: gmap.GoogleMap(
-              initialCameraPosition: gmap.CameraPosition(
-                target: initialCenter,
-                zoom: 13.5,
-              ),
-              onMapCreated: (controller) {
-                _mapController = controller;
-                // Ajustar bounds para mostrar marcadores
-                if (polylinePoints.isNotEmpty) {
-                  Future.delayed(const Duration(milliseconds: 500), () {
-                    if (_mapController != null) {
-                      _mapController!.animateCamera(
-                        gmap.CameraUpdate.newLatLngBounds(
-                          boundsForPoints(cameraPoints),
-                          80,
-                        ),
-                      );
-                    }
-                  });
-                }
-              },
-              polylines: {
-                if (polylinePoints.isNotEmpty)
-                  gmap.Polyline(
-                    polylineId: const gmap.PolylineId('route'),
-                    points: polylinePoints,
-                    width: 4,
-                    color: primaryOrange,
-                    patterns: [
-                      gmap.PatternItem.dash(20),
-                      gmap.PatternItem.gap(10),
-                    ],
-                  ),
-              },
-              markers: {
-                ...pickupMarkers,
-                gmap.Marker(
-                  markerId: const gmap.MarkerId('delivery'),
-                  position: deliveryLocation,
-                  icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                    gmap.BitmapDescriptor.hueGreen,
-                  ),
-                  infoWindow: const gmap.InfoWindow(title: 'Entrega'),
+            child: SafeArea(
+              bottom: false,
+              child: gmap.GoogleMap(
+                initialCameraPosition: gmap.CameraPosition(
+                  target: initialCenter,
+                  zoom: 13.5,
                 ),
-                if (deviceLatLng != null)
-                  gmap.Marker(
-                    markerId: const gmap.MarkerId('rider'),
-                    position: deviceLatLng,
-                    icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                      gmap.BitmapDescriptor.hueAzure,
+                onMapCreated: (controller) {
+                  _mapController = controller;
+                  // Ajustar bounds para mostrar marcadores
+                  if (polylinePoints.isNotEmpty) {
+                    Future.delayed(const Duration(milliseconds: 500), () {
+                      if (_mapController != null) {
+                        _mapController!.animateCamera(
+                          gmap.CameraUpdate.newLatLngBounds(
+                            boundsForPoints(cameraPoints),
+                            80,
+                          ),
+                        );
+                      }
+                    });
+                  }
+                },
+                polylines: {
+                  if (polylinePoints.isNotEmpty)
+                    gmap.Polyline(
+                      polylineId: const gmap.PolylineId('route'),
+                      points: polylinePoints,
+                      width: 4,
+                      color: primaryOrange,
+                      patterns: [
+                        gmap.PatternItem.dash(20),
+                        gmap.PatternItem.gap(10),
+                      ],
                     ),
-                    infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
+                },
+                markers: {
+                  ...pickupMarkers,
+                  gmap.Marker(
+                    markerId: const gmap.MarkerId('delivery'),
+                    position: deliveryLocation,
+                    icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                      gmap.BitmapDescriptor.hueGreen,
+                    ),
+                    infoWindow: const gmap.InfoWindow(title: 'Entrega'),
                   ),
-              },
-              myLocationEnabled: true,
-              myLocationButtonEnabled: true,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
+                  if (effectiveRiderLatLng != null &&
+                      _isValidLatLng(effectiveRiderLatLng))
+                    gmap.Marker(
+                      markerId: const gmap.MarkerId('rider'),
+                      position: effectiveRiderLatLng,
+                      icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                        gmap.BitmapDescriptor.hueAzure,
+                      ),
+                      infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
+                    ),
+                },
+                myLocationEnabled: true,
+                myLocationButtonEnabled: true,
+                zoomControlsEnabled: false,
+                mapToolbarEnabled: false,
+              ),
             ),
           ),
 
@@ -306,11 +354,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
             child: SafeArea(
               bottom: false,
               child: Container(
-                padding: const EdgeInsets.only(
-                  left: 8,
-                  right: 8,
-                  bottom: 8,
-                ),
+                padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
                 child: Row(
                   children: [
                     Container(
@@ -331,13 +375,30 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Text(
-                      'Detalles de Entrega',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.28),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.20),
+                          ),
+                        ),
+                        child: const Text(
+                          'Detalles de Entrega',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -360,7 +421,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                     Expanded(
                       child: _buildInfoCard(
                         icon: Icons.route_outlined,
-                        label: 'Distancia',
+                        label: showFullRoute
+                            ? 'Distancia (desde tu ubicación)'
+                            : 'Distancia (del pedido)',
                         value: distanceText,
                         color: primaryOrange,
                       ),
@@ -544,7 +607,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '\$${earnings.netEarnings.toStringAsFixed(0)}',
+                                '\$${baseAmountToShow.toStringAsFixed(0)}',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
@@ -708,6 +771,18 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               ],
                             ),
                       color: primaryOrange,
+                      onTap: () async {
+                        final geo = widget.order.pickup.geo;
+                        final copy = '${widget.order.pickup.addressSnapshot}\n(${geo.latitude}, ${geo.longitude})';
+                        await Clipboard.setData(ClipboardData(text: copy));
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Recogida copiada al portapapeles'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     _buildCompactAddressRow(
@@ -744,6 +819,19 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                         ],
                       ),
                       color: categoryTextGreen,
+                      onTap: () async {
+                        final geo = widget.order.delivery.geo;
+                        final copy =
+                            '${widget.order.delivery.addressSnapshot}\n(${geo.latitude}, ${geo.longitude})';
+                        await Clipboard.setData(ClipboardData(text: copy));
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Entrega copiada al portapapeles'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
                     ),
                     if (widget.order.delivery.deliverToReception) ...[
                       const SizedBox(height: 8),
@@ -779,7 +867,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                         ),
                       ),
                     ],
-                          const SizedBox(height: 24),
+                    const SizedBox(height: 24),
                         ],
                       ),
                     ),
@@ -804,7 +892,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               elevation: 2,
-                              shadowColor: primaryOrange.withValues(alpha: 0.4),
+                              shadowColor:
+                                  primaryOrange.withValues(alpha: 0.4),
                             ),
                             child: claimState.isLoading
                                 ? const SizedBox(
@@ -894,43 +983,51 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
     required String label,
     required Widget address,
     required Color color,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: backgroundGray50,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 18),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: backgroundGray50,
+            borderRadius: BorderRadius.circular(10),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: textGray600,
-                  ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 2),
-                address,
-              ],
-            ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: textGray600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    address,
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1007,7 +1104,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       return;
     }
 
-    final riderVehicleType = user.riderProfile!.activeVehicle.type;
+    final riderVehicleType = user.riderProfile!.activeVehicleTypeEnum;
     final riderName = user.identity.fullName;
     final riderPhone = user.contact.phoneNumber;
 

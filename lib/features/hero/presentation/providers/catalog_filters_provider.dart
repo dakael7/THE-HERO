@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/entities/offer.dart';
+import '../../../../data/providers/network_providers.dart';
 import '../../../offers/presentation/providers/offers_provider.dart';
+import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
 /// Enum for sort options
 enum SortOption { newest, priceAsc, priceDesc, popular, topRated }
@@ -105,8 +107,20 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
   final offersAsync = ref.watch(activeOffersProvider(OffersFilter()));
   final filters = ref.watch(catalogFiltersProvider);
 
+  final authUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+  final profileUserId = ref.watch(profileProvider).maybeWhen(
+        data: (user) => user?.id,
+        orElse: () => null,
+      );
+
+  final currentUserId = authUid ?? profileUserId;
+
   return offersAsync.whenData((offers) {
     var filtered = offers.where((offer) {
+      if (currentUserId != null && offer.heroId == currentUserId) {
+        return false;
+      }
+
       // Text search - require at least 2 characters
       if (filters.searchQuery.isNotEmpty) {
         final query = filters.searchQuery.toLowerCase().trim();

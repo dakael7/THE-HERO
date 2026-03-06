@@ -17,36 +17,19 @@ final riderLocationForOrderProvider = StreamProvider.autoDispose
         orElse: () => null,
       );
 
+      if (assignedRiderId == null || assignedRiderId.trim().isEmpty) {
+        return Stream.value(null);
+      }
+
       return firestore
           .collection('orders')
           .doc(orderId)
           .collection('rider_location')
+          .doc(assignedRiderId)
           .snapshots()
-          .map((snapshot) {
-            if (snapshot.docs.isEmpty) {
-              return null;
-            }
-
-            // Prefer the assigned rider doc, otherwise pick most recently updated.
-            QueryDocumentSnapshot<Map<String, dynamic>> doc;
-            if (assignedRiderId != null && assignedRiderId.trim().isNotEmpty) {
-              final match = snapshot.docs.where((d) => d.id == assignedRiderId);
-              doc = match.isNotEmpty ? match.first : snapshot.docs.first;
-            } else {
-              doc = snapshot.docs.reduce((a, b) {
-                final aUpdated = a.data()['updatedAt'];
-                final bUpdated = b.data()['updatedAt'];
-
-                final aTs = aUpdated is Timestamp ? aUpdated : null;
-                final bTs = bUpdated is Timestamp ? bUpdated : null;
-
-                if (aTs == null && bTs == null) return a;
-                if (aTs == null) return b;
-                if (bTs == null) return a;
-                return aTs.compareTo(bTs) >= 0 ? a : b;
-              });
-            }
+          .map((doc) {
             final data = doc.data();
+            if (data == null) return null;
 
             final geo = data['geo'] as GeoPoint?;
             if (geo == null) return null;

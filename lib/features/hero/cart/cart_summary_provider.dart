@@ -32,7 +32,61 @@ class CartSummary {
 
 final deliveryGeoProvider = StateProvider<firestore.GeoPoint?>((ref) => null);
 
+final allItemsAllowInPersonPickupProvider = Provider<bool>((ref) {
+  final cartItems = ref.watch(cartProvider);
+  if (cartItems.isEmpty) return false;
+  return cartItems.every((e) => e.allowInPersonPickup);
+});
+
+final inPersonPickupSelectedProvider = StateProvider<bool>((ref) => false);
+
 final routeDistanceKmProvider = StateProvider<double?>((ref) => null);
+
+final effectiveDistanceKmProvider = Provider<double?>((ref) {
+  final cartItems = ref.watch(cartProvider);
+  final deliveryGeo = ref.watch(deliveryGeoProvider);
+  final routeDistanceKm = ref.watch(routeDistanceKmProvider);
+  final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
+  final allItemsAllowInPersonPickup =
+      ref.watch(allItemsAllowInPersonPickupProvider);
+
+  if (inPersonPickupSelected && allItemsAllowInPersonPickup) {
+    return null;
+  }
+
+  final hasRouteDistance = routeDistanceKm != null &&
+      routeDistanceKm.isFinite &&
+      !routeDistanceKm.isNaN &&
+      routeDistanceKm > 0;
+  if (hasRouteDistance) return routeDistanceKm;
+
+  final pickupGeos = cartItems
+      .map((e) => e.pickupGeo)
+      .where(_isValidGeo)
+      .cast<firestore.GeoPoint>()
+      .toList();
+
+  final hasDeliveryGeo = _isValidGeo(deliveryGeo);
+  final hasPickupGeos = pickupGeos.isNotEmpty;
+
+  if (!hasDeliveryGeo || !hasPickupGeos) return null;
+
+  final delivery = deliveryGeo!;
+
+  final uniquePickups = <String, firestore.GeoPoint>{};
+  for (final geo in pickupGeos) {
+    final key = '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
+    uniquePickups[key] = geo;
+  }
+
+  var totalKm = 0.0;
+  for (final geo in uniquePickups.values) {
+    totalKm += _haversineKm(geo, delivery);
+  }
+
+  if (totalKm.isNaN || totalKm.isInfinite || totalKm <= 0) return null;
+  return totalKm;
+});
 
 bool _isValidGeo(firestore.GeoPoint? geo) {
   if (geo == null) return false;
@@ -71,7 +125,10 @@ double _calculateTransportFee({
   required double distanceKm,
   required double totalWeightKg,
 }) {
-  final vehicle = OrderRequirements.calculateRequiredVehicle(totalWeightKg);
+  final vehicle = OrderRequirements.calculateRequiredVehicleFor(
+    weightKg: totalWeightKg,
+    distanceKm: distanceKm,
+  );
   final minimum = TransportPricingConfig.getMinimumCharge(vehicle);
   final basePerKm = TransportPricingConfig.getPricePerKm(vehicle);
 
@@ -93,6 +150,9 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
   final cartItems = ref.watch(cartProvider);
   final deliveryGeo = ref.watch(deliveryGeoProvider);
   final routeDistanceKm = ref.watch(routeDistanceKmProvider);
+  final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
+  final allItemsAllowInPersonPickup =
+      ref.watch(allItemsAllowInPersonPickupProvider);
 
   double subtotal = 0.0;
   double totalWeight = 0.0;
@@ -114,38 +174,52 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
   String? shippingBreakdown;
 
   if (hasItems) {
-    final pickupGeos = cartItems
-        .map((e) => e.pickupGeo)
-        .where(_isValidGeo)
-        .cast<firestore.GeoPoint>()
-        .toList();
+    if (inPersonPickupSelected && allItemsAllowInPersonPickup) {
+      shippingCost = 0.0;
+      shippingBreakdown = null;
+    } else {
+      final pickupGeos = cartItems
+          .map((e) => e.pickupGeo)
+          .where(_isValidGeo)
+          .cast<firestore.GeoPoint>()
+          .toList();
 
-    final hasDeliveryGeo = _isValidGeo(deliveryGeo);
-    final hasPickupGeos = pickupGeos.isNotEmpty;
+      final hasDeliveryGeo = _isValidGeo(deliveryGeo);
+      final hasPickupGeos = pickupGeos.isNotEmpty;
 
-    final hasRouteDistance = routeDistanceKm != null &&
-        routeDistanceKm.isFinite &&
-        !routeDistanceKm.isNaN &&
-        routeDistanceKm > 0;
+      final hasRouteDistance = routeDistanceKm != null &&
+          routeDistanceKm.isFinite &&
+          !routeDistanceKm.isNaN &&
+          routeDistanceKm > 0;
 
-    if (hasRouteDistance) {
-      final totalKm = routeDistanceKm;
-      shippingCost = _calculateTransportFee(
-        distanceKm: totalKm,
-        totalWeightKg: totalWeight,
-      );
+      if (hasRouteDistance) {
+        final totalKm = routeDistanceKm;
+        try {
+          shippingCost = _calculateTransportFee(
+            distanceKm: totalKm,
+            totalWeightKg: totalWeight,
+          );
 
-      shippingBreakdown =
-          '${totalKm.toStringAsFixed(1)} km · ${OrderRequirements.calculateRequiredVehicle(totalWeight).displayName}';
+          final requiredVehicle =
+              OrderRequirements.calculateRequiredVehicleFor(
+            weightKg: totalWeight,
+            distanceKm: totalKm,
+          );
+          shippingBreakdown =
+              '${totalKm.toStringAsFixed(1)} km · ${requiredVehicle.displayName}';
+        } catch (_) {
+          shippingCost = DonationPricingConfig.buyerShippingCost;
+          shippingBreakdown = null;
+        }
 
-      assert(() {
-        debugPrint(
-          '🚚 [CartSummary] Using OSRM routeDistanceKm=${totalKm.toStringAsFixed(2)} shipping=$shippingCost',
-        );
-        return true;
-      }());
-    } else if (hasDeliveryGeo && hasPickupGeos) {
-      final delivery = deliveryGeo!;
+        assert(() {
+          debugPrint(
+            '🚚 [CartSummary] Using OSRM routeDistanceKm=${totalKm.toStringAsFixed(2)} shipping=$shippingCost',
+          );
+          return true;
+        }());
+      } else if (hasDeliveryGeo && hasPickupGeos) {
+        final delivery = deliveryGeo!;
 
       // Si hay múltiples ubicaciones de pickup, aproximamos como la suma de
       // distancias pickup->delivery para cada ubicación única.
@@ -171,13 +245,22 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
           return true;
         }());
       } else {
-        shippingCost = _calculateTransportFee(
-          distanceKm: totalKm,
-          totalWeightKg: totalWeight,
-        );
+        try {
+          shippingCost = _calculateTransportFee(
+            distanceKm: totalKm,
+            totalWeightKg: totalWeight,
+          );
 
-        shippingBreakdown =
-            '${totalKm.toStringAsFixed(1)} km · ${OrderRequirements.calculateRequiredVehicle(totalWeight).displayName}';
+          final requiredVehicle = OrderRequirements.calculateRequiredVehicleFor(
+            weightKg: totalWeight,
+            distanceKm: totalKm,
+          );
+          shippingBreakdown =
+              '${totalKm.toStringAsFixed(1)} km · ${requiredVehicle.displayName}';
+        } catch (_) {
+          shippingCost = DonationPricingConfig.buyerShippingCost;
+          shippingBreakdown = null;
+        }
 
         assert(() {
           debugPrint(
@@ -186,16 +269,18 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
           return true;
         }());
       }
-    } else {
-      // Fallback: si faltan geos (publicaciones legacy), usar costo fijo actual.
-      shippingCost = DonationPricingConfig.buyerShippingCost;
+      } else {
+        // Fallback: si faltan geos (publicaciones legacy), usar costo fijo actual.
+        shippingCost = DonationPricingConfig.buyerShippingCost;
+        shippingBreakdown = null;
 
-      assert(() {
-        debugPrint(
-          '🚚 [CartSummary] Missing/invalid geos. deliveryValid=$hasDeliveryGeo pickupCount=${pickupGeos.length}. Using fallback shipping cost.',
-        );
-        return true;
-      }());
+        assert(() {
+          debugPrint(
+            '🚚 [CartSummary] Missing/invalid geos. deliveryValid=$hasDeliveryGeo pickupCount=${pickupGeos.length}. Using fallback shipping cost.',
+          );
+          return true;
+        }());
+      }
     }
   }
 

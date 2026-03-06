@@ -9,7 +9,6 @@ import '../providers/map_providers.dart';
 import '../state/map_state.dart';
 import '../widgets/map_controls.dart';
 import '../widgets/product_list_sheet.dart';
-import '../widgets/floating_search_bar.dart';
 import '../widgets/filter_chips_widget.dart';
 
 class MapLocationScreen extends ConsumerStatefulWidget {
@@ -23,10 +22,20 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
   gmap.GoogleMapController? _mapController;
   double _currentZoom = 14;
   String? _selectedCategory;
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+  double _sheetExtent = 0.35;
 
   @override
   void initState() {
     super.initState();
+    _sheetController.addListener(() {
+      final next = _sheetController.size;
+      if ((next - _sheetExtent).abs() < 0.001) return;
+      setState(() {
+        _sheetExtent = next;
+      });
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(mapViewModelProvider.notifier).initialize();
     });
@@ -35,6 +44,7 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
   @override
   void dispose() {
     _mapController?.dispose();
+    _sheetController.dispose();
     super.dispose();
   }
 
@@ -51,6 +61,7 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
       backgroundColor: backgroundGray50,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: const Text(
           'Mapa de donaciones',
           style: TextStyle(color: textGray900, fontWeight: FontWeight.w900),
@@ -58,6 +69,13 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
         backgroundColor: Colors.white.withValues(alpha: 0.95),
         elevation: 0,
         foregroundColor: textGray900,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(58),
+          child: SafeArea(
+            bottom: false,
+            child: _buildFilterChips(),
+          ),
+        ),
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -74,6 +92,17 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
           ? _buildErrorState(error)
           : Stack(
               children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final screenHeight = constraints.maxHeight.isFinite
+                        ? constraints.maxHeight
+                        : MediaQuery.of(context).size.height;
+                    final sheetHeight = screenHeight * _sheetExtent;
+                    final safeBottom = MediaQuery.of(context).padding.bottom;
+                    final buttonsBottom = sheetHeight + safeBottom + 16;
+
+                    return Stack(
+                      children: [
                 // Map Section (Full Screen)
                 _ProductsMapSection(
                   onControllerReady: (controller) {
@@ -84,22 +113,39 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
                   },
                 ),
 
-                // Floating Search Bar
-                SafeArea(child: _buildFloatingSearchBar()),
-
-                // Filter Chips
+                // Radius Control Button
                 Positioned(
-                  top: MediaQuery.of(context).padding.top + 130,
-                  left: 0,
-                  right: 0,
-                  child: _buildFilterChips(),
+                  left: 16,
+                  bottom: buttonsBottom,
+                  child: _buildRadiusButton(),
                 ),
 
-                // Radius Control Button
-                Positioned(left: 16, bottom: 100, child: _buildRadiusButton()),
+                Positioned(
+                  right: 16,
+                  bottom: buttonsBottom,
+                  child: MapControls(
+                    onMyLocationTap: () {
+                      final userLoc = ref.read(mapViewModelProvider).userLocation;
+                      if (userLoc == null) return;
+                      _mapController?.animateCamera(
+                        gmap.CameraUpdate.newLatLngZoom(
+                          gmap.LatLng(userLoc.latitude, userLoc.longitude),
+                          15,
+                        ),
+                      );
+                    },
+                    onZoomIn: () {
+                      _mapController?.animateCamera(gmap.CameraUpdate.zoomIn());
+                    },
+                    onZoomOut: () {
+                      _mapController?.animateCamera(gmap.CameraUpdate.zoomOut());
+                    },
+                  ),
+                ),
 
                 // Product List Bottom Sheet
                 DraggableScrollableSheet(
+                  controller: _sheetController,
                   initialChildSize: 0.35,
                   minChildSize: 0.15,
                   maxChildSize: 0.75,
@@ -111,25 +157,12 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen> {
                     );
                   },
                 ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
-    );
-  }
-
-  Widget _buildFloatingSearchBar() {
-    final products = ref.watch(
-      mapViewModelProvider.select((state) => state.nearbyProducts),
-    );
-
-    return FloatingSearchBar(
-      productCount: products.length,
-      onSearchTap: () {
-        // TODO: Implement search functionality
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Búsqueda en desarrollo')));
-      },
-      onFilterTap: () => _showRadiusSheet(),
     );
   }
 
@@ -649,9 +682,7 @@ class _ProductsMapSectionState extends ConsumerState<_ProductsMapSection> {
           zoom: 15,
         );
 
-    return Stack(
-      children: [
-        gmap.GoogleMap(
+    return gmap.GoogleMap(
           initialCameraPosition: initial,
           onMapCreated: (controller) {
             _controller = controller;
@@ -677,30 +708,6 @@ class _ProductsMapSectionState extends ConsumerState<_ProductsMapSection> {
           myLocationEnabled: false,
           myLocationButtonEnabled: false,
           mapToolbarEnabled: false,
-        ),
-        Positioned(
-          right: 16,
-          bottom: 120,
-          child: MapControls(
-            onMyLocationTap: () {
-              final userLoc = ref.read(mapViewModelProvider).userLocation;
-              if (userLoc == null) return;
-              _controller?.animateCamera(
-                gmap.CameraUpdate.newLatLngZoom(
-                  gmap.LatLng(userLoc.latitude, userLoc.longitude),
-                  15,
-                ),
-              );
-            },
-            onZoomIn: () {
-              _controller?.animateCamera(gmap.CameraUpdate.zoomIn());
-            },
-            onZoomOut: () {
-              _controller?.animateCamera(gmap.CameraUpdate.zoomOut());
-            },
-          ),
-        ),
-      ],
-    );
+        );
   }
 }

@@ -117,7 +117,8 @@ class _RiderVehicleVerificationScreenState
   }) async {
     try {
       final picked = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
         imageQuality: 85,
         maxWidth: 2000,
       );
@@ -205,7 +206,7 @@ class _RiderVehicleVerificationScreenState
   Future<void> _submit() async {
     if (_saving) return;
 
-    final user = ref.read(profileStreamProvider).value;
+    final user = await ref.read(profileProvider.future);
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../../../core/constants/app_colors.dart';
-import '../../../../../core/utils/price_formatter.dart';
 import '../../../../../core/utils/weight_utils.dart';
 import '../../../../../data/providers/repository_providers.dart';
 import '../../../../../domain/entities/offer.dart';
@@ -110,8 +109,6 @@ class SellerOfferDetailScreen extends ConsumerWidget {
       ...offer.imageUrls,
     }.toList();
 
-    // Calcular ingresos (precio * cantidad vendida)
-    final revenue = 0.0;
     final location = offer.itemLocationSnapshot;
     final Widget? locationWidget = location == null
         ? null
@@ -131,7 +128,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Ubicación del producto',
+                          'Ubicación de retiro',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -200,7 +197,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
         backgroundColor: primaryYellow,
         foregroundColor: textGray900,
         title: const Text(
-          'Detalle de mi oferta',
+          'Detalle de mi donación',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
@@ -384,23 +381,16 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                 const Divider(height: 24),
                 _StatRow(
                   icon: Icons.inventory_2_outlined,
-                  label: 'Stock disponible',
+                  label: 'Unidades disponibles',
                   value: '${offer.availableQty}',
                   color: const Color(0xFF10B981),
                 ),
                 const Divider(height: 24),
                 _StatRow(
                   icon: Icons.shopping_cart_outlined,
-                  label: 'Cantidad vendida',
+                  label: 'Entregas realizadas',
                   value: '${offer.orderCount}',
                   color: const Color(0xFF8B5CF6),
-                ),
-                const Divider(height: 24),
-                _StatRow(
-                  icon: Icons.attach_money,
-                  label: 'Ingresos generados',
-                  value: '\$${formatPriceCL(revenue)} CLP',
-                  color: const Color(0xFF10B981),
                 ),
               ],
             ),
@@ -431,7 +421,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
           if (locationWidget != null) locationWidget,
 
           const Text(
-            'Detalles de la oferta',
+            'Detalles de la donación',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
@@ -462,7 +452,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
                 _buildDetailRow(
                   icon: Icons.inventory_2_outlined,
-                  label: 'Stock',
+                  label: 'Unidades',
                   value: '${offer.availableQty}/${offer.stock}',
                 ),
                 const SizedBox(height: 12),
@@ -805,14 +795,16 @@ class SellerOfferDetailScreen extends ConsumerWidget {
       if (context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Oferta pausada exitosamente')),
+          const SnackBar(content: Text('Donación pausada exitosamente')),
         );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error al pausar oferta: $e')));
+        ).showSnackBar(
+          SnackBar(content: Text('Error al pausar donación: $e')),
+        );
       }
     }
   }
@@ -826,14 +818,16 @@ class SellerOfferDetailScreen extends ConsumerWidget {
       if (context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Oferta activada exitosamente')),
+          const SnackBar(content: Text('Donación activada exitosamente')),
         );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error al activar oferta: $e')));
+        ).showSnackBar(
+          SnackBar(content: Text('Error al activar donación: $e')),
+        );
       }
     }
   }
@@ -842,9 +836,9 @@ class SellerOfferDetailScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Eliminar oferta'),
+        title: const Text('Eliminar donación'),
         content: const Text(
-          '¿Estás seguro de que quieres eliminar esta oferta? Esta acción no se puede deshacer.',
+          '¿Estás seguro de que quieres eliminar esta donación? Esta acción no se puede deshacer.',
         ),
         actions: [
           TextButton(

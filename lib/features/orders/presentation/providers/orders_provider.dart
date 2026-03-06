@@ -10,8 +10,7 @@ final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   ref,
   heroId,
 ) {
-  final auth = ref.watch(firebaseAuthProvider);
-  final currentUid = auth.currentUser?.uid;
+  final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
   if (currentUid == null || currentUid != heroId) {
     return Stream.value(const []);
   }
@@ -20,12 +19,39 @@ final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   return useCase.execute(heroId);
 });
 
+final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
+  ref,
+  heroId,
+) {
+  final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+  if (currentUid == null || currentUid != heroId) {
+    return Stream.value(const []);
+  }
+
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore
+      .collection('user_orders')
+      .doc(heroId)
+      .collection('orders')
+      .orderBy('timestamps.createdAt', descending: true)
+      .snapshots()
+      .map((snapshot) {
+        return snapshot.docs
+            .map((doc) {
+              final data = doc.data();
+              if (data['role'] != 'seller') return null;
+              return OrderModel.fromJson(data).toEntity();
+            })
+            .whereType<Order>()
+            .toList();
+      });
+});
+
 final riderOrdersProvider = StreamProvider.autoDispose.family<List<Order>, String>((
   ref,
   riderId,
 ) {
-  final auth = ref.watch(firebaseAuthProvider);
-  final currentUid = auth.currentUser?.uid;
+  final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
   if (currentUid == null || currentUid != riderId) {
     return Stream.value(const []);
   }
@@ -35,8 +61,7 @@ final riderOrdersProvider = StreamProvider.autoDispose.family<List<Order>, Strin
 });
 
 final orderByIdProvider = StreamProvider.autoDispose.family<Order?, String>((ref, orderId) {
-  final auth = ref.watch(firebaseAuthProvider);
-  final currentUid = auth.currentUser?.uid;
+  final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
   if (currentUid == null) {
     return Stream.value(null);
   }
@@ -54,8 +79,8 @@ final orderByIdProvider = StreamProvider.autoDispose.family<Order?, String>((ref
 
 final availableOrdersProvider = StreamProvider.autoDispose
     .family<List<Order>, VehicleType>((ref, riderVehicleType) {
-      final auth = ref.watch(firebaseAuthProvider);
-      if (auth.currentUser == null) {
+      final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+      if (currentUid == null) {
         print('⚠️ [AvailableOrders] No authenticated user');
         return Stream.value(const []);
       }
@@ -64,16 +89,19 @@ final availableOrdersProvider = StreamProvider.autoDispose
         '🔍 [AvailableOrders] Fetching orders for vehicle type: ${riderVehicleType.name}',
       );
       final useCase = ref.read(getAvailableOrdersUseCaseProvider);
-      return useCase.execute(riderVehicleType: riderVehicleType).map((orders) {
+      return useCase
+          .execute(riderVehicleType: riderVehicleType, limit: 20)
+          .map((orders) {
+        final filtered = orders.where((o) => !o.inPersonPickup).toList();
         print(
-          '📦 [AvailableOrders] Received ${orders.length} orders from stream',
+          '📦 [AvailableOrders] Received ${filtered.length} orders from stream',
         );
-        for (var order in orders) {
+        for (var order in filtered) {
           print(
             '   - Order ${order.orderId}: status=${order.status.name}, vehicle=${order.requirements.requiredVehicle.name}',
           );
         }
-        return orders;
+        return filtered;
       });
     });
 
@@ -148,6 +176,23 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
     }
   }
 
+  Future<void> confirmInPersonPickupReceived({
+    required String orderId,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final firestore = ref.read(firebaseFirestoreProvider);
+      await firestore.collection('orders').doc(orderId).update({
+        'confirmedByHero': true,
+        'updatedAt': DateTime.now(),
+      });
+      state = const AsyncValue.data(null);
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
+      rethrow;
+    }
+  }
+
   Future<void> updateStatus(String orderId, String status) async {
     state = const AsyncValue.loading();
     try {
@@ -156,6 +201,21 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
       state = const AsyncValue.data(null);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
+    }
+  }
+
+  Future<void> unassignRiderAndRequeue({
+    required String orderId,
+    required String riderId,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final useCase = ref.read(unassignRiderAndRequeueUseCaseProvider);
+      await useCase.execute(orderId: orderId, riderId: riderId);
+      state = const AsyncValue.data(null);
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
+      rethrow;
     }
   }
 

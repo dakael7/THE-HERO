@@ -18,5 +18,6 @@ abstract class OrdersRepository {
     String riderName,
     String riderPhone,
   );
+  Future<void> unassignRiderAndRequeue(String orderId, String riderId);
   Future<void> cancelOrder(String orderId, String reason, String canceledBy);
 }

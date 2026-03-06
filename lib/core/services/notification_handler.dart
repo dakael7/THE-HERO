@@ -31,10 +31,16 @@ class NotificationHandler {
         _handleSystemNotification(context, data);
         break;
       case 'chat':
+      case 'chat_message':
+        if (action == 'open_chat' || action == 'open') {
+          _handleChatNotification(context, data);
+        }
+        break;
+      case 'open_chat':
         _handleChatNotification(context, data);
         break;
       default:
-        Navigator.of(context).pushNamed('/notifications');
+        return;
     }
   }
 

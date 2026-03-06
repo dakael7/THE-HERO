@@ -19,15 +19,20 @@ import '../../../shared/profile/presentation/providers/profile_provider.dart'
     as profile;
 import '../../../shared/profile/presentation/views/profile_screen.dart'
     as profile_view;
-import 'delivery_details_screen.dart';
 import '../providers/rider_nearby_providers.dart';
-import '../providers/rider_stats_provider.dart';
+import '../providers/rider_payout_summary_provider.dart';
+import '../providers/rider_cumulative_stats_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
+import '../../../../domain/providers/orders_usecase_providers.dart';
 import '../../../../domain/entities/order_status.dart';
 import '../../domain/entities/nearby_order.dart';
 import 'rider_delivery_map_screen.dart';
+import 'delivery_details_screen.dart';
 import '../../../shared/profile/presentation/views/rut_verification_screen.dart';
 import '../../../shared/profile/presentation/widgets/rut_verification_cta_banner.dart';
+import '../../../hero/orders/presentation/views/order_receipt_screen.dart';
+import '../../../hero/payment/providers/payment_providers.dart';
+import '../../../../domain/entities/payment.dart';
 
 final mapControllerProvider = StateProvider<gmap.GoogleMapController?>(
   (ref) => null,
@@ -172,6 +177,75 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
   gmap.GoogleMapController? _mapController;
   ProviderSubscription<gmap.GoogleMapController?>? _mapControllerSub;
 
+  static const gmap.LatLng _fallbackCenter = gmap.LatLng(-33.4489, -70.6693);
+
+  Future<bool> _maybeConfirmCashPayment({required String orderId}) async {
+    final paymentRepo = ref.read(paymentRepositoryProvider);
+    final payment = await paymentRepo.getPaymentByOrderId(orderId);
+    if (!mounted) return false;
+    if (payment == null) return true;
+
+    final isCashPayment = payment.paymentMethod == PaymentMethod.cash ||
+        (payment.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment.statusDetail?.toLowerCase() == 'cash_on_delivery');
+
+    final shouldConfirm = isCashPayment && payment.status == PaymentStatus.pending;
+    if (!shouldConfirm) return true;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar cobro'),
+        content: const Text(
+          'Este pedido es con pago en efectivo. ¿Confirmas que cobraste el dinero al entregar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Aún no'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Confirmar cobro'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return false;
+
+    final riderId = ref.read(profile.profileProvider).value?.id;
+    final now = DateTime.now();
+    final existingMeta = payment.metadata ?? const <String, dynamic>{};
+
+    final updated = payment.copyWith(
+      status: PaymentStatus.approved,
+      statusDetail: 'cash_collected',
+      approvedAt: now,
+      updatedAt: now,
+      metadata: <String, dynamic>{
+        ...existingMeta,
+        'confirmedByRiderId': riderId,
+        'confirmedAt': now.toIso8601String(),
+      },
+    );
+
+    try {
+      await paymentRepo.savePayment(updated);
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cobro en efectivo confirmado')),
+      );
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo confirmar el cobro: $e')),
+      );
+      return false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -305,52 +379,41 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
             ],
           );
         }
-
-        final statsAsync = ref.watch(riderStatsProvider(user.id));
+        final cumulativeAsync = ref.watch(riderCumulativeStatsProvider(user.id));
         final riderProfile = user.riderProfile;
+        final ordersUseCase = ref.read(getOrdersByRiderUseCaseProvider);
 
-        return statsAsync.when(
-          loading: () => CustomScrollView(
-            slivers: [
-              const RiderHeader(),
-              const SliverFillRemaining(
-                child: Center(
-                  child: CircularProgressIndicator(color: primaryOrange),
-                ),
-              ),
-            ],
-          ),
-          error: (e, _) => CustomScrollView(
-            slivers: [
-              const RiderHeader(),
-              SliverFillRemaining(
-                child: _buildEmptyState(
-                  icon: Icons.error_outline,
-                  title: 'Error al cargar',
-                  message: 'No pudimos cargar tu panel',
-                ),
-              ),
-            ],
-          ),
-          data: (stats) {
-            final rating = riderProfile?.rating ?? 0.0;
-            final safeStats = stats ?? const <String, dynamic>{};
-            final totalEarnings =
-                (safeStats['totalEarnings'] as num?)?.toDouble() ?? 0.0;
-            final weeklyEarnings =
-                (safeStats['weeklyEarnings'] as num?)?.toDouble() ?? 0.0;
-            final totalTrips = (safeStats['totalTrips'] as num?)?.toInt() ?? 0;
-            final canceledTrips =
-                (safeStats['canceledTrips'] as num?)?.toInt() ?? 0;
-            final deliveredTrips =
-                (safeStats['deliveredTrips'] as num?)?.toInt() ?? 0;
-            final failedTrips =
-                (safeStats['failedTrips'] as num?)?.toInt() ?? 0;
-            final completionRate =
-                (deliveredTrips + canceledTrips + failedTrips) == 0
-                ? 0.0
-                : deliveredTrips /
-                      (deliveredTrips + canceledTrips + failedTrips);
+        final rating = riderProfile?.rating ?? 0.0;
+
+        return StreamBuilder(
+          stream: ordersUseCase.execute(user.id),
+          builder: (context, snapshot) {
+            final pendingAsync = ref.watch(riderPendingEarningsProvider(user.id));
+            final pendingAmount = pendingAsync.asData?.value;
+
+            final cumulative = cumulativeAsync.asData?.value;
+
+            final orders = snapshot.data ?? const [];
+            final computedFailedTrips =
+                orders.where((o) => o.status == OrderStatus.failed).length;
+
+            final effectiveDeliveredTrips = cumulative?.completedTrips ?? 0;
+            final canceledTrips = cumulative?.canceledTrips ?? 0;
+            final effectiveTotalTrips = cumulative?.totalTrips ?? 0;
+            final effectiveFailedTrips = computedFailedTrips;
+
+            final tips = cumulative?.totalTips ?? 0.0;
+
+            final effectiveCompletionRate =
+                (effectiveDeliveredTrips + canceledTrips + effectiveFailedTrips) == 0
+                    ? 0.0
+                    : effectiveDeliveredTrips /
+                        (effectiveDeliveredTrips +
+                            canceledTrips +
+                            effectiveFailedTrips);
+
+            final headlineAmount = cumulative?.totalEarnings ?? 0.0;
+            final secondaryAmount = pendingAmount ?? 0.0;
 
             return CustomScrollView(
               slivers: [
@@ -372,13 +435,15 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                         ),
                         if (!user.isRutVerified) const SizedBox(height: 16),
                         RiderHomeMetricsDashboard(
-                          totalEarnings: totalEarnings,
-                          weeklyEarnings: weeklyEarnings,
-                          totalTrips: totalTrips,
+                          headlineTitle: 'Ganancias acumuladas',
+                          headlineAmount: headlineAmount,
+                          headlineSecondaryLabel: 'Pendiente por pagar',
+                          headlineSecondaryAmount: secondaryAmount,
+                          totalTrips: effectiveTotalTrips,
                           averageRating: rating,
-                          bonuses: 45000,
+                          tips: tips,
                           canceledTrips: canceledTrips,
-                          completionRate: completionRate,
+                          completionRate: effectiveCompletionRate,
                           onTapViewRequests: () {
                             ref
                                 .read(riderHomeViewModelProvider.notifier)
@@ -475,51 +540,28 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
   Widget _buildRequestsTab() {
     final locAsync = ref.watch(riderLocationStreamProvider);
 
-    return locAsync.when(
-      data: (loc) {
-        // Always use current location for map center
-        final currentCenter = gmap.LatLng(loc.latitude, loc.longitude);
+    final center = locAsync.maybeWhen(
+      data: (loc) => gmap.LatLng(loc.latitude, loc.longitude),
+      orElse: () => _fallbackCenter,
+    );
 
-        return CustomScrollView(
-          slivers: [
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _MapHeaderDelegate(
-                child: _PersistentMapWidget(
-                  initialCenter: currentCenter,
-                  selectedOrderId: _selectedOrderId,
-                  onSelectOrder: _selectOrder,
-                ),
-              ),
-            ),
-            _OrderListSliver(
+    return CustomScrollView(
+      slivers: [
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _MapHeaderDelegate(
+            child: _PersistentMapWidget(
+              initialCenter: center,
               selectedOrderId: _selectedOrderId,
               onSelectOrder: _selectOrder,
             ),
-          ],
-        );
-      },
-      loading: () => CustomScrollView(
-        slivers: [
-          SliverFillRemaining(
-            child: Center(
-              child: CircularProgressIndicator(color: primaryOrange),
-            ),
           ),
-        ],
-      ),
-      error: (error, stack) => CustomScrollView(
-        slivers: [
-          SliverFillRemaining(
-            child: _buildEmptyState(
-              icon: Icons.error_outline,
-              title: 'Error de ubicación',
-              message:
-                  'No pudimos obtener tu ubicación. Verifica los permisos.',
-            ),
-          ),
-        ],
-      ),
+        ),
+        _OrderListSliver(
+          selectedOrderId: _selectedOrderId,
+          onSelectOrder: _selectOrder,
+        ),
+      ],
     );
   }
 
@@ -618,6 +660,20 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
   Widget _buildActiveDeliveryCard(dynamic order) {
     final currentStatus = order.status;
 
+    final paymentAsync = ref.watch(watchPaymentByOrderIdProvider(order.orderId));
+    final payment = paymentAsync.asData?.value;
+    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
+        (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
+
+    final earnings = RiderCommissionCalculator.calculateCommission(
+      deliveryFee: order.deliveryFee,
+    );
+
+    final baseAmountToShow = isCashPayment
+        ? (order.amountTotal - order.tip).clamp(0, double.infinity)
+        : earnings.netEarnings;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -659,13 +715,24 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                         ),
                       ),
                       Text(
-                        '\$${order.amountTotal.toStringAsFixed(0)}',
+                        '\$${baseAmountToShow.toStringAsFixed(0)}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+                      if (order.tip > 0) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '+ Propina \$${order.tip.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   Container(
@@ -831,6 +898,42 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                       ),
                     ],
                   ),
+
+                  if (order.status != OrderStatus.pendingPayment) ...[
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  OrderReceiptScreen(
+                                    orderId: order.orderId,
+                                    isRiderView: true,
+                                  ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.receipt_long, size: 18),
+                        label: const Text(
+                          'Ver boleta',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: primaryOrange,
+                          side: const BorderSide(color: primaryOrange),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -851,9 +954,16 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
       onPressed: enabled
           ? () async {
               try {
+                if (target == 'delivered') {
+                  final okToDeliver =
+                      await _maybeConfirmCashPayment(orderId: orderId);
+                  if (!okToDeliver || !context.mounted) return;
+                }
+
                 await ref
                     .read(orderNotifierProvider.notifier)
                     .updateStatus(orderId, target);
+
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -962,7 +1072,7 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
           // Move camera to new position smoothly
           _mapController?.animateCamera(gmap.CameraUpdate.newLatLng(newPos));
 
-          print(
+          debugPrint(
             '📍 [Map] Rider moved to: ${newPos.latitude}, ${newPos.longitude}',
           );
         }
@@ -985,7 +1095,7 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
           ),
         );
         _initialCameraSet = true;
-        print(
+        debugPrint(
           '📍 [Map] Initial position set to: ${_lastRiderPosition!.latitude}, ${_lastRiderPosition!.longitude}',
         );
       }
@@ -993,16 +1103,14 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
   }
 
   void _rebuildMarkers(List<NearbyOrder> nearby) {
-    if (!mounted || _lastRiderPosition == null) return;
+    if (!mounted) return;
 
-    // Optimización: comparar IDs de pedidos y selectedOrderId antes de reconstruir
     final currentOrderIds = nearby.map((n) => n.order.orderId).toSet();
     final orderIdsChanged =
         _lastOrderIds.length != currentOrderIds.length ||
         !_lastOrderIds.containsAll(currentOrderIds);
     final selectedChanged = _lastSelectedOrderId != widget.selectedOrderId;
 
-    // Solo reconstruir si hay cambios reales
     if (!orderIdsChanged && !selectedChanged && _markers.isNotEmpty) {
       return;
     }
@@ -1013,14 +1121,15 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
     setState(() {
       _markers = {
         // Marcador del rider
-        gmap.Marker(
-          markerId: const gmap.MarkerId('me'),
-          position: _lastRiderPosition!,
-          icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-            gmap.BitmapDescriptor.hueAzure,
+        if (_lastRiderPosition != null)
+          gmap.Marker(
+            markerId: const gmap.MarkerId('me'),
+            position: _lastRiderPosition!,
+            icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+              gmap.BitmapDescriptor.hueAzure,
+            ),
+            infoWindow: const gmap.InfoWindow(title: 'Tu ubicación'),
           ),
-          infoWindow: const gmap.InfoWindow(title: 'Tu ubicación'),
-        ),
         // Marcadores de pedidos
         ...nearby.map((n) {
           final hasDistance = n.distanceMeters != null;
@@ -1070,7 +1179,6 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
         _mapController = controller;
         ref.read(mapControllerProvider.notifier).state = controller;
 
-        // Set initial position after map is created
         if (_lastRiderPosition != null && !_initialCameraSet) {
           Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted && _mapController != null) {
@@ -1080,7 +1188,7 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
                 ),
               );
               _initialCameraSet = true;
-              print('📍 [Map] Camera positioned at rider location');
+              debugPrint('📍 [Map] Camera positioned at rider location');
             }
           });
         }
@@ -1116,6 +1224,62 @@ class _OrderListSliver extends ConsumerWidget {
     required this.selectedOrderId,
     required this.onSelectOrder,
   });
+
+  double _computePickupToDeliveryKm(NearbyOrder n) {
+    final pickupPoints = (n.order.pickupStops != null &&
+            n.order.pickupStops!.isNotEmpty)
+        ? n.order.pickupStops!
+            .map((s) => s.geo)
+            .toList(growable: false)
+        : <GeoPoint>[n.order.pickup.geo];
+
+    final deliveryGeo = n.order.delivery.geo;
+    if (pickupPoints.isEmpty) return 0.0;
+
+    double totalKm = 0.0;
+    for (int i = 0; i < pickupPoints.length - 1; i++) {
+      totalKm += _calculateDistanceKm(
+        pickupPoints[i].latitude,
+        pickupPoints[i].longitude,
+        pickupPoints[i + 1].latitude,
+        pickupPoints[i + 1].longitude,
+      );
+    }
+    totalKm += _calculateDistanceKm(
+      pickupPoints.last.latitude,
+      pickupPoints.last.longitude,
+      deliveryGeo.latitude,
+      deliveryGeo.longitude,
+    );
+
+    if (!totalKm.isFinite || totalKm < 0) return 0.0;
+    return totalKm;
+  }
+
+  double _calculateDistanceKm(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const double earthRadiusKm = 6371.0;
+    final dLat = _degreesToRadians(lat2 - lat1);
+    final dLon = _degreesToRadians(lon2 - lon1);
+
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degreesToRadians(lat1)) *
+            math.cos(_degreesToRadians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+
+    final c = 2 * math.asin(math.sqrt(a));
+    return earthRadiusKm * c;
+  }
+
+  double _degreesToRadians(double degrees) {
+    return degrees * math.pi / 180.0;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1164,7 +1328,7 @@ class _OrderListSliver extends ConsumerWidget {
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate((context, index) {
               final n = nearby[index];
-              return _buildOrderCard(context, n);
+              return _buildOrderCard(context, ref, n);
             }, childCount: nearby.length),
           ),
         );
@@ -1208,76 +1372,33 @@ class _OrderListSliver extends ConsumerWidget {
     );
   }
 
-  double _calculateDistanceKm(
-    double lat1,
-    double lon1,
-    double lat2,
-    double lon2,
-  ) {
-    // Haversine formula to calculate distance between two points
-    const double earthRadiusKm = 6371.0;
-
-    final dLat = _degreesToRadians(lat2 - lat1);
-    final dLon = _degreesToRadians(lon2 - lon1);
-
-    final a =
-        math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_degreesToRadians(lat1)) *
-            math.cos(_degreesToRadians(lat2)) *
-            math.sin(dLon / 2) *
-            math.sin(dLon / 2);
-
-    final c = 2 * math.asin(math.sqrt(a));
-    return earthRadiusKm * c;
-  }
-
-  double _degreesToRadians(double degrees) {
-    return degrees * math.pi / 180.0;
-  }
-
-  Widget _buildOrderCard(BuildContext context, NearbyOrder n) {
+  Widget _buildOrderCard(BuildContext context, WidgetRef ref, NearbyOrder n) {
     final isSelected = selectedOrderId == n.order.orderId;
+
+    final paymentAsync = ref.watch(watchPaymentByOrderIdProvider(n.order.orderId));
+    final isPaymentLoading = paymentAsync.isLoading;
+    final payment = paymentAsync.asData?.value;
+    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
+        (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
 
     final earnings = RiderCommissionCalculator.calculateCommission(
       deliveryFee: n.order.deliveryFee,
     );
 
-    final pickupPoints = (n.order.pickupStops != null &&
-            n.order.pickupStops!.isNotEmpty)
-        ? n.order.pickupStops!
-            .map((s) => s.geo)
-            .toList(growable: false)
-        : <GeoPoint>[n.order.pickup.geo];
+    final baseAmountToShow = isPaymentLoading
+        ? null
+        : (isCashPayment
+            ? (n.order.amountTotal - n.order.tip).clamp(0, double.infinity)
+            : earnings.netEarnings);
 
-    final deliveryGeo = n.order.delivery.geo;
+    final distanceToPickupKm =
+        n.distanceMeters != null ? (n.distanceMeters! / 1000) : null;
 
-    double pickupToDeliveryKm = 0.0;
-    for (int i = 0; i < pickupPoints.length - 1; i++) {
-      pickupToDeliveryKm += _calculateDistanceKm(
-        pickupPoints[i].latitude,
-        pickupPoints[i].longitude,
-        pickupPoints[i + 1].latitude,
-        pickupPoints[i + 1].longitude,
-      );
-    }
-    pickupToDeliveryKm += _calculateDistanceKm(
-      pickupPoints.last.latitude,
-      pickupPoints.last.longitude,
-      deliveryGeo.latitude,
-      deliveryGeo.longitude,
-    );
-
-    // Calculate total distance
-    // If we have rider location, show total (rider→pickup + pickup→delivery)
-    // Otherwise, just show pickup→delivery distance
-    final double totalDistanceKm;
-    if (n.distanceMeters != null) {
-      final riderToPickupKm = n.distanceMeters! / 1000;
-      totalDistanceKm = riderToPickupKm + pickupToDeliveryKm;
-    } else {
-      // No rider location available, show only delivery distance
-      totalDistanceKm = pickupToDeliveryKm;
-    }
+    final estimatedKm = n.order.requirements.estimatedDistanceKm;
+    final orderDistanceKm = (estimatedKm.isFinite && estimatedKm > 0.01)
+        ? estimatedKm
+        : _computePickupToDeliveryKm(n);
 
     final totalWeightKg = n.order.requirements.weightKg;
 
@@ -1327,31 +1448,70 @@ class _OrderListSliver extends ConsumerWidget {
                         ),
                       ),
                       Text(
-                        '\$${earnings.netEarnings.toStringAsFixed(0)}',
+                        baseAmountToShow == null
+                            ? 'Cargando...'
+                            : '\$${baseAmountToShow.toStringAsFixed(0)}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+                      if (n.order.tip > 0) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '+ Propina \$${n.order.tip.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
+                      horizontal: 10,
+                      vertical: 5,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.25),
-                      borderRadius: BorderRadius.circular(20),
+                      color: isPaymentLoading
+                          ? Colors.white.withValues(alpha: 0.15)
+                          : isCashPayment
+                              ? const Color(0xFF4CAF50).withValues(alpha: 0.9)
+                              : const Color(0xFF2196F3).withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Text(
-                      n.order.status.displayName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isPaymentLoading)
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        else ...[
+                          Icon(
+                            isCashPayment ? Icons.payments_outlined : Icons.credit_card,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isCashPayment ? 'EFECTIVO' : 'APP',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
@@ -1469,93 +1629,114 @@ class _OrderListSliver extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   // Distance, weight, and details link
-                  Row(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${totalDistanceKm.toStringAsFixed(1)} km',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: textGray700,
-                        ),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            distanceToPickupKm != null
+                                ? 'A retiro ${distanceToPickupKm.toStringAsFixed(1)} km'
+                                : 'A retiro -',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: textGray700,
+                            ),
+                          ),
+                          Text(
+                            '•',
+                            style: TextStyle(fontSize: 13, color: textGray600),
+                          ),
+                          Text(
+                            'Del pedido ${orderDistanceKm.toStringAsFixed(1)} km',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: textGray700,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '•',
-                        style: TextStyle(fontSize: 13, color: textGray600),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${totalWeightKg.toStringAsFixed(1)} kg',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: textGray700,
-                        ),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () {
-                          // Validate coordinates before opening details
-                          final hasValidPickup =
-                              n.order.pickup.geo.latitude != 0 &&
-                              n.order.pickup.geo.longitude != 0;
-                          final hasValidDelivery =
-                              n.order.delivery.geo.latitude != 0 &&
-                              n.order.delivery.geo.longitude != 0;
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Text(
+                            '${totalWeightKg.toStringAsFixed(1)} kg',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: textGray700,
+                            ),
+                          ),
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () {
+                              // Validate coordinates before opening details
+                              final hasValidPickup =
+                                  n.order.pickup.geo.latitude != 0 &&
+                                  n.order.pickup.geo.longitude != 0;
+                              final hasValidDelivery =
+                                  n.order.delivery.geo.latitude != 0 &&
+                                  n.order.delivery.geo.longitude != 0;
 
-                          if (!hasValidPickup || !hasValidDelivery) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Row(
-                                  children: const [
-                                    Icon(
-                                      Icons.warning_amber_rounded,
-                                      color: Colors.white,
+                              if (!hasValidPickup || !hasValidDelivery) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Row(
+                                      children: const [
+                                        Icon(
+                                          Icons.warning_amber_rounded,
+                                          color: Colors.white,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Este pedido no tiene coordenadas válidas. Contacta al soporte.',
+                                            style: TextStyle(fontSize: 13),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'Este pedido no tiene coordenadas válidas. Contacta al soporte.',
-                                        style: TextStyle(fontSize: 13),
-                                      ),
-                                    ),
-                                  ],
+                                    backgroundColor: Colors.orange,
+                                    behavior: SnackBarBehavior.floating,
+                                    duration: const Duration(seconds: 4),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      DeliveryDetailsScreen(order: n.order),
                                 ),
-                                backgroundColor: Colors.orange,
-                                behavior: SnackBarBehavior.floating,
-                                duration: const Duration(seconds: 4),
-                              ),
-                            );
-                            return;
-                          }
-
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  DeliveryDetailsScreen(order: n.order),
+                              );
+                            },
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Ver detalles',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: primaryOrange,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.arrow_forward,
+                                  size: 16,
+                                  color: primaryOrange,
+                                ),
+                              ],
                             ),
-                          );
-                        },
-                        child: Row(
-                          children: [
-                            Text(
-                              'Ver detalles',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: primaryOrange,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward,
-                              size: 16,
-                              color: primaryOrange,
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

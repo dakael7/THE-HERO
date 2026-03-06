@@ -15,7 +15,9 @@ import '../../domain/providers/get_current_user_usecase_provider.dart';
 import '../../domain/providers/sign_out_usecase_provider.dart';
 import '../../domain/providers/google_sign_in_usecase_provider.dart';
 import '../../domain/providers/register_google_user_usecase_provider.dart';
+import '../../domain/providers/reset_password_usecase_provider.dart';
 import '../../../../data/providers/repository_providers.dart';
+import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/repositories/auth_repository.dart';
 import '../../../../core/services/fcm_service.dart';
 import 'auth_state.dart';
@@ -38,7 +40,16 @@ class AuthNotifier extends Notifier<AuthState> {
     _getCurrentUserUseCase = ref.read(getCurrentUserUseCaseProvider);
     _signOutUseCase = ref.read(signOutUseCaseProvider);
     _authRepository = ref.read(authRepositoryProvider);
-    return AuthState.initial();
+
+    final auth = ref.read(firebaseAuthProvider);
+    final initialAuthenticated = auth.currentUser != null;
+
+    final subscription = auth.authStateChanges().listen((user) {
+      state = state.copyWith(isAuthenticated: user != null);
+    });
+    ref.onDispose(subscription.cancel);
+
+    return AuthState.initial().copyWith(isAuthenticated: initialAuthenticated);
   }
 
   Future<void> signInWithGoogleAndCreateUser(UserRole role) async {
@@ -97,12 +108,24 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
+  Future<void> resetPassword(String email) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      await ref.read(resetPasswordUseCaseProvider).execute(email);
+      state = state.copyWith(isLoading: false, errorMessage: null);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, errorMessage: e.toString());
+      rethrow;
+    }
+  }
+
   Future<void> registerHero({
     required String email,
     required String password,
     required String firstName,
     required String lastName,
-    required String rut,
+    required String documentType,
+    required String documentId,
     required String phone,
   }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
@@ -112,7 +135,8 @@ class AuthNotifier extends Notifier<AuthState> {
         password: password,
         firstName: firstName,
         lastName: lastName,
-        rut: rut,
+        documentType: documentType,
+        documentId: documentId,
         phone: phone,
       );
       state = state.copyWith(
@@ -197,7 +221,8 @@ class AuthNotifier extends Notifier<AuthState> {
     required String uid,
     required String firstName,
     required String lastName,
-    required String rut,
+    required String documentType,
+    required String documentId,
     required String phone,
   }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
@@ -206,7 +231,8 @@ class AuthNotifier extends Notifier<AuthState> {
         uid: uid,
         firstName: firstName,
         lastName: lastName,
-        rut: rut,
+        documentType: documentType,
+        documentId: documentId,
         phone: phone,
       );
 
@@ -246,16 +272,25 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> signOut() async {
-    state = state.copyWith(isLoading: true);
-    try {
-      await FCMService().cleanupBeforeSignOut();
-      await _signOutUseCase.execute();
+    state = state.copyWith(
+      isLoading: true,
+      isAuthenticated: false,
+      errorMessage: null,
+    );
 
-      state = state.copyWith(
-        isLoading: false,
-        isAuthenticated: false,
-        errorMessage: null,
-      );
+    Future(() async {
+      try {
+        await FCMService()
+            .cleanupBeforeSignOut()
+            .timeout(const Duration(seconds: 2));
+      } catch (e) {
+        print('FCM cleanupBeforeSignOut failed/timeout: $e');
+      }
+    });
+
+    try {
+      await _signOutUseCase.execute();
+      state = state.copyWith(isLoading: false, errorMessage: null);
     } catch (e) {
       state = state.copyWith(isLoading: false, errorMessage: e.toString());
     }
@@ -293,4 +328,8 @@ class AuthNotifier extends Notifier<AuthState> {
 
 final authNotifierProvider = NotifierProvider<AuthNotifier, AuthState>(() {
   return AuthNotifier();
+});
+
+final lastRoleProvider = FutureProvider<String?>((ref) async {
+  return ref.read(authNotifierProvider.notifier).getLastRole();
 });

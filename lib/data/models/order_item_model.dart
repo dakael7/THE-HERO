@@ -2,6 +2,7 @@ import '../../domain/entities/order_item.dart';
 
 class OrderItemModel {
   final String offerId;
+  final String sellerHeroIdSnapshot;
   final String titleSnapshot;
   final double unitPriceSnapshot;
   final int qty;
@@ -10,6 +11,7 @@ class OrderItemModel {
 
   OrderItemModel({
     required this.offerId,
+    this.sellerHeroIdSnapshot = '',
     required this.titleSnapshot,
     required this.unitPriceSnapshot,
     required this.qty,
@@ -20,6 +22,7 @@ class OrderItemModel {
   factory OrderItemModel.fromJson(Map<String, dynamic> json) {
     return OrderItemModel(
       offerId: json['offerId'] as String? ?? '',
+      sellerHeroIdSnapshot: json['sellerHeroIdSnapshot'] as String? ?? '',
       titleSnapshot: json['titleSnapshot'] as String? ?? '',
       unitPriceSnapshot: (json['unitPriceSnapshot'] as num?)?.toDouble() ?? 0.0,
       qty: json['qty'] as int? ?? 0,
@@ -31,6 +34,7 @@ class OrderItemModel {
   Map<String, dynamic> toJson() {
     return {
       'offerId': offerId,
+      'sellerHeroIdSnapshot': sellerHeroIdSnapshot,
       'titleSnapshot': titleSnapshot,
       'unitPriceSnapshot': unitPriceSnapshot,
       'qty': qty,
@@ -42,6 +46,7 @@ class OrderItemModel {
   OrderItem toEntity() {
     return OrderItem(
       offerId: offerId,
+      sellerHeroIdSnapshot: sellerHeroIdSnapshot,
       titleSnapshot: titleSnapshot,
       unitPriceSnapshot: unitPriceSnapshot,
       qty: qty,
@@ -53,6 +58,7 @@ class OrderItemModel {
   factory OrderItemModel.fromEntity(OrderItem entity) {
     return OrderItemModel(
       offerId: entity.offerId,
+      sellerHeroIdSnapshot: entity.sellerHeroIdSnapshot,
       titleSnapshot: entity.titleSnapshot,
       unitPriceSnapshot: entity.unitPriceSnapshot,
       qty: entity.qty,

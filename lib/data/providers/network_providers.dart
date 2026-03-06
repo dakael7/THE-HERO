@@ -9,6 +9,11 @@ final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
   return FirebaseConfig.auth;
 });
 
+final firebaseAuthUserProvider = StreamProvider<User?>((ref) {
+  final auth = ref.watch(firebaseAuthProvider);
+  return auth.authStateChanges();
+});
+
 final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
   return FirebaseConfig.firestore;
 });

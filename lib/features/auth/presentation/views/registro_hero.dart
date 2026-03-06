@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/validators.dart';
+import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
 import 'unverified_email_screen.dart';
@@ -38,7 +39,14 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _rutController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+
+  String _selectedDocumentType = 'rut';
+
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
@@ -50,12 +58,24 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     super.initState();
 
     final user = widget.existingUser;
+    final authUser = ref.read(firebaseAuthProvider).currentUser;
+
+    String authFirstName = '';
+    String authLastName = '';
+    final displayName = authUser?.displayName?.trim();
+    if (displayName != null && displayName.isNotEmpty) {
+      final parts = displayName.split(RegExp(r'\s+'));
+      authFirstName = parts.isNotEmpty ? parts.first : '';
+      authLastName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    }
+
     _emailController = TextEditingController(
-      text: user?.email ?? widget.email ?? '',
+      text: user?.email ?? widget.email ?? authUser?.email ?? '',
     );
-    _firstNameController.text = user?.identity.firstName ?? '';
-    _lastNameController.text = user?.identity.lastName ?? '';
+    _firstNameController.text = user?.identity.firstName ?? authFirstName;
+    _lastNameController.text = user?.identity.lastName ?? authLastName;
     _rutController.text = user?.identity.documentId ?? '';
+    _selectedDocumentType = user?.identity.documentType.trim().toLowerCase() ?? 'rut';
     _phoneController.text = user?.contact.phoneNumber ?? '';
 
     _controller = AnimationController(vsync: this, duration: Duration.zero);
@@ -81,6 +101,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     _lastNameController.dispose();
     _rutController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _phoneController.dispose();
     super.dispose();
   }
@@ -104,6 +125,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     bool enabled = true,
     List<TextInputFormatter>? inputFormatters,
     TextEditingController? controller,
+    Widget? suffixIcon,
   }) {
     return TextFormField(
       controller: controller,
@@ -117,6 +139,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
         labelText: labelText,
         hintText: hintText,
         hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
+        suffixIcon: suffixIcon,
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -284,13 +307,63 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
                         const SizedBox(height: 24),
 
+                        DropdownButtonFormField<String>(
+                          initialValue: _selectedDocumentType,
+                          decoration: InputDecoration(
+                            labelText: 'Tipo de documento',
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: backgroundGray50,
+                                width: 1.0,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: primaryOrange,
+                                width: 2.0,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 18,
+                              horizontal: 16,
+                            ),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'rut', child: Text('RUT')),
+                            DropdownMenuItem(value: 'cedula', child: Text('Cédula')),
+                            DropdownMenuItem(value: 'dni', child: Text('DNI')),
+                            DropdownMenuItem(value: 'pasaporte', child: Text('Pasaporte')),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _selectedDocumentType = value);
+                          },
+                        ),
+
                         _buildTextField(
                           controller: _rutController,
-                          labelText: 'Documento de Identidad (RUT)',
-                          hintText: 'Ej: 19.123.456-K',
+                          labelText: _selectedDocumentType == 'rut'
+                              ? 'Documento de Identidad (RUT)'
+                              : _selectedDocumentType == 'cedula'
+                                  ? 'Documento de Identidad (Cédula)'
+                                  : 'Documento de Identidad (Pasaporte)',
+                          hintText: _selectedDocumentType == 'rut'
+                              ? 'Ej: 19.123.456-K'
+                              : 'Ej: A1234567',
                           keyboardType: TextInputType.text,
                           validator: (value) {
-                            return Validators.rut(value);
+                            if (_selectedDocumentType == 'rut') {
+                              return Validators.rut(value);
+                            }
+                            return Validators.required(value, fieldName: 'Documento');
                           },
                         ),
 
@@ -302,14 +375,57 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                             labelText: 'Contraseña',
                             hintText:
                                 'Mín. 8 caracteres, 1 mayús, 1 minús, 1 número.',
-                            obscureText: true,
+                            obscureText: _obscurePassword,
                             keyboardType: TextInputType.visiblePassword,
+                            suffixIcon: IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                            ),
                             validator: (value) {
                               if (widget.existingUser == null) {
                                 if (value == null ||
                                     !passwordRegex.hasMatch(value)) {
                                   return 'Contraseña débil. Debe cumplir con el formato.';
                                 }
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                          _buildTextField(
+                            controller: _confirmPasswordController,
+                            labelText: 'Confirmar contraseña',
+                            hintText: 'Repite tu contraseña',
+                            obscureText: _obscureConfirmPassword,
+                            keyboardType: TextInputType.visiblePassword,
+                            suffixIcon: IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _obscureConfirmPassword =
+                                      !_obscureConfirmPassword;
+                                });
+                              },
+                              icon: Icon(
+                                _obscureConfirmPassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Confirma tu contraseña.';
+                              }
+                              if (value.trim() !=
+                                  _passwordController.text.trim()) {
+                                return 'Las contraseñas no coinciden.';
                               }
                               return null;
                             },
@@ -414,19 +530,27 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                           if (widget.existingUser != null) {
                                             final user = widget.existingUser!;
 
+                                            final auth = ref.read(
+                                              firebaseAuthProvider,
+                                            );
+                                            final uid =
+                                                auth.currentUser?.uid ?? user.id;
+
                                             await ref
                                                 .read(
                                                   authNotifierProvider.notifier,
                                                 )
                                                 .upgradeToHero(
-                                                  uid: user.id,
+                                                  uid: uid,
                                                   firstName:
                                                       _firstNameController.text
                                                           .trim(),
                                                   lastName: _lastNameController
                                                       .text
                                                       .trim(),
-                                                  rut: _rutController.text
+                                                  documentType:
+                                                      _selectedDocumentType,
+                                                  documentId: _rutController.text
                                                       .trim(),
                                                   phone: _phoneController.text
                                                       .trim(),
@@ -481,7 +605,10 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                                 lastName: _lastNameController
                                                     .text
                                                     .trim(),
-                                                rut: _rutController.text.trim(),
+                                                documentType:
+                                                    _selectedDocumentType,
+                                                documentId:
+                                                    _rutController.text.trim(),
                                                 phone: _phoneController.text
                                                     .trim(),
                                               );

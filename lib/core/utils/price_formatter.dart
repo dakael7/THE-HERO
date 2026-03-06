@@ -12,6 +12,16 @@ String formatPriceCL(double value) {
   return '$sign$groupedInt,$decPart';
 }
 
+String formatPriceCLP(double value) {
+  final negative = value < 0;
+  final abs = value.abs();
+
+  final rounded = abs.round().toString();
+  final groupedInt = _groupThousands(rounded);
+  final sign = negative ? '-' : '';
+  return '$sign$groupedInt';
+}
+
 String _groupThousands(String digits) {
   final buffer = StringBuffer();
   for (var i = 0; i < digits.length; i++) {

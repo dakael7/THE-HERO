@@ -8,8 +8,15 @@ import '../providers/chat_providers.dart';
 import 'chat_conversation_screen.dart';
 import '../../../profile/presentation/providers/profile_provider.dart';
 
-class ChatListScreen extends ConsumerWidget {
+class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
+
+  @override
+  ConsumerState<ChatListScreen> createState() => _ChatListScreenState();
+}
+
+class _ChatListScreenState extends ConsumerState<ChatListScreen> {
+  bool _isNavigating = false;
 
   String _friendlyError(Object error) {
     final raw = error.toString();
@@ -45,7 +52,7 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final chatsAsync = ref.watch(userChatsProvider);
     final profileAsync = ref.watch(profileProvider);
 
@@ -160,12 +167,19 @@ class ChatListScreen extends ConsumerWidget {
                   elevation: 0,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(16),
-                    onTap: () {
-                      Navigator.of(context).push(
+                    onTap: () async {
+                      if (_isNavigating) return;
+                      _isNavigating = true;
+                      
+                      await Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => ChatConversationScreen(chat: chat),
                         ),
                       );
+                      
+                      if (mounted) {
+                        setState(() => _isNavigating = false);
+                      }
                     },
                     child: Container(
                       decoration: BoxDecoration(

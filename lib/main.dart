@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'app/app.dart';
 import 'app/providers_scope.dart';
@@ -44,6 +45,9 @@ void main() async {
 
   // Initialize FCM Service
   await FCMService().initialize();
+
+  // Initialize AdMob SDK
+  await MobileAds.instance.initialize();
 
   runApp(const AppProviderScope(child: App()));
 }
