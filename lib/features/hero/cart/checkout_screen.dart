@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -121,6 +124,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   double? _deliveryLatitude;
   double? _deliveryLongitude;
 
+  Timer? _routesDebounce;
+  ({Map<String, firestore.GeoPoint> uniquePickups, firestore.GeoPoint delivery})?
+      _pendingRoutes;
+  String? _pendingRoutesSignature;
+  String? _activeRoutesSignature;
+
   ({firestore.GeoPoint? geo, String address}) _resolvePickupFromCart(
     List<CartItem> cartItems,
   ) {
@@ -151,12 +160,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       await paymentNotifier.createPreference(order);
       final paymentState = ref.read(paymentNotifierProvider);
 
+      final errorCode = (paymentState.errorCode ?? '').toLowerCase();
       final raw = paymentState.error ?? '';
-      if (raw.isEmpty) return;
+      if (errorCode.isEmpty && raw.isEmpty) return;
 
-      final msg = raw.toLowerCase();
-      final isResourceExhausted =
-          msg.contains('resource-exhausted') || msg.contains('resource_exhausted');
+      final isResourceExhausted = errorCode == 'resource-exhausted';
 
       if (!isResourceExhausted || attempt == delays.length - 1) {
         return;
@@ -191,6 +199,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   @override
   void dispose() {
+    _routesDebounce?.cancel();
     _profileSub?.close();
     _nameController.dispose();
     _phoneController.dispose();
@@ -246,7 +255,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     final cartItems = ref.read(cartProvider);
 
-    final deliveryCc = addr.countryCode?.trim().toUpperCase();
+    var deliveryCc = (addr.countryCode?.trim().toUpperCase().isNotEmpty ?? false)
+        ? addr.countryCode!.trim().toUpperCase()
+        : null;
     final pickupCcs = cartItems
         .map((e) => e.pickupCountryCode?.trim().toUpperCase())
         .whereType<String>()
@@ -255,6 +266,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     final hasAnyMissingPickupCountry =
         cartItems.any((e) => (e.pickupCountryCode?.trim().isEmpty ?? true));
+
+    if ((deliveryCc == null || deliveryCc.isEmpty) && pickupCcs.length == 1) {
+      deliveryCc = pickupCcs.first;
+    }
 
     if (deliveryCc == null || deliveryCc.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -277,9 +292,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
 
     if (pickupCcs.length != 1 || pickupCcs.first != deliveryCc) {
+      debugPrint(
+        '🌎 [Checkout] Country mismatch delivery=$deliveryCc pickup=${pickupCcs.join(",")} (missingPickup=$hasAnyMissingPickupCountry)',
+      );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se permiten pedidos entre países distintos.'),
+        SnackBar(
+          content: Text(
+            'No se permiten pedidos entre países distintos. Entrega: $deliveryCc | Retiro: ${pickupCcs.join(",")}',
+          ),
           duration: Duration(seconds: 4),
         ),
       );
@@ -290,7 +310,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       _addressController.text = addr.fullAddress;
       _deliveryLatitude = addr.latitude;
       _deliveryLongitude = addr.longitude;
-      _deliveryCountryCode = addr.countryCode;
+      _deliveryCountryCode = deliveryCc;
     });
 
     ref.read(deliveryGeoProvider.notifier).state =
@@ -321,7 +341,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     );
 
     if (result != null && mounted) {
-      final cc = result.countryCode?.toUpperCase();
+      final cc = (result.countryCode?.trim().toUpperCase().isNotEmpty ?? false)
+          ? result.countryCode!.trim().toUpperCase()
+          : null;
+
       if (cc == null || cc.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -691,11 +714,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         final paymentState = ref.read(paymentNotifierProvider);
 
         if (paymentState.error != null) {
+          final errorCode = (paymentState.errorCode ?? '').toLowerCase();
           final raw = paymentState.error ?? '';
           final message = raw.toLowerCase();
 
-          if (message.contains('resource-exhausted') ||
-              message.contains('resource_exhausted')) {
+          if (errorCode == 'resource-exhausted') {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
@@ -1752,22 +1775,39 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     if (signature == _lastRoutesSignature) return;
     _lastRoutesSignature = signature;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // Debounce to avoid firing multiple OSRM requests during rapid rebuilds
+    // (e.g. provider updates, address changes, cart mutations).
+    _routesDebounce?.cancel();
+    _routesDebounce = Timer(const Duration(milliseconds: 250), () {
       if (!mounted) return;
-      _loadRoutes(uniquePickups: uniquePickups, delivery: delivery);
+
+      // If a route calculation is already in progress, queue the latest one.
+      if (_isLoadingRoutes) {
+        _pendingRoutes = (uniquePickups: uniquePickups, delivery: delivery);
+        _pendingRoutesSignature = signature;
+        return;
+      }
+
+      _loadRoutes(
+        uniquePickups: uniquePickups,
+        delivery: delivery,
+        signature: signature,
+      );
     });
   }
 
   Future<void> _loadRoutes({
     required Map<String, firestore.GeoPoint> uniquePickups,
     required firestore.GeoPoint delivery,
+    required String signature,
   }) async {
     if (_isLoadingRoutes) return;
+
+    _activeRoutesSignature = signature;
 
     setState(() {
       _isLoadingRoutes = true;
       _routesError = null;
-      _trip = null;
     });
 
     ref.read(routeDistanceKmProvider.notifier).state = null;
@@ -1786,8 +1826,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       setState(() => _routesError = e);
       ref.read(routeDistanceKmProvider.notifier).state = null;
     } finally {
-      if (!mounted) return;
-      setState(() => _isLoadingRoutes = false);
+      if (mounted) {
+        setState(() => _isLoadingRoutes = false);
+
+        // Run any queued request (latest wins).
+        final pending = _pendingRoutes;
+        final pendingSig = _pendingRoutesSignature;
+        _pendingRoutes = null;
+        _pendingRoutesSignature = null;
+
+        final activeSig = _activeRoutesSignature;
+        _activeRoutesSignature = null;
+
+        if (pending != null && pendingSig != null && pendingSig != activeSig) {
+          _loadRoutes(
+            uniquePickups: pending.uniquePickups,
+            delivery: pending.delivery,
+            signature: pendingSig,
+          );
+        }
+      }
     }
   }
 
@@ -1814,7 +1872,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       '?overview=full&geometries=geojson&roundtrip=false&source=any&destination=last',
     );
 
-    final res = await http.get(url);
+    Future<http.Response> getRequest() {
+      return http.get(url).timeout(const Duration(seconds: 10));
+    }
+
+    http.Response res;
+    try {
+      res = await getRequest();
+    } on TimeoutException {
+      // Retry once on timeout
+      res = await getRequest();
+    }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw Exception('OSRM error: ${res.statusCode}');
     }
@@ -1984,7 +2052,7 @@ class _CheckoutItemsRouteMap extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final deliveryLatLng = LatLng(delivery!.latitude, delivery.longitude);
+    final deliveryLatLng = gmap.LatLng(delivery!.latitude, delivery.longitude);
 
     final pickupEntries = uniquePickups.entries.toList();
     pickupEntries.sort((a, b) => a.key.compareTo(b.key));
@@ -2010,68 +2078,68 @@ class _CheckoutItemsRouteMap extends StatelessWidget {
       const Color(0xFF7C3AED),
     ];
 
-    final polylines = <Polyline>[
+    final polylines = <gmap.Polyline>{
       if (trip != null)
-        Polyline(
-          points: trip!.points,
-          strokeWidth: 5,
+        gmap.Polyline(
+          polylineId: const gmap.PolylineId('checkout_route'),
+          points: trip!.points
+              .map((p) => gmap.LatLng(p.latitude, p.longitude))
+              .toList(growable: false),
+          width: 5,
           color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+          geodesic: true,
+          zIndex: 5,
         ),
-    ];
+    };
 
-    final markers = <Marker>[
+    final markers = <gmap.Marker>{
       for (var i = 0; i < orderedKeys.length; i++)
         if (uniquePickups[orderedKeys[i]] != null)
-          Marker(
-            point: LatLng(
+          gmap.Marker(
+            markerId: gmap.MarkerId('pickup_${i + 1}'),
+            position: gmap.LatLng(
               uniquePickups[orderedKeys[i]]!.latitude,
               uniquePickups[orderedKeys[i]]!.longitude,
             ),
-            width: 50,
-            height: 50,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(
-                  Icons.location_on,
-                  size: 44,
-                  color: colors[i % colors.length],
-                ),
-                Positioned(
-                  top: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${i + 1}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF111827),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+              <double>[
+                gmap.BitmapDescriptor.hueAzure,
+                gmap.BitmapDescriptor.hueGreen,
+                gmap.BitmapDescriptor.hueRed,
+                gmap.BitmapDescriptor.hueViolet,
+              ][i % 4],
+            ),
+            infoWindow: gmap.InfoWindow(
+              title: 'Retiro ${i + 1}',
+              snippet: '${itemsByPickupKey[orderedKeys[i]]?.length ?? 0} item(s)',
             ),
           ),
-      Marker(
-        point: deliveryLatLng,
-        width: 46,
-        height: 46,
-        child: const Icon(
-          Icons.flag_circle,
-          size: 42,
-          color: Color(0xFF111827),
+      gmap.Marker(
+        markerId: const gmap.MarkerId('delivery'),
+        position: deliveryLatLng,
+        icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+          gmap.BitmapDescriptor.hueOrange,
         ),
+        infoWindow: const gmap.InfoWindow(title: 'Entrega'),
       ),
-    ];
+    };
+
+    gmap.LatLngBounds _boundsFromPoints(List<gmap.LatLng> points) {
+      var minLat = points.first.latitude;
+      var maxLat = points.first.latitude;
+      var minLng = points.first.longitude;
+      var maxLng = points.first.longitude;
+      for (final p in points.skip(1)) {
+        if (p.latitude < minLat) minLat = p.latitude;
+        if (p.latitude > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLng) minLng = p.longitude;
+        if (p.longitude > maxLng) maxLng = p.longitude;
+      }
+      return gmap.LatLngBounds(
+        southwest: gmap.LatLng(minLat, minLng),
+        northeast: gmap.LatLng(maxLat, maxLng),
+      );
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -2120,23 +2188,41 @@ class _CheckoutItemsRouteMap extends StatelessWidget {
             ),
             child: SizedBox(
               height: 240,
-              child: FlutterMap(
-                options: MapOptions(
-                  initialCenter: deliveryLatLng,
-                  initialZoom: 12,
-                  interactionOptions: const InteractionOptions(
-                    flags: InteractiveFlag.all,
-                  ),
+              child: gmap.GoogleMap(
+                initialCameraPosition: gmap.CameraPosition(
+                  target: deliveryLatLng,
+                  zoom: 12,
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'the_hero',
+                markers: markers,
+                polylines: polylines,
+                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                  Factory<OneSequenceGestureRecognizer>(
+                    () => EagerGestureRecognizer(),
                   ),
-                  if (polylines.isNotEmpty) PolylineLayer(polylines: polylines),
-                  MarkerLayer(markers: markers),
-                ],
+                },
+                zoomGesturesEnabled: true,
+                scrollGesturesEnabled: true,
+                rotateGesturesEnabled: true,
+                tiltGesturesEnabled: true,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                mapToolbarEnabled: false,
+                liteModeEnabled: Env.mapsLiteMode,
+                onMapCreated: (controller) {
+                  final boundsPoints = <gmap.LatLng>[
+                    deliveryLatLng,
+                    for (final geo in uniquePickups.values)
+                      gmap.LatLng(geo.latitude, geo.longitude),
+                    if (trip != null)
+                      ...trip!.points
+                          .map((p) => gmap.LatLng(p.latitude, p.longitude)),
+                  ];
+                  if (boundsPoints.length < 2) return;
+                  final b = _boundsFromPoints(boundsPoints);
+                  controller.animateCamera(
+                    gmap.CameraUpdate.newLatLngBounds(b, 42),
+                  );
+                },
               ),
             ),
           ),

@@ -52,6 +52,8 @@ class PaymentRepositoryImpl implements PaymentRepository {
       await savePayment(payment);
 
       return preferenceModel.toEntity();
+    } on PaymentFunctionsException {
+      rethrow;
     } catch (e) {
       throw Exception('Failed to create payment preference: $e');
     }

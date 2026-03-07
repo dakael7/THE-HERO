@@ -23,6 +23,7 @@ class Order {
   final String currency;
   final OrderPickup pickup;
   final List<OrderPickupStop>? pickupStops;
+  final int? pickupProgressCurrentStopIndex;
   final OrderDelivery delivery;
   final OrderRequirements requirements;
   final OrderRider rider;
@@ -54,6 +55,7 @@ class Order {
     required this.currency,
     required this.pickup,
     this.pickupStops,
+    this.pickupProgressCurrentStopIndex,
     required this.delivery,
     required this.requirements,
     required this.rider,

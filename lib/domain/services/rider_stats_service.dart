@@ -16,6 +16,7 @@ class RiderStatsService {
   RiderStats computeFromSources({
     required List<Order> orders,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> walletTxDocs,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> tripEventDocs,
     required double pendingBalance,
     DateTime? since,
   }) {
@@ -29,13 +30,25 @@ class RiderStatsService {
       return !deliveredAt.isBefore(cutoff);
     }).length;
 
-    final canceledTrips = orders.where((o) {
+    final canceledByOrderStatus = orders.where((o) {
       if (o.status != OrderStatus.canceled) return false;
       if (cutoff == null) return true;
       final canceledAt = o.timestamps.canceledAt;
       if (canceledAt == null) return false;
       return !canceledAt.isBefore(cutoff);
     }).length;
+
+    final canceledByEvents = tripEventDocs.where((doc) {
+      final data = doc.data();
+      final type = data['type']?.toString() ?? '';
+      if (type != 'canceled_trip') return false;
+      if (cutoff == null) return true;
+      final createdAt = data['createdAt'];
+      if (createdAt is! Timestamp) return false;
+      return !createdAt.toDate().isBefore(cutoff);
+    }).length;
+
+    final canceledTrips = canceledByOrderStatus + canceledByEvents;
 
     double totalEarnings = 0.0;
     double totalTips = 0.0;

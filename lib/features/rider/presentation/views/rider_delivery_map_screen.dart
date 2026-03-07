@@ -26,6 +26,7 @@ import '../../domain/services/rider_tracking_service.dart';
 import '../providers/rider_nearby_providers.dart';
 import '../providers/rider_location_provider.dart';
 import '../../../hero/orders/presentation/views/order_receipt_screen.dart';
+import 'rider_home_screen.dart';
 
 final _routeProvider = FutureProvider.autoDispose
     .family<DirectionsRoute?, _RouteRequestParams>((ref, params) {
@@ -124,8 +125,29 @@ class _RiderDeliveryMapScreenState
     } catch (e) {
       // ignore: avoid_print
       print('⚠️ [_markPickupStopCompleted] error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo guardar progreso: $e')),
+        );
+      }
       return false;
     }
+  }
+
+  void _syncPickupIndexFromOrder(Order order) {
+    final stops = order.pickupStops ?? const [];
+    if (stops.isEmpty) return;
+
+    final persisted = order.pickupProgressCurrentStopIndex;
+    if (persisted == null) return;
+
+    final clamped = persisted.clamp(0, stops.length - 1);
+    if (clamped == _pickupStopIndex) return;
+
+    setState(() {
+      _pickupStopIndex = clamped;
+      _arrivedAtPickupStop = false;
+    });
   }
 
   Future<void> _cancelAsRider(Order order) async {
@@ -266,7 +288,17 @@ class _RiderDeliveryMapScreenState
     }
 
     final notifier = ref.read(orderNotifierProvider.notifier);
-    await notifier.updateStatus(order.orderId, _orderStatusToString(status));
+    try {
+      await notifier.updateStatus(order.orderId, _orderStatusToString(status));
+    } catch (e) {
+      // ignore: avoid_print
+      print('⚠️ [RiderDeliveryMap] Failed to set status=${status.name} for orderId=${order.orderId}: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo avanzar: $e')),
+      );
+      return;
+    }
     if (!mounted) return;
 
     if (status == OrderStatus.delivered) {
@@ -453,6 +485,13 @@ class _RiderDeliveryMapScreenState
           if (order == null) {
             return const Center(child: Text('Pedido no disponible'));
           }
+
+          // Keep UI stop index aligned with persisted pickup progress.
+          // Use post-frame to avoid calling setState during build.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _syncPickupIndexFromOrder(order);
+          });
 
           final stops = order.pickupStops ?? const [];
           final needsPickup = order.status == OrderStatus.assigned;
@@ -840,9 +879,14 @@ class _RiderDeliveryMapScreenState
                               effectivePickupStopIndex >= stops.length - 1;
 
                           // Persist progress for per-stop hero notifications.
+                          // Store NEXT stop index so the app can resume correctly
+                          // after rebuilds (current stop becomes the next one).
+                          final nextStopIndex = isLast
+                              ? effectivePickupStopIndex
+                              : (effectivePickupStopIndex + 1);
                           final ok = await _markPickupStopCompleted(
                             orderId: order.orderId,
-                            stopIndex: effectivePickupStopIndex,
+                            stopIndex: nextStopIndex,
                           );
 
                           if (!ok) {
@@ -1427,7 +1471,10 @@ class _DeliveryCompletedScreen extends StatelessWidget {
                 height: 48,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).popUntil((route) => route.isFirst);
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+                      (_) => false,
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryOrange,

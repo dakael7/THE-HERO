@@ -40,12 +40,14 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     final rider = riderVehicleType.toLowerCase().trim();
     final required = requiredVehicle.toLowerCase().trim();
 
-    // Compatibility rule (same as domain layer intent):
-    // - car can take car/motorcycle/bicycle
-    // - motorcycle can take motorcycle/bicycle
-    // - bicycle can take bicycle
     if (rider == 'car') {
       return required == 'car' || required == 'motorcycle' || required == 'bicycle';
+    }
+    if (rider == 'truck') {
+      return required == 'truck' ||
+          required == 'car' ||
+          required == 'motorcycle' ||
+          required == 'bicycle';
     }
     if (rider == 'motorcycle') {
       return required == 'motorcycle' || required == 'bicycle';
@@ -54,7 +56,6 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
       return required == 'bicycle';
     }
 
-    // Unknown rider type => reject for safety.
     return false;
   }
 
@@ -143,6 +144,14 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           final isCashOrder = paymentSnap.exists &&
               _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
 
+          final riderRef = _firestore.collection('users').doc(riderId);
+          final cancelEventRef = riderRef.collection('riderTripEvents').doc();
+          transaction.set(cancelEventRef, {
+            'type': 'canceled_trip',
+            'orderId': orderId,
+            'createdAt': Timestamp.now(),
+          });
+
           final holdAlreadyReleased = data['cashHoldReleased'] == true;
           if (isCashOrder && !holdAlreadyReleased) {
             final holdRaw = riderMap?['cashHoldAmount'];
@@ -150,8 +159,6 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                 ? holdRaw.toDouble()
                 : _cashAmountToCollectFromOrder(data);
             final holdCents = _toCents(holdAmount);
-
-            final riderRef = _firestore.collection('users').doc(riderId);
             transaction.update(riderRef, {
               'riderWallet.cashOnHold': FieldValue.increment(-holdAmount),
               'riderWallet.cashOnHoldCents': FieldValue.increment(-holdCents),

@@ -25,6 +25,7 @@ class OrderModel {
   final String currency;
   final OrderPickupModel pickup;
   final List<OrderPickupStopModel>? pickupStops;
+  final int? pickupProgressCurrentStopIndex;
   final OrderDeliveryModel delivery;
   final OrderRequirementsModel requirements;
   final OrderRiderModel rider;
@@ -56,6 +57,7 @@ class OrderModel {
     required this.currency,
     required this.pickup,
     this.pickupStops,
+    this.pickupProgressCurrentStopIndex,
     required this.delivery,
     required this.requirements,
     required this.rider,
@@ -88,6 +90,17 @@ class OrderModel {
       return firestore.Timestamp.now();
     }
 
+    final pickupProgress = (json['pickupProgress'] is Map)
+        ? (json['pickupProgress'] as Map)
+        : null;
+
+    final pickupProgressStopIndexRaw = pickupProgress?['currentStopIndex'];
+    final pickupProgressStopIndex = (pickupProgressStopIndexRaw is int)
+        ? pickupProgressStopIndexRaw
+        : (pickupProgressStopIndexRaw is num)
+            ? pickupProgressStopIndexRaw.toInt()
+            : null;
+
     return OrderModel(
       orderId: json['orderId'] as String? ?? '',
       heroId: json['heroId'] as String? ?? '',
@@ -116,6 +129,7 @@ class OrderModel {
           ?.whereType<Map>()
           .map((e) => OrderPickupStopModel.fromJson(e.cast<String, dynamic>()))
           .toList(),
+      pickupProgressCurrentStopIndex: pickupProgressStopIndex,
       delivery: OrderDeliveryModel.fromJson(
         json['delivery'] as Map<String, dynamic>? ?? {},
       ),
@@ -202,6 +216,7 @@ class OrderModel {
       currency: currency,
       pickup: pickup.toEntity(),
       pickupStops: pickupStops?.map((e) => e.toEntity()).toList(),
+      pickupProgressCurrentStopIndex: pickupProgressCurrentStopIndex,
       delivery: delivery.toEntity(),
       requirements: requirements.toEntity(),
       rider: rider.toEntity(),

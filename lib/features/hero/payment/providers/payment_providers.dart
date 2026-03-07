@@ -85,6 +85,7 @@ final getPaymentByOrderIdProvider = FutureProvider.family<Payment?, String>((
 class PaymentState {
   final bool isProcessing;
   final Payment? payment;
+  final String? errorCode;
   final String? error;
   final String? preferenceId;
   final String? initPoint;
@@ -92,6 +93,7 @@ class PaymentState {
   const PaymentState({
     this.isProcessing = false,
     this.payment,
+    this.errorCode,
     this.error,
     this.preferenceId,
     this.initPoint,
@@ -100,6 +102,7 @@ class PaymentState {
   PaymentState copyWith({
     bool? isProcessing,
     Payment? payment,
+    String? errorCode,
     String? error,
     String? preferenceId,
     String? initPoint,
@@ -107,6 +110,7 @@ class PaymentState {
     return PaymentState(
       isProcessing: isProcessing ?? this.isProcessing,
       payment: payment ?? this.payment,
+      errorCode: errorCode,
       error: error ?? this.error,
       preferenceId: preferenceId ?? this.preferenceId,
       initPoint: initPoint ?? this.initPoint,
@@ -123,7 +127,7 @@ class PaymentNotifier extends Notifier<PaymentState> {
   Future<void> createPreference(dynamic order) async {
     if (state.isProcessing) return;
 
-    state = state.copyWith(isProcessing: true, error: null);
+    state = state.copyWith(isProcessing: true, error: null, errorCode: null);
 
     try {
       final createPreferenceUseCase = ref.read(
@@ -138,6 +142,12 @@ class PaymentNotifier extends Notifier<PaymentState> {
             ? preference.initPoint
             : preference.sandboxInitPoint,
       );
+    } on PaymentFunctionsException catch (e) {
+      state = state.copyWith(
+        isProcessing: false,
+        errorCode: e.code,
+        error: e.message ?? e.toString(),
+      );
     } catch (e) {
       state = state.copyWith(isProcessing: false, error: e.toString());
     }
@@ -145,13 +155,19 @@ class PaymentNotifier extends Notifier<PaymentState> {
 
   /// Verifies a payment by payment ID
   Future<void> verifyPayment(String paymentId) async {
-    state = state.copyWith(isProcessing: true, error: null);
+    state = state.copyWith(isProcessing: true, error: null, errorCode: null);
 
     try {
       final verifyPaymentUseCase = ref.read(verifyPaymentUseCaseProvider);
       final payment = await verifyPaymentUseCase.execute(paymentId);
 
       state = state.copyWith(isProcessing: false, payment: payment);
+    } on PaymentFunctionsException catch (e) {
+      state = state.copyWith(
+        isProcessing: false,
+        errorCode: e.code,
+        error: e.message ?? e.toString(),
+      );
     } catch (e) {
       state = state.copyWith(isProcessing: false, error: e.toString());
     }

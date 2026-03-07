@@ -22,6 +22,7 @@ import '../../domain/services/directions_service.dart';
 import '../providers/rider_nearby_providers.dart';
 import 'rider_delivery_map_screen.dart';
 import '../../../../domain/entities/payment.dart';
+import 'rider_earnings_screen.dart';
 
 final _currentDeviceLocationProvider = FutureProvider.autoDispose<LocationEntity>((
   ref,
@@ -93,6 +94,228 @@ class DeliveryDetailsScreen extends ConsumerStatefulWidget {
 class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
   gmap.GoogleMapController? _mapController;
   String? _lastRouteDebug;
+
+  String _normalizeErrorMessage(Object e) {
+    final raw = e.toString();
+    const prefix = 'Exception: ';
+    if (raw.startsWith(prefix)) return raw.substring(prefix.length).trim();
+    return raw.trim();
+  }
+
+  Map<String, double?> _extractCashHoldNumbers(String message) {
+    final matches = RegExp(r'\$\s*([0-9]+(?:\.[0-9]+)?)').allMatches(message);
+    final values = <double>[];
+    for (final m in matches) {
+      final s = m.group(1);
+      if (s == null) continue;
+      final v = double.tryParse(s);
+      if (v == null) continue;
+      values.add(v);
+    }
+
+    final required = values.isNotEmpty ? values[0] : null;
+    final available = values.length >= 2 ? values[1] : null;
+    return {
+      'required': required,
+      'available': available,
+    };
+  }
+
+  Future<void> _showCashAcceptErrorSheet({required String message}) async {
+    final normalized = message.trim();
+    final numbers = _extractCashHoldNumbers(normalized);
+    final required = numbers['required'];
+    final available = numbers['available'];
+
+    final hasNumbers = required != null || available != null;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return SafeArea(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.payments_outlined,
+                        color: Colors.red,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'No puedes aceptar este pedido',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: textGray900,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      icon: const Icon(Icons.close),
+                      color: textGray600,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Este pedido requiere pago en efectivo. Para tomarlo debes tener saldo disponible suficiente.',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: textGray700,
+                    height: 1.3,
+                  ),
+                ),
+                if (hasNumbers) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: backgroundGray50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: borderGray100),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (required != null)
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Requerido (efectivo)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: textGray700,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '\$${required.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                  color: textGray900,
+                                ),
+                              ),
+                            ],
+                          ),
+                        if (available != null) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Disponible',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: textGray700,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '\$${available.toStringAsFixed(0)}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.red.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    normalized,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: textGray600,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const RiderEarningsScreen(),
+                            ),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: primaryOrange,
+                          side: const BorderSide(color: primaryOrange),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text(
+                          'Ver ganancias',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryOrange,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: const Text(
+                          'Entendido',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   double _roundCoord(double v) => double.parse(v.toStringAsFixed(5));
 
@@ -1160,13 +1383,20 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al aceptar: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        final msg = _normalizeErrorMessage(e);
+        final isCashHoldError = msg.toLowerCase().contains('pago en efectivo') ||
+            msg.toLowerCase().contains('pendiente por pagar');
+        if (isCashHoldError) {
+          await _showCashAcceptErrorSheet(message: msg);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al aceptar: $msg'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     }
   }

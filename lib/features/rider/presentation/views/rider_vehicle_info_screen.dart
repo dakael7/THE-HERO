@@ -24,6 +24,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
   bool _saving = false;
   bool _bootstrappedVehicles = false;
   bool _devBypassVehicleDocs = false;
+  int _bicycleDevTapCount = 0;
 
   @override
   void initState() {
@@ -32,7 +33,6 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
   }
 
   Future<void> _loadDevBypassFlag() async {
-    if (kReleaseMode) return;
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool(_devBypassVehicleDocsKey) ?? false;
     if (!mounted) return;
@@ -40,11 +40,28 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
   }
 
   Future<void> _setDevBypassFlag(bool enabled) async {
-    if (kReleaseMode) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_devBypassVehicleDocsKey, enabled);
     if (!mounted) return;
     setState(() => _devBypassVehicleDocs = enabled);
+  }
+
+  void _onBicycleDevTap() {
+    setState(() => _bicycleDevTapCount += 1);
+    if (_bicycleDevTapCount < 7) return;
+    _bicycleDevTapCount = 0;
+    final next = !_devBypassVehicleDocs;
+    _setDevBypassFlag(next);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          next
+              ? 'Modo developer activado: vehículos habilitados sin documentos.'
+              : 'Modo developer desactivado.',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _showInfoDialog(
@@ -205,7 +222,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
           }
 
           bool isVehicleVerified(VehicleType type) {
-            if (!kReleaseMode && _devBypassVehicleDocs) {
+            if (_devBypassVehicleDocs) {
               return true;
             }
             final status = vehicleVerificationStatus(type);
@@ -385,6 +402,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       statusLabel: vehicleStatusLabel(VehicleType.bicycle),
                       enabled: true,
                       onTap: () => setState(() => _selected = VehicleType.bicycle),
+                      onIconTap: _onBicycleDevTap,
                       onPrimaryAction: null,
                       primaryActionLabel: null,
                       warningText: null,
@@ -613,6 +631,7 @@ class _VehicleOptionTile extends StatelessWidget {
   final bool isVerified;
   final String? statusLabel;
   final VoidCallback onTap;
+  final VoidCallback? onIconTap;
   final String? primaryActionLabel;
   final VoidCallback? onPrimaryAction;
   final String? warningText;
@@ -626,6 +645,7 @@ class _VehicleOptionTile extends StatelessWidget {
     required this.isVerified,
     required this.statusLabel,
     required this.onTap,
+    this.onIconTap,
     this.primaryActionLabel,
     this.onPrimaryAction,
     this.warningText,
@@ -677,11 +697,20 @@ class _VehicleOptionTile extends StatelessWidget {
                         : backgroundGray50,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    _icon,
-                    color: selected
-                        ? primaryOrange
-                        : (enabled ? textGray700 : textGray700.withValues(alpha: 0.6)),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      onTap: onIconTap,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Icon(
+                        _icon,
+                        color: selected
+                            ? primaryOrange
+                            : (enabled
+                                ? textGray700
+                                : textGray700.withValues(alpha: 0.6)),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),

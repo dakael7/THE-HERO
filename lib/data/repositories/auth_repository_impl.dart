@@ -91,10 +91,15 @@ class AuthRepositoryImpl implements AuthRepository {
       return null;
     }
 
-    final remoteUser = await _remoteDataSource.getCurrentUser();
-    if (remoteUser != null) {
-      await _localDataSource.saveUser(remoteUser);
-      return UserMapper.toEntity(remoteUser);
+    try {
+      final remoteUser = await _remoteDataSource.getCurrentUser();
+      if (remoteUser != null) {
+        await _localDataSource.saveUser(remoteUser);
+        return UserMapper.toEntity(remoteUser);
+      }
+    } catch (_) {
+      // Fall back to locally cached user to avoid forcing logout on transient
+      // Firestore/auth read errors.
     }
 
     final localUser = await _localDataSource.getCurrentUser();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,6 +52,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   final _addressController = TextEditingController();
   final _latController = TextEditingController();
   final _lngController = TextEditingController();
+  String? _countryCode;
   final ImagePicker _imagePicker = ImagePicker();
 
   static const _currency = 'CLP';
@@ -124,6 +127,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         _addressController.text = snapshot.fullAddress;
         _latController.text = snapshot.geopoint.latitude.toStringAsFixed(6);
         _lngController.text = snapshot.geopoint.longitude.toStringAsFixed(6);
+        _countryCode = snapshot.countryCode;
       }
     } else {
       _priceController.text = '0,00';
@@ -360,6 +364,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         _addressController.text = result.address;
         _latController.text = result.latitude.toStringAsFixed(6);
         _lngController.text = result.longitude.toStringAsFixed(6);
+        _countryCode = result.countryCode;
       });
     }
   }
@@ -409,157 +414,171 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   }
 
   Future<void> _save() async {
-    final userAsync = ref.read(profileStreamProvider);
-    if (!userAsync.hasValue || userAsync.value == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debes iniciar sesión para crear o editar ofertas'),
-        ),
-      );
-      return;
-    }
-    final user = userAsync.value!;
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
 
-    if (_publishNow && !user.isRutVerified) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debes verificar tu RUT para publicar donaciones.'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
+    try {
+      final userCached = ref.read(profileStreamProvider).value;
+      final user = userCached ??
+          await ref
+              .read(profileStreamProvider.future)
+              .timeout(const Duration(seconds: 3), onTimeout: () => null) ??
+          await ref
+              .read(profileProvider.future)
+              .timeout(const Duration(seconds: 3), onTimeout: () => null);
 
-    if (_publishNow) {
-      final authUser = fb_auth.FirebaseAuth.instance.currentUser;
-      final isEmailVerified = authUser?.emailVerified ?? false;
-      if (!isEmailVerified || !user.contact.emailVerified) {
+      if (user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Debes verificar tu correo para publicar una oferta'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-        if (!mounted) return;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => UnverifiedEmailScreen(
-              userRole: UserRole.hero,
-              email: user.email,
-            ),
+            content: Text('Debes iniciar sesión para crear o editar ofertas'),
           ),
         );
         return;
       }
-    }
 
-    Address? buildLocationSnapshot() {
-      final addressText = _addressController.text.trim();
-      if (addressText.isNotEmpty) {
-        final lat = double.tryParse(_latController.text.trim());
-        final lng = double.tryParse(_lngController.text.trim());
+      if (_publishNow && !user.isRutVerified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Debes verificar tu RUT para publicar donaciones.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
 
-        if (_publishNow && (lat == null || lng == null)) {
+      if (_publishNow) {
+        final authUser = fb_auth.FirebaseAuth.instance.currentUser;
+        final isEmailVerified = authUser?.emailVerified ?? false;
+        if (!isEmailVerified || !user.contact.emailVerified) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Ingresa latitud y longitud válidas para publicar'),
+              content: Text('Debes verificar tu correo para publicar una oferta'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+          if (!mounted) return;
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => UnverifiedEmailScreen(
+                userRole: UserRole.hero,
+                email: user.email,
+              ),
+            ),
+          );
+          return;
+        }
+      }
+
+      Address? buildLocationSnapshot() {
+        final addressText = _addressController.text.trim();
+        if (addressText.isNotEmpty) {
+          final lat = double.tryParse(_latController.text.trim());
+          final lng = double.tryParse(_lngController.text.trim());
+
+          if (_publishNow && (lat == null || lng == null)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Ingresa latitud y longitud válidas para publicar'),
+                backgroundColor: Color(0xFFDC2626),
+                duration: Duration(seconds: 3),
+              ),
+            );
+            return null;
+          }
+
+          if (lat != null && lng != null) {
+            return Address(
+              fullAddress: addressText,
+              geopoint: GeoPoint(lat, lng),
+              locationCheck: true,
+              countryCode: _countryCode,
+            );
+          }
+
+          // Permitir guardar en borrador con geos vacíos (0,0)
+          return Address(
+            fullAddress: addressText,
+            geopoint: const GeoPoint(0, 0),
+            locationCheck: false,
+            countryCode: _countryCode,
+          );
+        }
+
+        // fallback: dirección del usuario
+        return user.address;
+      }
+
+      // Validar imagen de portada si se intenta publicar
+      if (_publishNow) {
+        if (_isInGoodState == null || _worksCorrectly == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Responde si está en buen estado y si funciona correctamente',
+              ),
               backgroundColor: Color(0xFFDC2626),
               duration: Duration(seconds: 3),
             ),
           );
-          return null;
+          return;
         }
 
-        if (lat != null && lng != null) {
-          return Address(
-            fullAddress: addressText,
-            geopoint: GeoPoint(lat, lng),
-            locationCheck: true,
+        final hasCoverImage =
+            _coverImageBytes != null || _coverAsset.trim().isNotEmpty;
+
+        if (!hasCoverImage) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Debes agregar una imagen de portada para publicar la oferta',
+              ),
+              backgroundColor: Color(0xFFDC2626),
+              duration: Duration(seconds: 3),
+            ),
           );
+          return;
         }
-
-        // Permitir guardar en borrador con geos vacíos (0,0)
-        return Address(
-          fullAddress: addressText,
-          geopoint: const GeoPoint(0, 0),
-          locationCheck: false,
-        );
       }
 
-      // fallback: dirección del usuario
-      return user.address;
-    }
+      setState(() => _submitted = true);
+      if (!_formKey.currentState!.validate()) return;
 
-    // Validar imagen de portada si se intenta publicar
-    if (_publishNow) {
-      if (_isInGoodState == null || _worksCorrectly == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Responde si está en buen estado y si funciona correctamente',
-            ),
-            backgroundColor: Color(0xFFDC2626),
-            duration: Duration(seconds: 3),
-          ),
-        );
-        return;
+      final isEdit = widget.initialOffer != null;
+      final now = DateTime.now();
+      final price = 0.0;
+      final stock = int.tryParse(_stockController.text.trim()) ?? 0;
+      final weightInput = parseLocalizedPrice(_weightController.text) ?? 0.5;
+      final weight = _weightUnit == 'g' ? (weightInput / 1000) : weightInput;
+
+      // Mantener cantidad vendida al editar: reserved = stockInicial - disponible
+      int availableQty = stock;
+      if (isEdit) {
+        final reserved =
+            widget.initialOffer!.stock - widget.initialOffer!.availableQty;
+        availableQty = stock - reserved;
+        if (availableQty < 0) availableQty = 0;
       }
 
-      final hasCoverImage =
-          _coverImageBytes != null || _coverAsset.trim().isNotEmpty;
+      final selectedStatus = isEdit
+          ? (_publishNow ? OfferStatus.active : widget.initialOffer!.status)
+          : (_publishNow ? OfferStatus.active : OfferStatus.draft);
 
-      if (!hasCoverImage) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Debes agregar una imagen de portada para publicar la oferta',
-            ),
-            backgroundColor: Color(0xFFDC2626),
-            duration: Duration(seconds: 3),
-          ),
-        );
-        return;
-      }
-    }
+      final publishedAt = selectedStatus == OfferStatus.active
+          ? (widget.initialOffer?.publishedAt ?? now)
+          : widget.initialOffer?.publishedAt;
 
-    setState(() => _submitted = true);
-    if (!_formKey.currentState!.validate()) return;
-
-    final isEdit = widget.initialOffer != null;
-    final now = DateTime.now();
-    final price = 0.0;
-    final stock = int.tryParse(_stockController.text.trim()) ?? 0;
-    final weightInput = parseLocalizedPrice(_weightController.text) ?? 0.5;
-    final weight = _weightUnit == 'g' ? (weightInput / 1000) : weightInput;
-
-    // Mantener cantidad vendida al editar: reserved = stockInicial - disponible
-    int availableQty = stock;
-    if (isEdit) {
-      final reserved =
-          widget.initialOffer!.stock - widget.initialOffer!.availableQty;
-      availableQty = stock - reserved;
-      if (availableQty < 0) availableQty = 0;
-    }
-
-    final selectedStatus = isEdit
-        ? (_publishNow ? OfferStatus.active : widget.initialOffer!.status)
-        : (_publishNow ? OfferStatus.active : OfferStatus.draft);
-
-    final publishedAt = selectedStatus == OfferStatus.active
-        ? (widget.initialOffer?.publishedAt ?? now)
-        : widget.initialOffer?.publishedAt;
-
-    setState(() => _isSaving = true);
-    try {
       final notifier = ref.read(offerNotifierProvider.notifier);
 
       final hasNewCover = _coverImageBytes != null;
       final hasNewAdditional = _additionalImageBytes.isNotEmpty;
       final coverImageUrl = hasNewCover ? '' : _coverAsset;
-      final existingImageUrls = widget.initialOffer?.imageUrls ?? const <String>[];
+      final existingImageUrls =
+          widget.initialOffer?.imageUrls ?? const <String>[];
       final initialImageUrls = isEdit
           ? <String>[...existingImageUrls]
-          : (coverImageUrl.trim().isNotEmpty ? <String>[coverImageUrl] : <String>[]);
+          : (coverImageUrl.trim().isNotEmpty
+              ? <String>[coverImageUrl]
+              : <String>[]);
 
       final locationSnapshot = buildLocationSnapshot();
       if (_publishNow && locationSnapshot == null) {
@@ -570,7 +589,6 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
             duration: Duration(seconds: 3),
           ),
         );
-        setState(() => _isSaving = false);
         return;
       }
 
@@ -1265,6 +1283,40 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
                   onChanged: (schedule) {
                     setState(() => _pickupSchedule = schedule);
                   },
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(top: 12),
+                  decoration: BoxDecoration(
+                    color: backgroundWhite,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: borderGray100),
+                  ),
+                  child: SwitchListTile.adaptive(
+                    value: _allowInPersonPickup,
+                    onChanged: _isSaving
+                        ? null
+                        : (val) {
+                            setState(() => _allowInPersonPickup = val);
+                          },
+                    title: const Text(
+                      'Permitir retiro en persona',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: textGray900,
+                      ),
+                    ),
+                    subtitle: Text(
+                      _allowInPersonPickup
+                          ? 'Los compradores podrán coordinar retiro presencial.'
+                          : 'Solo envío o retiro vía concierge (si aplica).',
+                      style: const TextStyle(color: textGray700, fontSize: 12),
+                    ),
+                    activeThumbColor: primaryOrange,
+                    activeTrackColor: primaryOrange.withValues(alpha: 0.12),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
                 const SizedBox(height: 4),
 

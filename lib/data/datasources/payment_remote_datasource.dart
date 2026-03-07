@@ -1,6 +1,19 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+class PaymentFunctionsException implements Exception {
+  final String code;
+  final String? message;
+
+  PaymentFunctionsException({required this.code, this.message});
+
+  @override
+  String toString() {
+    if (message == null || message!.isEmpty) return code;
+    return '$code - $message';
+  }
+}
+
 class PaymentRemoteDataSource {
   final FirebaseFunctions _functions;
 
@@ -30,9 +43,7 @@ class PaymentRemoteDataSource {
 
       return Map<String, dynamic>.from(result.data as Map);
     } on FirebaseFunctionsException catch (e) {
-      throw Exception(
-        'Error creating payment preference: ${e.code} - ${e.message}',
-      );
+      throw PaymentFunctionsException(code: e.code, message: e.message);
     } catch (e) {
       throw Exception('Unexpected error creating payment preference: $e');
     }
@@ -52,7 +63,7 @@ class PaymentRemoteDataSource {
 
       return Map<String, dynamic>.from(result.data as Map);
     } on FirebaseFunctionsException catch (e) {
-      throw Exception('Error verifying payment: ${e.code} - ${e.message}');
+      throw PaymentFunctionsException(code: e.code, message: e.message);
     } catch (e) {
       throw Exception('Unexpected error verifying payment: $e');
     }
@@ -75,9 +86,7 @@ class PaymentRemoteDataSource {
       if (e.code == 'not-found') {
         return null;
       }
-      throw Exception(
-        'Error getting payment by order ID: ${e.code} - ${e.message}',
-      );
+      throw PaymentFunctionsException(code: e.code, message: e.message);
     } catch (e) {
       throw Exception('Unexpected error getting payment by order ID: $e');
     }

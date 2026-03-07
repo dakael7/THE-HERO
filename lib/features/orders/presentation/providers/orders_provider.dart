@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/entities/vehicle.dart';
 import '../../../../domain/providers/orders_usecase_providers.dart';
@@ -106,6 +108,8 @@ final availableOrdersProvider = StreamProvider.autoDispose
     });
 
 class OrderNotifier extends Notifier<AsyncValue<Order?>> {
+  static const _devBypassVehicleDocsKey = 'dev_bypass_vehicle_docs';
+
   @override
   AsyncValue<Order?> build() {
     return const AsyncValue.data(null);
@@ -141,6 +145,14 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
       final isActive = riderProfile.isActive == true;
       final isVerified = riderProfile.isVerified == true;
 
+      final bool devBypassVerification;
+      if (kReleaseMode) {
+        devBypassVerification = false;
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        devBypassVerification = prefs.getBool(_devBypassVehicleDocsKey) ?? false;
+      }
+
       // Business rule: bicycle riders can accept without full verification flow.
       if (riderVehicleType == VehicleType.bicycle) {
         if (!isActive) {
@@ -155,7 +167,7 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
           );
         }
 
-        if (!isVerified) {
+        if (!isVerified && !devBypassVerification) {
           throw Exception('Rider no verificado para aceptar pedidos');
         }
       }
@@ -201,6 +213,7 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
       state = const AsyncValue.data(null);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
+      rethrow;
     }
   }
 

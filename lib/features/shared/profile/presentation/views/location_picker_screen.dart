@@ -5,6 +5,7 @@ import 'package:google_places_flutter/google_places_flutter.dart';
 import 'package:google_places_flutter/model/prediction.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
 
 class MapLocationResult {
   final double latitude;
@@ -49,6 +50,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   bool _isLocating = false;
   bool _isResolvingAddress = false;
   String? _selectedCountryCode;
+  Timer? _resolveDebounce;
+  int _resolveSeq = 0;
+  final Map<String, ({String address, String? countryCode})> _addressCache = {};
 
   @override
   void initState() {
@@ -66,6 +70,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
   @override
   void dispose() {
+    _resolveDebounce?.cancel();
     _addressController.dispose();
     _searchController.dispose();
     _controller?.dispose();
@@ -78,14 +83,38 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       _addressController.text = _formatLatLng(pos);
     });
 
-    _resolveAddressFromLatLng(pos);
+    _resolveDebounced(pos);
+  }
+
+  void _resolveDebounced(LatLng pos) {
+    _resolveDebounce?.cancel();
+    _resolveDebounce = Timer(const Duration(milliseconds: 350), () {
+      _resolveAddressFromLatLng(pos);
+    });
   }
 
   Future<void> _resolveAddressFromLatLng(LatLng pos) async {
-    if (_isResolvingAddress) return;
     if (widget.apiKey.trim().isEmpty) return;
 
-    setState(() => _isResolvingAddress = true);
+    final cacheKey =
+        '${pos.latitude.toStringAsFixed(5)},${pos.longitude.toStringAsFixed(5)}';
+    final cached = _addressCache[cacheKey];
+    if (cached != null) {
+      if (!mounted) return;
+      setState(() {
+        _selectedCountryCode = cached.countryCode;
+        if (_addressController.text.trim().startsWith('Lat:')) {
+          _addressController.text = cached.address;
+        }
+      });
+      return;
+    }
+
+    final seq = ++_resolveSeq;
+
+    if (mounted) {
+      setState(() => _isResolvingAddress = true);
+    }
     try {
       final uri = Uri.parse(
         'https://maps.googleapis.com/maps/api/geocode/json'
@@ -93,7 +122,16 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         '&key=${widget.apiKey}',
       );
 
-      final res = await http.get(uri);
+      Future<http.Response> getRequest() {
+        return http.get(uri).timeout(const Duration(seconds: 8));
+      }
+
+      http.Response res;
+      try {
+        res = await getRequest();
+      } on TimeoutException {
+        res = await getRequest();
+      }
       if (res.statusCode != 200) return;
 
       final decoded = json.decode(res.body);
@@ -138,9 +176,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             ? '$compoundPlusCode, ${formatted.trim()}'
             : formatted.trim(),
       );
+      if (seq != _resolveSeq) return;
       if (!mounted) return;
       setState(() {
         _selectedCountryCode = countryCode;
+        _addressCache[cacheKey] = (address: resolved, countryCode: countryCode);
         if (compoundPlusCode != null) {
           _addressController.text = resolved;
           return;
@@ -155,7 +195,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     } catch (_) {
       // Keep fallback text
     } finally {
-      if (mounted) setState(() => _isResolvingAddress = false);
+      if (mounted && seq == _resolveSeq) {
+        setState(() => _isResolvingAddress = false);
+      }
     }
   }
 

@@ -22,6 +22,9 @@ final riderCumulativeStatsProvider = StreamProvider.autoDispose
   final txQuery = userRef
       .collection('riderWalletTransactions')
       .orderBy('createdAt', descending: true);
+  final tripEventsQuery = userRef
+      .collection('riderTripEvents')
+      .orderBy('createdAt', descending: true);
 
   final ordersUseCase = ref.read(getOrdersByRiderUseCaseProvider);
   final service = const RiderStatsService();
@@ -30,13 +33,17 @@ final riderCumulativeStatsProvider = StreamProvider.autoDispose
 
   DocumentSnapshot<Map<String, dynamic>>? latestUser;
   QuerySnapshot<Map<String, dynamic>>? latestTx;
+  QuerySnapshot<Map<String, dynamic>>? latestTripEvents;
   List<Order>? latestOrders;
 
   void emitIfReady() {
     final userSnap = latestUser;
     final txSnap = latestTx;
+    final tripEventsSnap = latestTripEvents;
     final orders = latestOrders;
-    if (userSnap == null || txSnap == null || orders == null) return;
+    if (userSnap == null || txSnap == null || tripEventsSnap == null || orders == null) {
+      return;
+    }
     if (!userSnap.exists) {
       controller.add(null);
       return;
@@ -61,6 +68,7 @@ final riderCumulativeStatsProvider = StreamProvider.autoDispose
     final stats = service.computeFromSources(
       orders: orders,
       walletTxDocs: txSnap.docs,
+      tripEventDocs: tripEventsSnap.docs,
       pendingBalance: pendingBalance,
       since: lastPayoutAt,
     );
@@ -77,6 +85,11 @@ final riderCumulativeStatsProvider = StreamProvider.autoDispose
     emitIfReady();
   }, onError: controller.addError);
 
+  final tripEventsSub = tripEventsQuery.snapshots().listen((snap) {
+    latestTripEvents = snap;
+    emitIfReady();
+  }, onError: controller.addError);
+
   final ordersSub = ordersUseCase.execute(riderId).listen((list) {
     latestOrders = list;
     emitIfReady();
@@ -85,6 +98,7 @@ final riderCumulativeStatsProvider = StreamProvider.autoDispose
   ref.onDispose(() {
     userSub.cancel();
     txSub.cancel();
+    tripEventsSub.cancel();
     ordersSub.cancel();
     controller.close();
   });
