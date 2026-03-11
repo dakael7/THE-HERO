@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/offer.dart';
 import 'offer_form_screen.dart';
@@ -31,14 +32,9 @@ class _DonationQuestionsScreenState extends State<DonationQuestionsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        title: const Text(
-          'Preguntas',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: const HeroHeaderAppBar(
+        title: 'Preguntas',
+        icon: Icons.quiz_rounded,
       ),
       body: SafeArea(
         child: Padding(

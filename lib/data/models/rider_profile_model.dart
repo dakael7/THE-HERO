@@ -51,9 +51,9 @@ class RiderProfileModel {
               json['verification'] as Map<String, dynamic>,
             )
           : null,
-      deliveredOrders: json['deliveredOrders'] as int? ?? 0,
+      deliveredOrders: (json['deliveredOrders'] as num?)?.toInt() ?? 0,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
-      totalRatings: json['totalRatings'] as int? ?? 0,
+      totalRatings: (json['totalRatings'] as num?)?.toInt() ?? 0,
     );
   }
 

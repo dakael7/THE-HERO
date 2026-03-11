@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../auth/presentation/providers/auth_provider.dart';
 import '../../../../auth/presentation/views/login_page.dart';
@@ -705,7 +706,8 @@ class ProfileScreen extends ConsumerWidget {
           ProfileMenuTile(
             icon: Icons.location_on_outlined,
             title: 'Mi dirección',
-            trailingText: user.address?.fullAddress ?? 'No configurada',
+            trailingText:
+                user.address?.displayAddressMultiline ?? 'No configurada',
             onTap: () {
               Navigator.push(
                 context,
@@ -941,14 +943,9 @@ class _PersonalDataScreenState extends ConsumerState<PersonalDataScreen> {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        title: const Text(
-          'Datos personales',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+      appBar: HeroHeaderAppBar(
+        title: 'Datos personales',
+        icon: Icons.person_rounded,
         actions: [
           userAsyncValue.when(
             data: (user) {
@@ -986,6 +983,7 @@ class _PersonalDataScreenState extends ConsumerState<PersonalDataScreen> {
             loading: () => const SizedBox.shrink(),
             error: (_, __) => const SizedBox.shrink(),
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: userAsyncValue.when(

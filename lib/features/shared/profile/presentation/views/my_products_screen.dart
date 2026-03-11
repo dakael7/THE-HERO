@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
-import '../../../../../data/providers/repository_providers.dart';
-import '../../../../offers/presentation/providers/offers_provider.dart';
-import '../../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
+import '../../../../../data/providers/repository_providers.dart';
+import '../../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../../offers/presentation/providers/offers_provider.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 import 'donation_questions_screen.dart';
 import 'my_donation_orders_screen.dart';
@@ -675,24 +677,16 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-              return;
-            }
-            ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
-          },
-        ),
-        title: const Text(
-          'Mis Donaciones',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+      appBar: HeroHeaderAppBar(
+        title: 'Mis donaciones',
+        icon: Icons.volunteer_activism_rounded,
+        onBack: () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            return;
+          }
+          ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
+        },
         actions: [
           IconButton(
             tooltip: 'Pedidos de mis donaciones',
@@ -705,6 +699,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
               );
             },
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: profileAsync.when(

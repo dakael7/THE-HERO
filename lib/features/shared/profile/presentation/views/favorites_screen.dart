@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/providers/favorites_providers.dart';
 import '../../../../offers/presentation/providers/offers_provider.dart';
@@ -17,24 +18,16 @@ class FavoritesScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-              return;
-            }
-            ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
-          },
-        ),
-        title: const Text(
-          'Favoritos',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+      appBar: HeroHeaderAppBar(
+        title: 'Favoritos',
+        icon: Icons.favorite_border,
+        onBack: () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            return;
+          }
+          ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
+        },
       ),
       body: userAsync.when(
         data: (user) {
@@ -105,6 +98,18 @@ class FavoritesScreen extends ConsumerWidget {
                             imageUrl: offer.coverImageUrl,
                             avgRating: offer.avgRating,
                             ratingCount: offer.ratingCount,
+                            sellerHeroRating: ref
+                                .watch(userByIdStreamProvider(offer.heroId))
+                                .maybeWhen(
+                                  data: (u) => (u?.heroProfile?.rating) ?? 0.0,
+                                  orElse: () => null,
+                                ),
+                            sellerHeroRatingCount: ref
+                                .watch(userByIdStreamProvider(offer.heroId))
+                                .maybeWhen(
+                                  data: (u) => (u?.heroProfile?.totalRatings) ?? 0,
+                                  orElse: () => null,
+                                ),
                           ),
                         );
                       },

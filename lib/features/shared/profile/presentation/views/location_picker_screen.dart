@@ -222,7 +222,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
     // If user tapped the map and the placeholder is still shown, try to resolve
     // once before returning.
-    if (_addressController.text.trim().startsWith('Lat:')) {
+    final needsResolve = _selectedCountryCode == null ||
+        _selectedCountryCode!.trim().isEmpty ||
+        _addressController.text.trim().startsWith('Lat:');
+
+    if (needsResolve) {
       await _resolveAddressFromLatLng(_selected);
     }
 
@@ -316,6 +320,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                       CameraPosition(target: latLng, zoom: 16),
                     ),
                   );
+
+                  await _resolveAddressFromLatLng(latLng);
                 }
               },
               debounceTime: 600,

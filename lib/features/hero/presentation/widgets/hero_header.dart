@@ -800,8 +800,20 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                                   avgRating: offer.avgRating,
                                   ratingCount: offer.ratingCount,
                                   sellerName: _sellerNameFor(
-                                    ref.watch(userByIdProvider(offer.heroId)),
+                                    ref.watch(userByIdStreamProvider(offer.heroId)),
                                   ),
+                                  sellerHeroRating: ref
+                                      .watch(userByIdStreamProvider(offer.heroId))
+                                      .maybeWhen(
+                                        data: (u) => (u?.heroProfile?.rating) ?? 0.0,
+                                        orElse: () => null,
+                                      ),
+                                  sellerHeroRatingCount: ref
+                                      .watch(userByIdStreamProvider(offer.heroId))
+                                      .maybeWhen(
+                                        data: (u) => (u?.heroProfile?.totalRatings) ?? 0,
+                                        orElse: () => null,
+                                      ),
                                 ),
                               ),
                             );

@@ -9,6 +9,7 @@ import '../../../core/config/donation_pricing_config.dart';
 import '../../../domain/config/transport_pricing_config.dart';
 import '../../../domain/entities/order_requirements.dart';
 import 'cart_provider.dart';
+import 'cart_item.dart';
 
 class CartSummary {
   final double subtotal;
@@ -42,14 +43,13 @@ final inPersonPickupSelectedProvider = StateProvider<bool>((ref) => false);
 
 final routeDistanceKmProvider = StateProvider<double?>((ref) => null);
 
-final effectiveDistanceKmProvider = Provider<double?>((ref) {
-  final cartItems = ref.watch(cartProvider);
-  final deliveryGeo = ref.watch(deliveryGeoProvider);
-  final routeDistanceKm = ref.watch(routeDistanceKmProvider);
-  final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
-  final allItemsAllowInPersonPickup =
-      ref.watch(allItemsAllowInPersonPickupProvider);
-
+double? computeEffectiveDistanceKm({
+  required List<CartItem> cartItems,
+  required firestore.GeoPoint? deliveryGeo,
+  required double? routeDistanceKm,
+  required bool inPersonPickupSelected,
+  required bool allItemsAllowInPersonPickup,
+}) {
   if (inPersonPickupSelected && allItemsAllowInPersonPickup) {
     return null;
   }
@@ -75,7 +75,8 @@ final effectiveDistanceKmProvider = Provider<double?>((ref) {
 
   final uniquePickups = <String, firestore.GeoPoint>{};
   for (final geo in pickupGeos) {
-    final key = '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
+    final key =
+        '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
     uniquePickups[key] = geo;
   }
 
@@ -86,6 +87,23 @@ final effectiveDistanceKmProvider = Provider<double?>((ref) {
 
   if (totalKm.isNaN || totalKm.isInfinite || totalKm <= 0) return null;
   return totalKm;
+}
+
+final effectiveDistanceKmProvider = Provider<double?>((ref) {
+  final cartItems = ref.watch(cartProvider);
+  final deliveryGeo = ref.watch(deliveryGeoProvider);
+  final routeDistanceKm = ref.watch(routeDistanceKmProvider);
+  final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
+  final allItemsAllowInPersonPickup =
+      ref.watch(allItemsAllowInPersonPickupProvider);
+
+  return computeEffectiveDistanceKm(
+    cartItems: cartItems,
+    deliveryGeo: deliveryGeo,
+    routeDistanceKm: routeDistanceKm,
+    inPersonPickupSelected: inPersonPickupSelected,
+    allItemsAllowInPersonPickup: allItemsAllowInPersonPickup,
+  );
 });
 
 bool _isValidGeo(firestore.GeoPoint? geo) {
@@ -146,25 +164,21 @@ double _calculateTransportFee({
   return minimum + kmFee;
 }
 
-final cartSummaryProvider = Provider<CartSummary>((ref) {
-  final cartItems = ref.watch(cartProvider);
-  final deliveryGeo = ref.watch(deliveryGeoProvider);
-  final routeDistanceKm = ref.watch(routeDistanceKmProvider);
-  final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
-  final allItemsAllowInPersonPickup =
-      ref.watch(allItemsAllowInPersonPickupProvider);
-
+CartSummary computeCartSummary({
+  required List<CartItem> cartItems,
+  required firestore.GeoPoint? deliveryGeo,
+  required double? routeDistanceKm,
+  required bool inPersonPickupSelected,
+  required bool allItemsAllowInPersonPickup,
+}) {
   double subtotal = 0.0;
   double totalWeight = 0.0;
 
   for (final item in cartItems) {
-    // Modelo de negocio: publicaciones/donaciones tienen subtotal $0.
-    // Mantener subtotal en 0 aunque existan precios legacy en items.
     subtotal = 0.0;
     totalWeight += item.weight * item.quantity;
   }
 
-  // Modelo donaciones: el comprador paga envío + comisión e IVA sobre esos costos.
   final serviceFeeFixed = DonationPricingConfig.buyerServiceFee;
   final taxPercentage = DonationPricingConfig.taxPercentage;
 
@@ -221,56 +235,55 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
       } else if (hasDeliveryGeo && hasPickupGeos) {
         final delivery = deliveryGeo!;
 
-      // Si hay múltiples ubicaciones de pickup, aproximamos como la suma de
-      // distancias pickup->delivery para cada ubicación única.
-      final uniquePickups = <String, firestore.GeoPoint>{};
-      for (final geo in pickupGeos) {
-        final key = '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
-        uniquePickups[key] = geo;
-      }
-
-      var totalKm = 0.0;
-      for (final geo in uniquePickups.values) {
-        totalKm += _haversineKm(geo, delivery);
-      }
-
-      if (totalKm.isNaN || totalKm.isInfinite || totalKm <= 0) {
-        shippingCost = DonationPricingConfig.buyerShippingCost;
-        shippingBreakdown = null;
-
-        assert(() {
-          debugPrint(
-            '🚚 [CartSummary] Invalid totalKm=$totalKm (pickups=${uniquePickups.length}). Using fallback shipping cost.',
-          );
-          return true;
-        }());
-      } else {
-        try {
-          shippingCost = _calculateTransportFee(
-            distanceKm: totalKm,
-            totalWeightKg: totalWeight,
-          );
-
-          final requiredVehicle = OrderRequirements.calculateRequiredVehicleFor(
-            weightKg: totalWeight,
-            distanceKm: totalKm,
-          );
-          shippingBreakdown =
-              '${totalKm.toStringAsFixed(1)} km · ${requiredVehicle.displayName}';
-        } catch (_) {
-          shippingCost = DonationPricingConfig.buyerShippingCost;
-          shippingBreakdown = null;
+        final uniquePickups = <String, firestore.GeoPoint>{};
+        for (final geo in pickupGeos) {
+          final key =
+              '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
+          uniquePickups[key] = geo;
         }
 
-        assert(() {
-          debugPrint(
-            '🚚 [CartSummary] totalKm=${totalKm.toStringAsFixed(2)} pickups=${uniquePickups.length} delivery=${delivery.latitude},${delivery.longitude} shipping=$shippingCost',
-          );
-          return true;
-        }());
-      }
+        var totalKm = 0.0;
+        for (final geo in uniquePickups.values) {
+          totalKm += _haversineKm(geo, delivery);
+        }
+
+        if (totalKm.isNaN || totalKm.isInfinite || totalKm <= 0) {
+          shippingCost = DonationPricingConfig.buyerShippingCost;
+          shippingBreakdown = null;
+
+          assert(() {
+            debugPrint(
+              '🚚 [CartSummary] Invalid totalKm=$totalKm (pickups=${uniquePickups.length}). Using fallback shipping cost.',
+            );
+            return true;
+          }());
+        } else {
+          try {
+            shippingCost = _calculateTransportFee(
+              distanceKm: totalKm,
+              totalWeightKg: totalWeight,
+            );
+
+            final requiredVehicle =
+                OrderRequirements.calculateRequiredVehicleFor(
+              weightKg: totalWeight,
+              distanceKm: totalKm,
+            );
+            shippingBreakdown =
+                '${totalKm.toStringAsFixed(1)} km · ${requiredVehicle.displayName}';
+          } catch (_) {
+            shippingCost = DonationPricingConfig.buyerShippingCost;
+            shippingBreakdown = null;
+          }
+
+          assert(() {
+            debugPrint(
+              '🚚 [CartSummary] totalKm=${totalKm.toStringAsFixed(2)} pickups=${uniquePickups.length} delivery=${delivery.latitude},${delivery.longitude} shipping=$shippingCost',
+            );
+            return true;
+          }());
+        }
       } else {
-        // Fallback: si faltan geos (publicaciones legacy), usar costo fijo actual.
         shippingCost = DonationPricingConfig.buyerShippingCost;
         shippingBreakdown = null;
 
@@ -297,5 +310,22 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
     total: total,
     totalWeight: totalWeight,
     shippingBreakdown: shippingBreakdown,
+  );
+}
+
+final cartSummaryProvider = Provider<CartSummary>((ref) {
+  final cartItems = ref.watch(cartProvider);
+  final deliveryGeo = ref.watch(deliveryGeoProvider);
+  final routeDistanceKm = ref.watch(routeDistanceKmProvider);
+  final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
+  final allItemsAllowInPersonPickup =
+      ref.watch(allItemsAllowInPersonPickupProvider);
+
+  return computeCartSummary(
+    cartItems: cartItems,
+    deliveryGeo: deliveryGeo,
+    routeDistanceKm: routeDistanceKm,
+    inPersonPickupSelected: inPersonPickupSelected,
+    allItemsAllowInPersonPickup: allItemsAllowInPersonPickup,
   );
 });

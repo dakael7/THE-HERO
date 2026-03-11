@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/common/hero_header_app_bar.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/vehicle.dart';
@@ -18,51 +17,9 @@ class RiderVehicleInfoScreen extends ConsumerStatefulWidget {
 }
 
 class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen> {
-  static const _devBypassVehicleDocsKey = 'dev_bypass_vehicle_docs';
-
   VehicleType? _selected;
   bool _saving = false;
   bool _bootstrappedVehicles = false;
-  bool _devBypassVehicleDocs = false;
-  int _bicycleDevTapCount = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadDevBypassFlag();
-  }
-
-  Future<void> _loadDevBypassFlag() async {
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool(_devBypassVehicleDocsKey) ?? false;
-    if (!mounted) return;
-    setState(() => _devBypassVehicleDocs = enabled);
-  }
-
-  Future<void> _setDevBypassFlag(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_devBypassVehicleDocsKey, enabled);
-    if (!mounted) return;
-    setState(() => _devBypassVehicleDocs = enabled);
-  }
-
-  void _onBicycleDevTap() {
-    setState(() => _bicycleDevTapCount += 1);
-    if (_bicycleDevTapCount < 7) return;
-    _bicycleDevTapCount = 0;
-    final next = !_devBypassVehicleDocs;
-    _setDevBypassFlag(next);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          next
-              ? 'Modo developer activado: vehículos habilitados sin documentos.'
-              : 'Modo developer desactivado.',
-        ),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
 
   void _showInfoDialog(
     BuildContext context, {
@@ -90,14 +47,9 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        title: const Text(
-          'Información del Vehículo',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+      appBar: const HeroHeaderAppBar(
+        title: 'Vehículos',
+        icon: Icons.directions_car_rounded,
       ),
       body: profileAsync.when(
         loading: () => const Center(
@@ -117,8 +69,13 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
           if (user == null) {
             return const Center(child: Text('Sesión requerida'));
           }
+          final uid = ref.watch(firebaseAuthUserProvider).value?.uid;
+          if (uid == null) {
+            return const Center(child: Text('Sesión requerida'));
+          }
           final riderProfile = user.riderProfile;
           final rutVerified = user.isRutVerified;
+          final rutGateRequired = !rutVerified;
 
           if (!_bootstrappedVehicles) {
             _bootstrappedVehicles = true;
@@ -222,9 +179,6 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
           }
 
           bool isVehicleVerified(VehicleType type) {
-            if (_devBypassVehicleDocs) {
-              return true;
-            }
             final status = vehicleVerificationStatus(type);
             return status == 'approved' || status == 'not_required';
           }
@@ -290,31 +244,6 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              if (!kReleaseMode)
-                Container(
-                  decoration: BoxDecoration(
-                    color: backgroundWhite,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: borderGray100, width: 1),
-                  ),
-                  child: SwitchListTile(
-                    value: _devBypassVehicleDocs,
-                    onChanged: _setDevBypassFlag,
-                    activeThumbColor: primaryOrange,
-                    title: const Text(
-                      'Desarrollador: habilitar vehículos sin documentos',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: textGray900,
-                      ),
-                    ),
-                    subtitle: const Text(
-                      'Ignora la verificación y permite activar cualquier vehículo.',
-                      style: TextStyle(color: textGray600),
-                    ),
-                  ),
-                ),
-              if (!kReleaseMode) const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -355,7 +284,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                           onPressed: _saving
                               ? null
                               : () async {
-                                  if (!rutVerified) {
+                                  if (rutGateRequired) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                         content: Text(
@@ -402,7 +331,6 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       statusLabel: vehicleStatusLabel(VehicleType.bicycle),
                       enabled: true,
                       onTap: () => setState(() => _selected = VehicleType.bicycle),
-                      onIconTap: _onBicycleDevTap,
                       onPrimaryAction: null,
                       primaryActionLabel: null,
                       warningText: null,
@@ -418,7 +346,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       enabled: true,
                       onTap: () => setState(() => _selected = VehicleType.motorcycle),
                       onPrimaryAction: () async {
-                        if (!rutVerified) {
+                        if (rutGateRequired) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
@@ -463,7 +391,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       enabled: true,
                       onTap: () => setState(() => _selected = VehicleType.car),
                       onPrimaryAction: () async {
-                        if (!rutVerified) {
+                        if (rutGateRequired) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
@@ -508,7 +436,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       enabled: true,
                       onTap: () => setState(() => _selected = VehicleType.truck),
                       onPrimaryAction: () async {
-                        if (!rutVerified) {
+                        if (rutGateRequired) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
@@ -631,7 +559,6 @@ class _VehicleOptionTile extends StatelessWidget {
   final bool isVerified;
   final String? statusLabel;
   final VoidCallback onTap;
-  final VoidCallback? onIconTap;
   final String? primaryActionLabel;
   final VoidCallback? onPrimaryAction;
   final String? warningText;
@@ -645,7 +572,6 @@ class _VehicleOptionTile extends StatelessWidget {
     required this.isVerified,
     required this.statusLabel,
     required this.onTap,
-    this.onIconTap,
     this.primaryActionLabel,
     this.onPrimaryAction,
     this.warningText,
@@ -699,17 +625,13 @@ class _VehicleOptionTile extends StatelessWidget {
                   ),
                   child: Material(
                     type: MaterialType.transparency,
-                    child: InkWell(
-                      onTap: onIconTap,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Icon(
-                        _icon,
-                        color: selected
-                            ? primaryOrange
-                            : (enabled
-                                ? textGray700
-                                : textGray700.withValues(alpha: 0.6)),
-                      ),
+                    child: Icon(
+                      _icon,
+                      color: selected
+                          ? primaryOrange
+                          : (enabled
+                              ? textGray700
+                              : textGray700.withValues(alpha: 0.6)),
                     ),
                   ),
                 ),

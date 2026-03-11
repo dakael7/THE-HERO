@@ -205,8 +205,11 @@ class _EmailVerificationScreenState
           currentUser.identity.documentId.trim().isEmpty ||
               currentUser.contact.phoneNumber.trim().isEmpty;
 
+      final needsProfilePhoto =
+          (currentUser.profilePhotoUrl ?? '').trim().isEmpty;
+
       if (widget.userRole == UserRole.hero) {
-        if (needsCriticalData || !currentUser.isHero) {
+        if (needsCriticalData || needsProfilePhoto || !currentUser.isHero) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -228,7 +231,7 @@ class _EmailVerificationScreenState
         return;
       }
 
-      if (needsCriticalData || !currentUser.isRider) {
+      if (needsCriticalData || needsProfilePhoto || !currentUser.isRider) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(

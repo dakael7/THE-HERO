@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod/riverpod.dart';
 
@@ -30,6 +34,53 @@ class AuthNotifier extends Notifier<AuthState> {
   late final GetCurrentUserUseCase _getCurrentUserUseCase;
   late final SignOutUseCase _signOutUseCase;
   late final AuthRepository _authRepository;
+
+  Future<void> _uploadProfilePhoto({
+    required String uid,
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    if (bytes.isEmpty) {
+      throw Exception('Foto de perfil vacía');
+    }
+
+    final storage = ref.read(firebaseStorageProvider);
+    final db = ref.read(firebaseFirestoreProvider);
+
+    final trimmedName = fileName.trim();
+    final safeName = trimmedName.isEmpty ? 'profile_photo.jpg' : trimmedName;
+    final ext = safeName.contains('.')
+        ? safeName.split('.').last.toLowerCase()
+        : 'jpg';
+
+    final contentType = switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'application/octet-stream',
+    };
+
+    final refPath = storage
+        .ref()
+        .child('users')
+        .child(uid)
+        .child('profile')
+        .child('profile_photo')
+        .child('${DateTime.now().millisecondsSinceEpoch}_$safeName');
+
+    await refPath.putData(
+      bytes,
+      SettableMetadata(contentType: contentType),
+    );
+
+    final url = await refPath.getDownloadURL();
+    await db.collection('users').doc(uid).set(
+      {
+        'profilePhotoUrl': url,
+      },
+      SetOptions(merge: true),
+    );
+  }
 
   @override
   AuthState build() {
@@ -127,6 +178,8 @@ class AuthNotifier extends Notifier<AuthState> {
     required String documentType,
     required String documentId,
     required String phone,
+    Uint8List? profilePhotoBytes,
+    String? profilePhotoName,
   }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
@@ -139,6 +192,16 @@ class AuthNotifier extends Notifier<AuthState> {
         documentId: documentId,
         phone: phone,
       );
+
+      final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
+      if (uid != null && profilePhotoBytes != null) {
+        await _uploadProfilePhoto(
+          uid: uid,
+          bytes: profilePhotoBytes,
+          fileName: profilePhotoName ?? 'profile_photo.jpg',
+        );
+      }
+
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
@@ -160,6 +223,8 @@ class AuthNotifier extends Notifier<AuthState> {
     required String lastName,
     required String rut,
     required String phone,
+    Uint8List? profilePhotoBytes,
+    String? profilePhotoName,
   }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
@@ -171,6 +236,16 @@ class AuthNotifier extends Notifier<AuthState> {
         rut: rut,
         phone: phone,
       );
+
+      final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
+      if (uid != null && profilePhotoBytes != null) {
+        await _uploadProfilePhoto(
+          uid: uid,
+          bytes: profilePhotoBytes,
+          fileName: profilePhotoName ?? 'profile_photo.jpg',
+        );
+      }
+
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
@@ -191,6 +266,8 @@ class AuthNotifier extends Notifier<AuthState> {
     required String lastName,
     required String rut,
     required String phone,
+    Uint8List? profilePhotoBytes,
+    String? profilePhotoName,
   }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
@@ -201,6 +278,14 @@ class AuthNotifier extends Notifier<AuthState> {
         rut: rut,
         phone: phone,
       );
+
+      if (profilePhotoBytes != null) {
+        await _uploadProfilePhoto(
+          uid: uid,
+          bytes: profilePhotoBytes,
+          fileName: profilePhotoName ?? 'profile_photo.jpg',
+        );
+      }
 
       state = state.copyWith(
         isLoading: false,
@@ -224,6 +309,8 @@ class AuthNotifier extends Notifier<AuthState> {
     required String documentType,
     required String documentId,
     required String phone,
+    Uint8List? profilePhotoBytes,
+    String? profilePhotoName,
   }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
@@ -235,6 +322,14 @@ class AuthNotifier extends Notifier<AuthState> {
         documentId: documentId,
         phone: phone,
       );
+
+      if (profilePhotoBytes != null) {
+        await _uploadProfilePhoto(
+          uid: uid,
+          bytes: profilePhotoBytes,
+          fileName: profilePhotoName ?? 'profile_photo.jpg',
+        );
+      }
 
       state = state.copyWith(
         isLoading: false,

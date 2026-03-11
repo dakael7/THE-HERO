@@ -1,11 +1,13 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/validators.dart';
-import '../../../../domain/entities/user.dart';
 import '../../../../data/providers/network_providers.dart';
+import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
 import 'unverified_email_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
@@ -24,6 +26,10 @@ class RegisterRiderScreen extends ConsumerStatefulWidget {
 class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+
+  final _imagePicker = ImagePicker();
+  Uint8List? _profilePhotoBytes;
+  String? _profilePhotoName;
 
   static final Uri _termsAndConditionsUri = Uri.parse(
     'https://theheroprojects.com/privacy-policy',
@@ -49,7 +55,32 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
   late Animation<double> _opacityAnimation;
-  // ------------------------------
+
+  Future<void> _takeProfilePhoto() async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+        imageQuality: 85,
+        maxWidth: 2000,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _profilePhotoBytes = bytes;
+        _profilePhotoName = picked.name;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo tomar la foto: $e'),
+          duration: const Duration(milliseconds: 2200),
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -85,10 +116,13 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     _passwordController = TextEditingController();
     _confirmPasswordController = TextEditingController();
 
-    _controller = AnimationController(vsync: this, duration: Duration.zero);
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
 
     _offsetAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.2),
+      begin: const Offset(0.0, 0.08),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
 
@@ -113,80 +147,65 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     super.dispose();
   }
 
-  Widget _buildLogoSection() {
-    return RepaintBoundary(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset('assets/logo_1.png', height: 80, fit: BoxFit.contain),
-        ],
-      ),
-    );
-  }
-
-  InputDecoration _getInputDecoration({
-    required String labelText,
-    required String hintText,
+  InputDecoration _inputDecoration({
+    required String label,
+    String? hint,
     Widget? suffixIcon,
+    Color? prefixIconColor,
+    IconData? prefixIconData,
   }) {
     return InputDecoration(
-      labelText: labelText,
-      hintText: hintText,
-      hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
+      labelText: label,
+      hintText: hint,
       suffixIcon: suffixIcon,
+      prefixIcon: prefixIconData != null
+          ? Padding(
+              padding: const EdgeInsets.only(left: 14, right: 8),
+              child: Icon(prefixIconData,
+                  size: 18, color: prefixIconColor ?? textGray600),
+            )
+          : null,
+      prefixIconConstraints: const BoxConstraints(minWidth: 44),
+      hintStyle:
+          TextStyle(color: textGray600.withOpacity(0.45), fontSize: 13),
+      labelStyle: const TextStyle(
+          color: textGray600, fontSize: 13, fontWeight: FontWeight.w500),
+      floatingLabelStyle: const TextStyle(
+          color: primaryOrange, fontSize: 12, fontWeight: FontWeight.w700),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: const Color(0xFFFAFAFA),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(13),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: backgroundGray50, width: 1.0),
+        borderRadius: BorderRadius.circular(13),
+        borderSide:
+            const BorderSide(color: Color(0xFFEBEBEB), width: 1.0),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: primaryOrange, width: 2.0),
+        borderRadius: BorderRadius.circular(13),
+        borderSide: const BorderSide(color: primaryOrange, width: 1.8),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.red, width: 2.0),
+        borderRadius: BorderRadius.circular(13),
+        borderSide:
+            const BorderSide(color: Color(0xFFDC2626), width: 1.5),
       ),
-      contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
-    );
-  }
-
-  Widget _buildTextField({
-    required String labelText,
-    required String hintText,
-    required String? Function(String?) validator,
-    TextInputType keyboardType = TextInputType.text,
-    bool obscureText = false,
-    bool enabled = true,
-    List<TextInputFormatter>? inputFormatters,
-    TextEditingController? controller,
-    Widget? suffixIcon,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      obscureText: obscureText,
-      enabled: enabled,
-      validator: validator,
-      inputFormatters: inputFormatters,
-      style: const TextStyle(color: textGray900),
-      decoration: _getInputDecoration(
-        labelText: labelText,
-        hintText: hintText,
-        suffixIcon: suffixIcon,
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(13),
+        borderSide:
+            const BorderSide(color: Color(0xFFDC2626), width: 1.8),
       ),
+      contentPadding:
+          const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
+    final isUpgrade = widget.existingUser != null;
 
     ref.listen(authNotifierProvider, (previous, next) {
       if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
@@ -197,7 +216,6 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
           ),
         );
       }
-
       final wasAuthenticated = previous?.isAuthenticated ?? false;
       if (!wasAuthenticated && next.isAuthenticated) {
         Navigator.pushReplacement(
@@ -221,445 +239,825 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Logo
-              _buildLogoSection(),
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 48),
+          child: FadeTransition(
+            opacity: _opacityAnimation,
+            child: SlideTransition(
+              position: _offsetAnimation,
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── LOGO ──────────────────────────────────────────
+                    Center(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 16),
+                        child: Image.asset('assets/logo_1.png',
+                            height: 72, fit: BoxFit.contain),
+                      ),
+                    ),
 
-              // Formulario Animado con RepaintBoundary
-              RepaintBoundary(
-                child: FadeTransition(
-                  opacity: _opacityAnimation,
-                  child: SlideTransition(
-                    position: _offsetAnimation,
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const SizedBox(height: 30),
+                    // ── PHOTO PICKER ───────────────────────────────────
+                    _PhotoPicker(
+                      photoBytes: _profilePhotoBytes,
+                      isLoading: authState.isLoading,
+                      onTap: _takeProfilePhoto,
+                    ),
 
-                          // Título de transición
-                          Center(
-                            child: Text(
-                              '¡Ya casi!',
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w500,
-                                color: primaryOrange,
-                              ),
-                            ),
+                    const SizedBox(height: 32),
+
+                    // ── DATOS PERSONALES ───────────────────────────────
+                    const _SectionLabel(
+                      label: 'Datos personales',
+                      icon: Icons.person_outline_rounded,
+                    ),
+                    const SizedBox(height: 12),
+
+                    _FieldGroup(
+                      children: [
+                        // Email
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          enabled: widget.email == null,
+                          style: const TextStyle(
+                              color: textGray900, fontSize: 14),
+                          decoration: _inputDecoration(
+                            label: 'Correo electrónico',
+                            hint: 'email@dominio.com',
+                            prefixIconData: Icons.mail_outline_rounded,
                           ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'El correo es obligatorio.';
+                            }
+                            if (!value.contains('@')) {
+                              return 'Ingresa un correo válido.';
+                            }
+                            return null;
+                          },
+                        ),
 
-                          const SizedBox(height: 8),
+                        _FieldDivider(),
 
-                          // Subtítulo de transición
-                          Center(
-                            child: Text(
-                              'Completa tus datos para finalizar el registro',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: textGray600,
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 40),
-
-                          // --------------------------------------------------
-                          // CAMPOS DE FORMULARIO (RESTABLECIDOS)
-                          // --------------------------------------------------
-                          _buildTextField(
-                            controller: _emailController,
-                            labelText: 'Correo Electrónico',
-                            hintText: 'email@domain.com',
-                            enabled: widget.email == null,
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'El correo es obligatorio.';
-                              }
-                              if (!value.contains('@')) {
-                                return 'Ingresa un correo válido.';
-                              }
-                              return null;
-                            },
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: _buildTextField(
-                                  controller: _firstNameController,
-                                  labelText: 'Nombre',
-                                  hintText: 'Ingresa tu nombre',
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'El nombre es obligatorio.';
-                                    }
-                                    return null;
-                                  },
+                        // Nombre + Apellido
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _firstNameController,
+                                style: const TextStyle(
+                                    color: textGray900, fontSize: 14),
+                                decoration: _inputDecoration(
+                                  label: 'Nombre',
+                                  hint: 'Tu nombre',
                                 ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: _buildTextField(
-                                  controller: _lastNameController,
-                                  labelText: 'Apellido',
-                                  hintText: 'Ingresa tu apellido',
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'El apellido es obligatorio.';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          _buildTextField(
-                            controller: _rutController,
-                            labelText: 'Documento de Identidad (RUT)',
-                            hintText: 'Ej: 19.123.456-K',
-                            keyboardType: TextInputType.text,
-                            validator: (value) {
-                              return Validators.rut(value);
-                            },
-                          ),
-
-                          if (widget.existingUser == null) ...[
-                            const SizedBox(height: 24),
-                            _buildTextField(
-                              controller: _passwordController,
-                              labelText: 'Contraseña',
-                              hintText:
-                                  'Mín. 8 caracteres, 1 mayús, 1 minús, 1 número.',
-                              obscureText: _obscurePassword,
-                              keyboardType: TextInputType.visiblePassword,
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _obscurePassword = !_obscurePassword;
-                                  });
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Obligatorio.';
+                                  }
+                                  return null;
                                 },
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
-                                ),
                               ),
-                              validator: (value) {
-                                if (value == null ||
-                                    !passwordRegex.hasMatch(value)) {
-                                  return 'Contraseña débil. Debe cumplir con el formato.';
-                                }
-                                return null;
-                              },
                             ),
-                            const SizedBox(height: 24),
-                            _buildTextField(
-                              controller: _confirmPasswordController,
-                              labelText: 'Confirmar contraseña',
-                              hintText: 'Repite tu contraseña',
-                              obscureText: _obscureConfirmPassword,
-                              keyboardType: TextInputType.visiblePassword,
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _obscureConfirmPassword =
-                                        !_obscureConfirmPassword;
-                                  });
-                                },
-                                icon: Icon(
-                                  _obscureConfirmPassword
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _lastNameController,
+                                style: const TextStyle(
+                                    color: textGray900, fontSize: 14),
+                                decoration: _inputDecoration(
+                                  label: 'Apellido',
+                                  hint: 'Tu apellido',
                                 ),
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return 'Obligatorio.';
+                                  }
+                                  return null;
+                                },
                               ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Confirma tu contraseña.';
-                                }
-                                if (value.trim() !=
-                                    _passwordController.text.trim()) {
-                                  return 'Las contraseñas no coinciden.';
-                                }
-                                return null;
-                              },
                             ),
                           ],
+                        ),
 
-                          const SizedBox(height: 24),
+                        _FieldDivider(),
 
-                          _buildTextField(
-                            controller: _phoneController,
-                            labelText: 'Número de Teléfono',
-                            hintText: 'Ej: 912345678 (9 dígitos)',
-                            keyboardType: TextInputType.phone,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(9),
-                            ],
+                        // Teléfono
+                        TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          style: const TextStyle(
+                              color: textGray900, fontSize: 14),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(9),
+                          ],
+                          decoration: _inputDecoration(
+                            label: 'Número de teléfono',
+                            hint: 'Ej: 912345678',
+                            prefixIconData: Icons.phone_outlined,
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'El número de teléfono es obligatorio.';
+                            }
+                            if (value.length != 9) {
+                              return 'Debe tener exactamente 9 dígitos.';
+                            }
+                            return null;
+                          },
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // ── DOCUMENTO ──────────────────────────────────────
+                    const _SectionLabel(
+                      label: 'Documento de identidad',
+                      icon: Icons.badge_outlined,
+                    ),
+                    const SizedBox(height: 12),
+
+                    _FieldGroup(
+                      children: [
+                        TextFormField(
+                          controller: _rutController,
+                          keyboardType: TextInputType.text,
+                          style: const TextStyle(
+                              color: textGray900, fontSize: 14),
+                          decoration: _inputDecoration(
+                            label: 'RUT',
+                            hint: 'Ej: 19.123.456-K',
+                            prefixIconData: Icons.credit_card_outlined,
+                          ),
+                          validator: (value) => Validators.rut(value),
+                        ),
+                      ],
+                    ),
+
+                    // ── SEGURIDAD (solo nuevo registro) ────────────────
+                    if (widget.existingUser == null) ...[
+                      const SizedBox(height: 20),
+                      const _SectionLabel(
+                        label: 'Seguridad',
+                        icon: Icons.lock_outline_rounded,
+                      ),
+                      const SizedBox(height: 12),
+                      _FieldGroup(
+                        children: [
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            keyboardType: TextInputType.visiblePassword,
+                            style: const TextStyle(
+                                color: textGray900, fontSize: 14),
+                            decoration: _inputDecoration(
+                              label: 'Contraseña',
+                              hint:
+                                  'Mín. 8 car., 1 mayús, 1 minús, 1 número',
+                              prefixIconData:
+                                  Icons.lock_outline_rounded,
+                              suffixIcon: IconButton(
+                                onPressed: () => setState(() =>
+                                    _obscurePassword =
+                                        !_obscurePassword),
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  color: textGray600,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
                             validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'El número de teléfono es obligatorio.';
-                              }
-                              if (value.length != 9) {
-                                return 'Debe tener exactamente 9 dígitos (Formato móvil chileno).';
+                              if (value == null ||
+                                  !passwordRegex.hasMatch(value)) {
+                                return 'Contraseña débil. Debe cumplir el formato.';
                               }
                               return null;
                             },
                           ),
-
-                          const SizedBox(height: 16),
-
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Checkbox(
-                                value: _acceptedTerms,
-                                activeColor: primaryOrange,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _acceptedTerms = value ?? false;
-                                  });
-                                },
-                              ),
-                              Expanded(
-                                child: Wrap(
-                                  crossAxisAlignment:
-                                      WrapCrossAlignment.center,
-                                  children: [
-                                    const Text(
-                                      'Acepto los ',
-                                      style: TextStyle(color: textGray600),
-                                    ),
-                                    InkWell(
-                                      onTap: () async {
-                                        await launchUrl(
-                                          _termsAndConditionsUri,
-                                          mode: LaunchMode.externalApplication,
-                                        );
-                                      },
-                                      child: const Text(
-                                        'Términos y Condiciones',
-                                        style: TextStyle(
-                                          color: primaryOrange,
-                                          fontWeight: FontWeight.w600,
-                                          decoration:
-                                              TextDecoration.underline,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                          _FieldDivider(),
+                          TextFormField(
+                            controller: _confirmPasswordController,
+                            obscureText: _obscureConfirmPassword,
+                            keyboardType: TextInputType.visiblePassword,
+                            style: const TextStyle(
+                                color: textGray900, fontSize: 14),
+                            decoration: _inputDecoration(
+                              label: 'Confirmar contraseña',
+                              hint: 'Repite tu contraseña',
+                              prefixIconData:
+                                  Icons.lock_outline_rounded,
+                              suffixIcon: IconButton(
+                                onPressed: () => setState(() =>
+                                    _obscureConfirmPassword =
+                                        !_obscureConfirmPassword),
+                                icon: Icon(
+                                  _obscureConfirmPassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  color: textGray600,
+                                  size: 20,
                                 ),
                               ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 60),
-
-                          // --------------------------------------------------
-                          // BOTÓN CONTINUAR
-                          // --------------------------------------------------
-                          SizedBox(
-                            width: double.infinity,
-                            height: 56,
-                            child: Builder(
-                              builder: (BuildContext buttonContext) {
-                                return ElevatedButton(
-                                  onPressed: authState.isLoading
-                                      ? null
-                                      : () async {
-                                          if (_formKey.currentState!
-                                              .validate()) {
-                                            if (!_acceptedTerms) {
-                                              ScaffoldMessenger.of(
-                                                buttonContext,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Debes aceptar los Términos y Condiciones para continuar.',
-                                                  ),
-                                                  duration: Duration(
-                                                    milliseconds: 2000,
-                                                  ),
-                                                ),
-                                              );
-                                              return;
-                                            }
-                                            // 1. MANEJO DE UPGRADE DE CUENTA (HERO -> RIDER)
-                                            if (widget.existingUser != null) {
-                                              final user = widget.existingUser!;
-                                              final auth = ref.read(firebaseAuthProvider);
-                                              final uid = auth.currentUser?.uid ?? user.id;
-
-                                              await ref
-                                                  .read(
-                                                    authNotifierProvider
-                                                        .notifier,
-                                                  )
-                                                  .upgradeToRider(
-                                                    uid: uid,
-                                                    firstName:
-                                                        _firstNameController
-                                                            .text
-                                                            .trim(),
-                                                    lastName:
-                                                        _lastNameController.text
-                                                            .trim(),
-                                                    rut: _rutController.text
-                                                        .trim(),
-                                                    phone: _phoneController.text
-                                                        .trim(),
-                                                  );
-
-                                              final currentState = ref.read(
-                                                authNotifierProvider,
-                                              );
-                                              if (currentState.errorMessage ==
-                                                  null) {
-                                                if (context.mounted) {
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    const SnackBar(
-                                                      content: Text(
-                                                        '¡Perfil Rider Activado!',
-                                                      ),
-                                                    ),
-                                                  );
-                                                  Navigator.of(
-                                                    context,
-                                                  ).pushAndRemoveUntil(
-                                                    MaterialPageRoute(
-                                                      builder: (_) =>
-                                                          const RiderHomeScreen(),
-                                                    ),
-                                                    (route) => false,
-                                                  );
-                                                }
-                                              }
-                                              return;
-                                            }
-
-                                            // 2. REGISTRO NUEVO
-                                            final email = _emailController.text
-                                                .trim();
-                                            if (email.isEmpty) {
-                                              ScaffoldMessenger.of(
-                                                buttonContext,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    'Error: Email no válido. Por favor intenta de nuevo.',
-                                                  ),
-                                                ),
-                                              );
-                                              return;
-                                            }
-
-                                            ref
-                                                .read(
-                                                  authNotifierProvider.notifier,
-                                                )
-                                                .registerRider(
-                                                  email: email,
-                                                  password: _passwordController
-                                                      .text
-                                                      .trim(),
-                                                  firstName:
-                                                      _firstNameController.text
-                                                          .trim(),
-                                                  lastName: _lastNameController
-                                                      .text
-                                                      .trim(),
-                                                  rut: _rutController.text
-                                                      .trim(),
-                                                  phone: _phoneController.text
-                                                      .trim(),
-                                                );
-
-                                            ScaffoldMessenger.of(
-                                              buttonContext,
-                                            ).showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                  'Datos válidos. Registrando Rider...',
-                                                ),
-                                                duration: Duration(
-                                                  milliseconds: 1500,
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                  style: ButtonStyle(
-                                    backgroundColor:
-                                        WidgetStateProperty.resolveWith<
-                                          Color
-                                        >((Set<WidgetState> states) {
-                                          if (states.contains(
-                                            WidgetState.pressed,
-                                          )) {
-                                            return const Color(0xFFE67300);
-                                          }
-                                          return primaryOrange;
-                                        }),
-                                    shape:
-                                        WidgetStateProperty.all<
-                                          RoundedRectangleBorder
-                                        >(
-                                          RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                          ),
-                                        ),
-                                  ),
-                                  child: authState.isLoading
-                                      ? const SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : Text(
-                                          widget.existingUser != null
-                                              ? 'Completar Perfil Rider'
-                                              : 'Finalizar Registro Rider',
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                );
-                              },
                             ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Confirma tu contraseña.';
+                              }
+                              if (value.trim() !=
+                                  _passwordController.text.trim()) {
+                                return 'Las contraseñas no coinciden.';
+                              }
+                              return null;
+                            },
                           ),
-
-                          const SizedBox(height: 20),
                         ],
                       ),
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    // ── TÉRMINOS ───────────────────────────────────────
+                    _TermsRow(
+                      accepted: _acceptedTerms,
+                      onChanged: (v) =>
+                          setState(() => _acceptedTerms = v ?? false),
+                      onTapLink: () async {
+                        await launchUrl(_termsAndConditionsUri,
+                            mode: LaunchMode.externalApplication);
+                      },
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    // ── SUBMIT ─────────────────────────────────────────
+                    Builder(
+                      builder: (BuildContext buttonContext) {
+                        return GestureDetector(
+                          onTap: authState.isLoading
+                              ? null
+                              : () async {
+                                  if (_formKey.currentState!.validate()) {
+                                    if (!_acceptedTerms) {
+                                      ScaffoldMessenger.of(buttonContext)
+                                          .showSnackBar(const SnackBar(
+                                        content: Text(
+                                            'Debes aceptar los Términos y Condiciones para continuar.'),
+                                        duration:
+                                            Duration(milliseconds: 2000),
+                                      ));
+                                      return;
+                                    }
+
+                                    // 1. UPGRADE (HERO → RIDER)
+                                    if (widget.existingUser != null) {
+                                      final user = widget.existingUser!;
+                                      final auth =
+                                          ref.read(firebaseAuthProvider);
+                                      final uid =
+                                          auth.currentUser?.uid ?? user.id;
+
+                                      await ref
+                                          .read(
+                                              authNotifierProvider.notifier)
+                                          .upgradeToRider(
+                                            uid: uid,
+                                            firstName: _firstNameController
+                                                .text
+                                                .trim(),
+                                            lastName: _lastNameController
+                                                .text
+                                                .trim(),
+                                            rut:
+                                                _rutController.text.trim(),
+                                            phone: _phoneController.text
+                                                .trim(),
+                                            profilePhotoBytes:
+                                                _profilePhotoBytes,
+                                            profilePhotoName:
+                                                _profilePhotoName,
+                                          );
+
+                                      final currentState =
+                                          ref.read(authNotifierProvider);
+                                      if (currentState.errorMessage ==
+                                          null) {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                  '¡Perfil Rider Activado!'),
+                                            ),
+                                          );
+                                          Navigator.of(context)
+                                              .pushAndRemoveUntil(
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  const RiderHomeScreen(),
+                                            ),
+                                            (route) => false,
+                                          );
+                                        }
+                                      }
+                                      return;
+                                    }
+
+                                    // 2. NUEVO REGISTRO
+                                    if (_profilePhotoBytes == null) {
+                                      ScaffoldMessenger.of(buttonContext)
+                                          .showSnackBar(const SnackBar(
+                                        content: Text(
+                                            'Debes tomar una foto de perfil para continuar.'),
+                                        duration:
+                                            Duration(milliseconds: 2000),
+                                      ));
+                                      return;
+                                    }
+
+                                    final email =
+                                        _emailController.text.trim();
+                                    if (email.isEmpty) {
+                                      ScaffoldMessenger.of(buttonContext)
+                                          .showSnackBar(const SnackBar(
+                                        content: Text(
+                                            'Error: Email no válido. Por favor intenta de nuevo.'),
+                                      ));
+                                      return;
+                                    }
+
+                                    ref
+                                        .read(
+                                            authNotifierProvider.notifier)
+                                        .registerRider(
+                                          email: email,
+                                          password: _passwordController
+                                              .text
+                                              .trim(),
+                                          firstName: _firstNameController
+                                              .text
+                                              .trim(),
+                                          lastName: _lastNameController
+                                              .text
+                                              .trim(),
+                                          rut: _rutController.text.trim(),
+                                          phone:
+                                              _phoneController.text.trim(),
+                                          profilePhotoBytes:
+                                              _profilePhotoBytes,
+                                          profilePhotoName:
+                                              _profilePhotoName,
+                                        );
+
+                                    ScaffoldMessenger.of(buttonContext)
+                                        .showSnackBar(const SnackBar(
+                                      content: Text(
+                                          'Datos válidos. Registrando Rider...'),
+                                      duration:
+                                          Duration(milliseconds: 1500),
+                                    ));
+                                  }
+                                },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: double.infinity,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: authState.isLoading
+                                  ? primaryOrange.withOpacity(0.65)
+                                  : primaryOrange,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: authState.isLoading
+                                  ? []
+                                  : [
+                                      BoxShadow(
+                                        color: primaryOrange
+                                            .withOpacity(0.38),
+                                        blurRadius: 18,
+                                        offset: const Offset(0, 8),
+                                      ),
+                                    ],
+                            ),
+                            child: authState.isLoading
+                                ? const Center(
+                                    child: SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        isUpgrade
+                                            ? Icons.upgrade_rounded
+                                            : Icons.check_circle_rounded,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        isUpgrade
+                                            ? 'Completar Perfil Rider'
+                                            : 'Finalizar Registro Rider',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PHOTO PICKER
+// ─────────────────────────────────────────────────────────────────────────────
+class _PhotoPicker extends StatelessWidget {
+  const _PhotoPicker({
+    required this.photoBytes,
+    required this.isLoading,
+    required this.onTap,
+  });
+  final Uint8List? photoBytes;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPhoto = photoBytes != null;
+
+    return GestureDetector(
+      onTap: isLoading ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        width: double.infinity,
+        padding:
+            const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
+        decoration: BoxDecoration(
+          color: hasPhoto ? const Color(0xFFFFF8F0) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: hasPhoto ? primaryOrange : const Color(0xFFE8E8E8),
+            width: hasPhoto ? 2 : 1.5,
+          ),
+          boxShadow: hasPhoto
+              ? [
+                  BoxShadow(
+                    color: primaryOrange.withOpacity(0.12),
+                    blurRadius: 16,
+                    offset: const Offset(0, 5),
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+        ),
+        child: Row(
+          children: [
+            // Avatar
+            Stack(
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: hasPhoto
+                        ? const Color(0xFFF0F0EE)
+                        : const Color(0xFFF5F5F5),
+                    border: Border.all(
+                      color: hasPhoto
+                          ? primaryOrange.withOpacity(0.3)
+                          : const Color(0xFFE0E0E0),
+                      width: 2,
+                    ),
+                  ),
+                  child: ClipOval(
+                    child: hasPhoto
+                        ? Image.memory(photoBytes!, fit: BoxFit.cover)
+                        : const Center(
+                            child: Icon(Icons.person_rounded,
+                                size: 30,
+                                color: Color(0xFFCCCCCC)),
+                          ),
+                  ),
+                ),
+                if (hasPhoto)
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981),
+                        shape: BoxShape.circle,
+                        border:
+                            Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(Icons.check_rounded,
+                          color: Colors.white, size: 12),
+                    ),
+                  )
+                else
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: primaryOrange,
+                        shape: BoxShape.circle,
+                        border:
+                            Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryOrange.withOpacity(0.3),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.camera_alt_rounded,
+                          color: Colors.white, size: 11),
+                    ),
+                  ),
+              ],
+            ),
+
+            const SizedBox(width: 16),
+
+            // Text content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    hasPhoto ? 'Foto de perfil lista' : 'Foto de perfil',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: hasPhoto
+                          ? const Color(0xFF10B981)
+                          : textGray900,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    hasPhoto
+                        ? 'Toca para cambiarla'
+                        : 'Requerida · Toca para tomar',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: hasPhoto
+                          ? const Color(0xFF10B981).withOpacity(0.7)
+                          : textGray600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Arrow / edit indicator
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: hasPhoto
+                    ? const Color(0xFFE6FDF4)
+                    : const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                hasPhoto
+                    ? Icons.edit_rounded
+                    : Icons.arrow_forward_ios_rounded,
+                size: 15,
+                color: hasPhoto
+                    ? const Color(0xFF10B981)
+                    : primaryOrange,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SECTION LABEL
+// ─────────────────────────────────────────────────────────────────────────────
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label, required this.icon});
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 18,
+          decoration: BoxDecoration(
+            color: primaryOrange,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: primaryOrange.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 15, color: primaryOrange),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            color: textGray900,
+            letterSpacing: -0.2,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FIELD GROUP
+// ─────────────────────────────────────────────────────────────────────────────
+class _FieldGroup extends StatelessWidget {
+  const _FieldGroup({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFECECEC)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+}
+
+// Hair-line divider between fields inside a group
+class _FieldDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Container(height: 1, color: const Color(0xFFF2F2F2)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TERMS ROW
+// ─────────────────────────────────────────────────────────────────────────────
+class _TermsRow extends StatelessWidget {
+  const _TermsRow({
+    required this.accepted,
+    required this.onChanged,
+    required this.onTapLink,
+  });
+  final bool accepted;
+  final ValueChanged<bool?> onChanged;
+  final VoidCallback onTapLink;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: accepted ? const Color(0xFFFFF8F0) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accepted ? primaryOrange : const Color(0xFFECECEC),
+          width: accepted ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: Checkbox(
+              value: accepted,
+              activeColor: primaryOrange,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(5)),
+              side: BorderSide(
+                color: accepted
+                    ? primaryOrange
+                    : const Color(0xFFBBBBBB),
+                width: 1.5,
+              ),
+              onChanged: onChanged,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  'Acepto los ',
+                  style: TextStyle(
+                    color: textGray700,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: onTapLink,
+                  child: const Text(
+                    'Términos y Condiciones',
+                    style: TextStyle(
+                      color: primaryOrange,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      decoration: TextDecoration.underline,
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          if (accepted)
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Icon(Icons.check_circle_rounded,
+                  color: primaryOrange, size: 18),
+            ),
+        ],
       ),
     );
   }

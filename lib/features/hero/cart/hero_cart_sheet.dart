@@ -124,68 +124,6 @@ class HeroCartSheet extends ConsumerWidget {
                           },
                         ),
                 ),
-                if (cartItems.isNotEmpty)
-                  SafeArea(
-                    top: false,
-                    child: Container(
-                      padding: const EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        top: 10,
-                        bottom: 12,
-                      ),
-                      decoration: const BoxDecoration(
-                        color: backgroundWhite,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Color(0x14000000),
-                            blurRadius: 12,
-                            offset: Offset(0, -4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryOrange,
-                                foregroundColor: backgroundWhite,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                elevation: 4,
-                                shadowColor: primaryOrange.withValues(alpha: 0.4),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                              ),
-                              onPressed: () {
-                                Navigator.of(
-                                  context,
-                                ).pop(); // Close sheet first
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => const CheckoutScreen(),
-                                  ),
-                                );
-                              },
-                              child: const Text(
-                                'Proceder al pago',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 17,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -214,80 +152,123 @@ class _CartItemTile extends ConsumerWidget {
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
-        leading: Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: borderGray100,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(Icons.image, color: textGray600, size: 28),
-        ),
-        title: Text(
-          item.name,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-            color: textGray900,
-          ),
-        ),
-        subtitle: Text(
-          item.condition,
-          style: const TextStyle(fontSize: 14, color: textGray600),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline, size: 24),
-              color: textGray600,
-              onPressed: () {
-                ref.read(cartProvider.notifier).removeOne(item);
-              },
-            ),
-            Text(
-              '${item.quantity}',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-                color: textGray900,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: borderGray100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.image, color: textGray600, size: 28),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline, size: 24),
-              color: primaryOrange,
-              onPressed: () {
-                ref
-                    .read(cartProvider.notifier)
-                    .addItem(
-                      offerId: item.offerId,
-                      name: item.name,
-                      condition: item.condition,
-                      price: item.price,
-                      imageUrl: item.imageUrl,
-                      availableQty: item.availableQty,
-                      weight: item.weight,
-                      pickupGeo: item.pickupGeo,
-                      pickupCountryCode: item.pickupCountryCode,
-                      sellerHeroId: item.sellerHeroId,
-                      allowInPersonPickup: item.allowInPersonPickup,
-                    );
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, size: 22),
-              color: textGray600,
-              onPressed: () {
-                ref.read(cartProvider.notifier).removeItem(item);
-              },
-            ),
-          ],
-        ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                        color: textGray900,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.condition,
+                      style: const TextStyle(fontSize: 14, color: textGray600),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 22),
+                color: textGray600,
+                onPressed: () {
+                  ref.read(cartProvider.notifier).removeItem(item);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline, size: 24),
+                color: textGray600,
+                onPressed: () {
+                  ref.read(cartProvider.notifier).removeOne(item);
+                },
+              ),
+              Text(
+                '${item.quantity}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                  color: textGray900,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline, size: 24),
+                color: primaryOrange,
+                onPressed: () {
+                  ref
+                      .read(cartProvider.notifier)
+                      .addItem(
+                        offerId: item.offerId,
+                        name: item.name,
+                        condition: item.condition,
+                        price: item.price,
+                        imageUrl: item.imageUrl,
+                        availableQty: item.availableQty,
+                        weight: item.weight,
+                        pickupGeo: item.pickupGeo,
+                        pickupCountryCode: item.pickupCountryCode,
+                        sellerHeroId: item.sellerHeroId,
+                        allowInPersonPickup: item.allowInPersonPickup,
+                      );
+                },
+              ),
+              const Spacer(),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryOrange,
+                  foregroundColor: backgroundWhite,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => CheckoutScreen(item: item),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'Pagar servicio',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

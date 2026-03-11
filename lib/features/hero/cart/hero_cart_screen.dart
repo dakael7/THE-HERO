@@ -66,65 +66,6 @@ class HeroCartScreen extends ConsumerWidget {
                     },
                   ),
                 ),
-                SafeArea(
-                  top: false,
-                  child: Container(
-                    padding: const EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      top: 4,
-                      bottom: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: backgroundWhite,
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x14000000),
-                          blurRadius: 18,
-                          offset: Offset(0, -6),
-                        ),
-                      ],
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(18),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryOrange,
-                              foregroundColor: backgroundWhite,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              elevation: 4,
-                              shadowColor: primaryOrange.withValues(alpha: 0.4),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const CheckoutScreen(),
-                                ),
-                              );
-                            },
-                            child: const Text(
-                              'Proceder al pago',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 17,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
     );
@@ -247,7 +188,7 @@ class _CartItemTile extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '\$${_formatPriceCLP(item.price)}',
+                        'Donación',
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 14,
@@ -261,6 +202,32 @@ class _CartItemTile extends ConsumerWidget {
                       style: const TextStyle(fontSize: 12, color: textGray600),
                     ),
                   ],
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryOrange,
+                      foregroundColor: backgroundWhite,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => CheckoutScreen(item: item),
+                        ),
+                      );
+                    },
+                    child: const Text(
+                      'Pagar servicio',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -351,26 +318,4 @@ class _QtyButton extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatPriceCLP(double value) {
-  final negative = value < 0;
-  final abs = value.abs();
-
-  final rounded = abs.round().toString();
-  final groupedInt = _groupThousands(rounded);
-  final sign = negative ? '-' : '';
-  return '$sign$groupedInt';
-}
-
-String _groupThousands(String digits) {
-  final buffer = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    final remaining = digits.length - i;
-    buffer.write(digits[i]);
-    if (remaining > 1 && remaining % 3 == 1) {
-      buffer.write('.');
-    }
-  }
-  return buffer.toString();
 }

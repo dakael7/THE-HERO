@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/user.dart';
+import '../../../../offers/presentation/widgets/star_rating_widget.dart';
 
 class ProfileHeader extends StatelessWidget {
   final User user;
@@ -15,6 +16,16 @@ class ProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVerified = user.isRutVerified;
+    final photoUrl = user.profilePhotoUrl?.trim();
+    final hasPhoto = photoUrl != null && photoUrl.isNotEmpty;
+
+    final ratingValue = isRiderProfile
+        ? (user.riderProfile?.rating ?? 0.0)
+        : (user.heroProfile?.rating ?? 0.0);
+    final ratingCount = isRiderProfile
+        ? (user.riderProfile?.totalRatings ?? 0)
+        : (user.heroProfile?.totalRatings ?? 0);
+    final hasRating = ratingCount > 0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -53,7 +64,31 @@ class ProfileHeader extends StatelessWidget {
                   width: 2,
                 ),
               ),
-              child: const Icon(Icons.person, size: 30, color: primaryOrange),
+              child: ClipOval(
+                child: hasPhoto
+                    ? Image.network(
+                        photoUrl,
+                        fit: BoxFit.cover,
+                        width: 64,
+                        height: 64,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Center(
+                            child: Icon(
+                              Icons.person,
+                              size: 30,
+                              color: primaryOrange,
+                            ),
+                          );
+                        },
+                      )
+                    : const Center(
+                        child: Icon(
+                          Icons.person,
+                          size: 30,
+                          color: primaryOrange,
+                        ),
+                      ),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -80,6 +115,29 @@ class ProfileHeader extends StatelessWidget {
                       color: textGray600,
                       fontWeight: FontWeight.w600,
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      StarRatingWidget(
+                        rating: ratingValue.clamp(0.0, 5.0),
+                        size: 16,
+                        readonly: true,
+                        activeColor: primaryYellow,
+                        inactiveColor: borderGray100,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        hasRating
+                            ? '${ratingValue.toStringAsFixed(1)} ($ratingCount)'
+                            : '0.0 (0)',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: textGray700,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   if (isVerified)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
@@ -17,24 +18,16 @@ class PreviousOrdersScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-              return;
-            }
-            ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
-          },
-        ),
-        title: const Text(
-          'Pedidos anteriores',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+      appBar: HeroHeaderAppBar(
+        title: 'Pedidos anteriores',
+        icon: Icons.history_rounded,
+        onBack: () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            return;
+          }
+          ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
+        },
       ),
       body: profileAsync.when(
         loading: () => const Center(

@@ -1,12 +1,12 @@
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../data/providers/network_providers.dart';
 import '../providers/profile_provider.dart';
@@ -573,14 +573,9 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        title: const Text(
-          'Verificar RUT',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: const HeroHeaderAppBar(
+        title: 'Verificar RUT',
+        icon: Icons.badge_rounded,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

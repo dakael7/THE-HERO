@@ -24,6 +24,8 @@ class ProductCard extends ConsumerWidget {
   final bool allowInPersonPickup;
   final bool showShadow;
   final String? sellerName;
+  final double? sellerHeroRating;
+  final int? sellerHeroRatingCount;
   final String? imageUrl;
   final double avgRating;
   final int ratingCount;
@@ -46,6 +48,8 @@ class ProductCard extends ConsumerWidget {
     this.allowInPersonPickup = false,
     this.showShadow = true,
     this.sellerName,
+    this.sellerHeroRating,
+    this.sellerHeroRatingCount,
     this.imageUrl,
     this.avgRating = 0.0,
     this.ratingCount = 0,
@@ -64,7 +68,8 @@ class ProductCard extends ConsumerWidget {
           final maxWidth = constraints.maxWidth;
           final dpr = MediaQuery.of(context).devicePixelRatio;
 
-          // Imagen cuadrada: ocupa ~42% del ancho de la card
+          final showSellerHeroRating = sellerHeroRating != null;
+
           final imageSize = (maxWidth * 0.42).clamp(130.0, 200.0);
           final targetCacheSize = (imageSize * dpr).round();
 
@@ -152,6 +157,23 @@ class ProductCard extends ConsumerWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              if (showSellerHeroRating) ...[
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.star_rounded,
+                                  size: 13,
+                                  color: Color(0xFFF59E0B),
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  (sellerHeroRating!).toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: textGray600,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 8),

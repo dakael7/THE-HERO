@@ -10,10 +10,13 @@ class UserModel {
   final IdentityModel identity;
   final ContactModel contact;
   final AddressModel? address;
+  final Map<String, AddressModel> addressUnits;
+  final String? primaryAddressUnitType;
   final List<String> roles;
   final UserStatusModel status;
   final HeroProfileModel? heroProfile;
   final RiderProfileModel? riderProfile;
+  final String? profilePhotoUrl;
   final String? verificationStatus;
   final String? rutVerificationStatus;
   final String? licenseVerificationStatus;
@@ -23,10 +26,13 @@ class UserModel {
     required this.identity,
     required this.contact,
     this.address,
+    this.addressUnits = const <String, AddressModel>{},
+    this.primaryAddressUnitType,
     required this.roles,
     required this.status,
     this.heroProfile,
     this.riderProfile,
+    this.profilePhotoUrl,
     this.verificationStatus,
     this.rutVerificationStatus,
     this.licenseVerificationStatus,
@@ -67,6 +73,23 @@ class UserModel {
       address: json['address'] != null
           ? AddressModel.fromJson(json['address'] as Map<String, dynamic>)
           : null,
+      addressUnits: (() {
+        final raw = json['addressUnits'];
+        if (raw is! Map) return <String, AddressModel>{};
+        final out = <String, AddressModel>{};
+        for (final entry in raw.entries) {
+          final key = entry.key?.toString();
+          final value = entry.value;
+          if (key == null || key.trim().isEmpty) continue;
+          if (value is Map<String, dynamic>) {
+            out[key] = AddressModel.fromJson(value);
+          } else if (value is Map) {
+            out[key] = AddressModel.fromJson(value.cast<String, dynamic>());
+          }
+        }
+        return out;
+      })(),
+      primaryAddressUnitType: json['primaryAddressUnitType']?.toString(),
       roles: rolesSet.toList(),
       status: UserStatusModel.fromJson(
         json['status'] as Map<String, dynamic>? ?? {},
@@ -81,6 +104,7 @@ class UserModel {
               json['riderProfile'] as Map<String, dynamic>,
             )
           : null,
+      profilePhotoUrl: json['profilePhotoUrl'] as String?,
       verificationStatus: json['verificationStatus'] as String?,
       rutVerificationStatus: (json['rutVerification'] is Map)
           ? (json['rutVerification'] as Map)['status']?.toString()
@@ -97,10 +121,15 @@ class UserModel {
       'identity': identity.toJson(),
       'contact': contact.toJson(),
       'address': address?.toJson(),
+      'addressUnits': {
+        for (final e in addressUnits.entries) e.key: e.value.toJson(),
+      },
+      'primaryAddressUnitType': primaryAddressUnitType,
       'roles': roles,
       'status': status.toJson(),
       'heroProfile': heroProfile?.toJson(),
       'riderProfile': riderProfile?.toJson(),
+      'profilePhotoUrl': profilePhotoUrl,
       'verificationStatus': verificationStatus,
       if (rutVerificationStatus != null)
         'rutVerification': {

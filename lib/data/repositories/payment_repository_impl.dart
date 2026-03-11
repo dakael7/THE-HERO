@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 
-import '../../core/config/mercadopago_config.dart';
 import '../../domain/entities/order.dart';
 import '../../domain/entities/payment.dart';
 import '../../domain/entities/payment_preference.dart';
@@ -29,8 +28,6 @@ class PaymentRepositoryImpl implements PaymentRepository {
       // Convert order to JSON for Firebase Function
       final orderModel = OrderModel.fromEntity(order);
       final orderData = orderModel.toJson();
-
-      orderData['isSandbox'] = MercadoPagoConfig.isSandbox;
 
       // Call Firebase Function to create preference
       final response = await _remoteDataSource.createPreference(orderData);

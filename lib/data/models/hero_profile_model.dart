@@ -4,20 +4,23 @@ class HeroProfileModel {
   final bool isActive;
   final int completedOrders;
   final double rating;
+  final int totalRatings;
   final double totalSpent;
 
   HeroProfileModel({
     this.isActive = true,
     this.completedOrders = 0,
     this.rating = 0.0,
+    this.totalRatings = 0,
     this.totalSpent = 0.0,
   });
 
   factory HeroProfileModel.fromJson(Map<String, dynamic> json) {
     return HeroProfileModel(
       isActive: json['isActive'] as bool? ?? true,
-      completedOrders: json['completedOrders'] as int? ?? 0,
+      completedOrders: (json['completedOrders'] as num?)?.toInt() ?? 0,
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
+      totalRatings: (json['totalRatings'] as num?)?.toInt() ?? 0,
       totalSpent: (json['totalSpent'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -27,6 +30,7 @@ class HeroProfileModel {
       'isActive': isActive,
       'completedOrders': completedOrders,
       'rating': rating,
+      'totalRatings': totalRatings,
       'totalSpent': totalSpent,
     };
   }
@@ -36,6 +40,7 @@ class HeroProfileModel {
       isActive: isActive,
       completedOrders: completedOrders,
       rating: rating,
+      totalRatings: totalRatings,
       totalSpent: totalSpent,
     );
   }
@@ -45,6 +50,7 @@ class HeroProfileModel {
       isActive: entity.isActive,
       completedOrders: entity.completedOrders,
       rating: entity.rating,
+      totalRatings: entity.totalRatings,
       totalSpent: entity.totalSpent,
     );
   }

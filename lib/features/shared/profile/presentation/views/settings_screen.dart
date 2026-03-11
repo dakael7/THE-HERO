@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 
@@ -42,24 +43,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-              return;
-            }
-            ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
-          },
-        ),
-        title: const Text(
-          'Configuración',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+      appBar: HeroHeaderAppBar(
+        title: 'Configuración',
+        icon: Icons.settings_rounded,
+        onBack: () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            return;
+          }
+          ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
+        },
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

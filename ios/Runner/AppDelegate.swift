@@ -10,7 +10,10 @@ import google_mobile_ads
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    GMSServices.provideAPIKey("AIzaSyBND3Yr4XYlScA8E4unSeLWMnBjFhCXLoc")
+    if let mapsKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String,
+       !mapsKey.isEmpty {
+      GMSServices.provideAPIKey(mapsKey)
+    }
     FirebaseApp.configure()
     GeneratedPluginRegistrant.register(with: self)
 

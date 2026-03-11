@@ -13,6 +13,7 @@ import '../../../../../domain/entities/chat_type.dart';
 import '../../../../../domain/entities/chat_message.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/order_status.dart';
+import '../../../../../domain/entities/user.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../profile/presentation/providers/profile_provider.dart';
 import '../providers/chat_providers.dart';
@@ -294,6 +295,16 @@ class _ChatConversationScreenState
           return widget.chat.buyerId;
         })();
 
+        final otherUserAsync = otherUserId == null
+            ? const AsyncValue<User?>.data(null)
+            : ref.watch(userByIdProvider(otherUserId));
+        final otherUserPhotoUrl = otherUserAsync.maybeWhen(
+          data: (u) => u?.profilePhotoUrl,
+          orElse: () => null,
+        );
+        final hasOtherPhoto =
+            (otherUserPhotoUrl ?? '').trim().isNotEmpty;
+
         final isOtherTyping = typingAsync.maybeWhen(
           data: (map) {
             if (otherUserId == null) return false;
@@ -323,12 +334,31 @@ class _ChatConversationScreenState
                     border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
                   ),
                   alignment: Alignment.center,
-                  child: Text(
-                    _initials(participantName),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: primaryOrange,
-                    ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: hasOtherPhoto
+                        ? Image.network(
+                            otherUserPhotoUrl!.trim(),
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Text(
+                                _initials(participantName),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryOrange,
+                                ),
+                              );
+                            },
+                          )
+                        : Text(
+                            _initials(participantName),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: primaryOrange,
+                            ),
+                          ),
                   ),
                 ),
                 Expanded(

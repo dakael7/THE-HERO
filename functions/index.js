@@ -1403,6 +1403,118 @@ exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
   }
 );
 
+exports.processOrderRatings = onDocumentWritten(
+  {document: 'orders/{orderId}', region: STORAGE_REGION},
+  async (event) => {
+    const before = event.data && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after.exists ? event.data.after.data() : null;
+
+    if (!after) return;
+
+    const afterConfirmed = after.confirmedByHero === true;
+    if (!afterConfirmed) return;
+
+    if (after.ratingStatsProcessed === true) return;
+
+    // Only process when at least one rating field exists.
+    // This allows processing even if confirmedByHero was set earlier by another update.
+    const heroRating = typeof after.heroRating === 'number' ? after.heroRating : null;
+    const sellerRating = typeof after.sellerRating === 'number' ? after.sellerRating : null;
+    if (heroRating == null && sellerRating == null) return;
+
+    const orderId = event.params.orderId;
+
+    const riderId = after.rider?.assignedRiderId ? String(after.rider.assignedRiderId).trim() : '';
+
+
+    let sellerHeroId = '';
+    if (Array.isArray(after.sellerHeroIds)) {
+      for (const raw of after.sellerHeroIds) {
+        const id = raw != null ? String(raw).trim() : '';
+        if (id) {
+          sellerHeroId = id;
+          break;
+        }
+      }
+    } else if (typeof after.sellerHeroIds === 'string') {
+      sellerHeroId = after.sellerHeroIds.trim();
+    }
+
+    if (!sellerHeroId && Array.isArray(after.items)) {
+      for (const item of after.items) {
+        if (!item || typeof item !== 'object') continue;
+        const raw = item.sellerHeroIdSnapshot != null ? String(item.sellerHeroIdSnapshot).trim() : '';
+        if (raw) {
+          sellerHeroId = raw;
+          break;
+        }
+      }
+    }
+
+    const db = admin.firestore();
+    const orderRef = db.collection('orders').doc(orderId);
+
+    await db.runTransaction(async (tx) => {
+      const freshOrderSnap = await tx.get(orderRef);
+      const freshOrder = freshOrderSnap.exists ? freshOrderSnap.data() : null;
+      if (!freshOrder) return;
+      if (freshOrder.ratingStatsProcessed === true) return;
+      if (freshOrder.confirmedByHero !== true) return;
+
+      const freshHeroRating = typeof freshOrder.heroRating === 'number' ? freshOrder.heroRating : null;
+      const freshSellerRating = typeof freshOrder.sellerRating === 'number' ? freshOrder.sellerRating : null;
+      if (freshHeroRating == null && freshSellerRating == null) return;
+
+      function applyNewAverage(currentAvg, currentCount, newValue) {
+        const safeAvg = typeof currentAvg === 'number' ? currentAvg : 0;
+        const safeCount = typeof currentCount === 'number' ? currentCount : 0;
+        const nextCount = safeCount + 1;
+        const nextAvg = ((safeAvg * safeCount) + newValue) / nextCount;
+        return {nextAvg, nextCount};
+      }
+
+      const riderRef = (riderId && freshHeroRating != null)
+        ? db.collection('users').doc(riderId)
+        : null;
+      const sellerRef = (sellerHeroId && freshSellerRating != null)
+        ? db.collection('users').doc(sellerHeroId)
+        : null;
+
+      const riderSnap = riderRef ? await tx.get(riderRef) : null;
+      const sellerSnap = sellerRef ? await tx.get(sellerRef) : null;
+
+      if (riderRef && riderSnap && riderSnap.exists) {
+        const riderData = riderSnap.data() || {};
+        const rp = riderData.riderProfile && typeof riderData.riderProfile === 'object'
+          ? riderData.riderProfile
+          : {};
+        const {nextAvg, nextCount} = applyNewAverage(rp.rating, rp.totalRatings, freshHeroRating);
+        tx.update(riderRef, {
+          'riderProfile.rating': nextAvg,
+          'riderProfile.totalRatings': nextCount,
+        });
+      }
+
+      if (sellerRef && sellerSnap && sellerSnap.exists) {
+        const sellerData = sellerSnap.data() || {};
+        const hp = sellerData.heroProfile && typeof sellerData.heroProfile === 'object'
+          ? sellerData.heroProfile
+          : {};
+        const {nextAvg, nextCount} = applyNewAverage(hp.rating, hp.totalRatings, freshSellerRating);
+        tx.update(sellerRef, {
+          'heroProfile.rating': nextAvg,
+          'heroProfile.totalRatings': nextCount,
+        });
+      }
+
+      tx.update(orderRef, {
+        ratingStatsProcessed: true,
+        ratingStatsProcessedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+  }
+);
+
 /**
  * Trigger: Send notification when a new chat message is created.
  * Notifies all participants except the sender.

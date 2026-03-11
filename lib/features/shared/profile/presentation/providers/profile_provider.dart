@@ -38,6 +38,19 @@ final profileStreamProvider = StreamProvider<User?>((ref) {
   });
 });
 
+final userByIdStreamProvider = StreamProvider.family<User?, String>((ref, userId) {
+  if (userId.trim().isEmpty) return const Stream<User?>.empty();
+
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore.collection('users').doc(userId).snapshots().map((snap) {
+    if (!snap.exists) return null;
+    final data = snap.data();
+    if (data == null) return null;
+    final model = UserModel.fromJson({'id': userId, ...data});
+    return UserMapper.toEntity(model);
+  });
+});
+
 final userByIdProvider = FutureProvider.family<User?, String>((ref, userId) async {
   try {
     final authRepository = ref.read(authRepositoryProvider);

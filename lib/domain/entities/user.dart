@@ -10,10 +10,13 @@ class User {
   final Identity identity;
   final Contact contact;
   final Address? address;
+  final Map<AddressUnitType, Address> addressUnits;
+  final AddressUnitType? primaryAddressUnitType;
   final List<UserRole> roles;
   final UserStatus status;
   final HeroProfile? heroProfile;
   final RiderProfile? riderProfile;
+  final String? profilePhotoUrl;
   final String? verificationStatus;
   final String? rutVerificationStatus;
   final String? licenseVerificationStatus;
@@ -23,10 +26,13 @@ class User {
     required this.identity,
     required this.contact,
     this.address,
+    this.addressUnits = const <AddressUnitType, Address>{},
+    this.primaryAddressUnitType,
     required this.roles,
     required this.status,
     this.heroProfile,
     this.riderProfile,
+    this.profilePhotoUrl,
     this.verificationStatus,
     this.rutVerificationStatus,
     this.licenseVerificationStatus,
@@ -65,10 +71,13 @@ class User {
     Identity? identity,
     Contact? contact,
     Address? address,
+    Map<AddressUnitType, Address>? addressUnits,
+    AddressUnitType? primaryAddressUnitType,
     List<UserRole>? roles,
     UserStatus? status,
     HeroProfile? heroProfile,
     RiderProfile? riderProfile,
+    String? profilePhotoUrl,
     String? verificationStatus,
     String? rutVerificationStatus,
     String? licenseVerificationStatus,
@@ -78,10 +87,14 @@ class User {
       identity: identity ?? this.identity,
       contact: contact ?? this.contact,
       address: address ?? this.address,
+      addressUnits: addressUnits ?? this.addressUnits,
+      primaryAddressUnitType:
+          primaryAddressUnitType ?? this.primaryAddressUnitType,
       roles: roles ?? this.roles,
       status: status ?? this.status,
       heroProfile: heroProfile ?? this.heroProfile,
       riderProfile: riderProfile ?? this.riderProfile,
+      profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
       verificationStatus: verificationStatus ?? this.verificationStatus,
       rutVerificationStatus: rutVerificationStatus ?? this.rutVerificationStatus,
       licenseVerificationStatus:

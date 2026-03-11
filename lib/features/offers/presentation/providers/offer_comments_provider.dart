@@ -116,7 +116,14 @@ final incrementViewCountProvider = FutureProvider.family<void, String>((
 ) async {
   final firestore = FirebaseFirestore.instance;
 
-  await firestore.collection('offers').doc(offerId).update({
-    'viewCount': FieldValue.increment(1),
+  final docRef = firestore.collection('offers').doc(offerId);
+
+  await firestore.runTransaction((tx) async {
+    final snap = await tx.get(docRef);
+    if (!snap.exists) return;
+
+    final data = snap.data();
+    final current = (data == null) ? 0 : (data['viewCount'] as int?) ?? 0;
+    tx.update(docRef, {'viewCount': current + 1});
   });
 });

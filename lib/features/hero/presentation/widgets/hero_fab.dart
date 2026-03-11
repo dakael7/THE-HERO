@@ -101,75 +101,78 @@ class _HeroFABState extends ConsumerState<HeroFAB>
       offset: Offset(0, yOffset),
       child: ScaleTransition(
         scale: _bumpScale,
-        child: GestureDetector(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const HeroCartScreen(),
-              ),
-            );
-          },
-          child: Container(
-            width: fabSize,
-            height: fabHeight,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: primaryOrange.withValues(alpha: 0.2),
-            ),
+        child: SizedBox(
+          width: fabSize,
+          height: fabHeight,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const HeroCartScreen(),
+                ),
+              );
+            },
             child: Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: primaryOrange,
-                boxShadow: [
-                  BoxShadow(
-                    color: primaryOrange.withValues(alpha: 0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                color: primaryOrange.withValues(alpha: 0.2),
               ),
-              child: Center(
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox(
-                      width: iconSize * 2,
-                      height: iconSize * 2,
-                      child: Image.asset(
-                        'assets/wheel.png',
-                        fit: BoxFit.contain,
-                      ),
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: primaryOrange,
+                  boxShadow: [
+                    BoxShadow(
+                      color: primaryOrange.withValues(alpha: 0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
                     ),
-                    if (itemCount > 0)
-                      Positioned(
-                        right: -2,
-                        top: -4,
-                        child: ScaleTransition(
-                          scale: _badgeScale,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: backgroundWhite,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 18,
-                              minHeight: 18,
-                            ),
-                            child: Text(
-                              itemCount.toString(),
-                              style: const TextStyle(
-                                color: primaryOrange,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
+                  ],
+                ),
+                child: Center(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: iconSize * 2,
+                        height: iconSize * 2,
+                        child: Image.asset(
+                          'assets/wheel.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      if (itemCount > 0)
+                        Positioned(
+                          right: -2,
+                          top: -4,
+                          child: ScaleTransition(
+                            scale: _badgeScale,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: backgroundWhite,
+                                shape: BoxShape.circle,
                               ),
-                              textAlign: TextAlign.center,
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              child: Text(
+                                itemCount.toString(),
+                                style: const TextStyle(
+                                  color: primaryOrange,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

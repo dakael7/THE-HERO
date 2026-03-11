@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_hero/domain/entities/notification.dart';
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../data/providers/repository_providers.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
@@ -87,7 +88,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         });
       }
 
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('No se pudieron limpiar los avisos: $e'),
@@ -109,26 +110,16 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-              return;
-            }
-            ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
-          },
-        ),
-        title: const Text(
-          'Avisos',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+      appBar: HeroHeaderAppBar(
+        title: 'Avisos',
+        icon: Icons.notifications_rounded,
+        onBack: () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            return;
+          }
+          ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
+        },
         actions: [
           IconButton(
             tooltip: 'Limpiar',
@@ -187,7 +178,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                         _removedNotificationIds.remove(item.id);
                       });
                     }
-                    if (!context.mounted) return;
+                    if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('No se pudo eliminar: $e'),

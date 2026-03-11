@@ -1,0 +1,961 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // FUNCIONES AUXILIARES
+    // ==========================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserData() { 
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isHero() {
+      return isAuthenticated()
+        && (getUserData().roles is list)
+        && getUserData().roles.hasAny(['hero']);
+    }
+    
+    function isRider() {
+      return isAuthenticated()
+        && (getUserData().roles is list)
+        && getUserData().roles.hasAny(['rider']);
+    }
+    
+    function isVerifiedRider() {
+      return isRider()
+        && (getUserData().riderProfile is map)
+        && getUserData().riderProfile.isVerified == true;
+    }
+    
+    function isActiveRider() {
+      return isRider()
+        && (getUserData().riderProfile is map)
+        && getUserData().riderProfile.isActive == true;
+    }
+
+    function _orderSellerContainsUid(data, uid) {
+      return ('sellerHeroIds' in data)
+        && (
+          (
+            (data.sellerHeroIds is list)
+            && (
+              (uid in data.sellerHeroIds)
+              || data.sellerHeroIds.hasAny([uid])
+            )
+          )
+          || (
+            (data.sellerHeroIds is string)
+            && data.sellerHeroIds == uid
+          )
+        );
+    }
+    
+    function _isClaimUpdate() {
+      // Check if the order is in queued status
+      return resource.data.status == 'queued'
+        // The new data must have a rider map
+        && (request.resource.data.rider is map)
+        // The existing rider must either not exist, not be a map, or have null assignedRiderId
+        && (!('rider' in resource.data) 
+            || !(resource.data.rider is map) 
+            || !('assignedRiderId' in resource.data.rider)
+            || resource.data.rider.assignedRiderId == null
+            || resource.data.rider.assignedRiderId == '')
+        // The new status must be 'assigned'
+        && request.resource.data.status == 'assigned'
+        // The rider must be assigning themselves
+        && request.resource.data.rider.assignedRiderId == request.auth.uid;
+    }
+
+    function _isBicycleClaim() {
+      return (request.resource.data.rider is map)
+        && ('vehicleTypeSnapshot' in request.resource.data.rider)
+        && request.resource.data.rider.vehicleTypeSnapshot == 'bicycle';
+    }
+
+    function _isRiderUnassignUpdate() {
+      return resource.data.status == 'assigned'
+        && (resource.data.rider is map)
+        && ('assignedRiderId' in resource.data.rider)
+        && resource.data.rider.assignedRiderId == request.auth.uid
+        && request.resource.data.status == 'queued'
+        && (
+          !('timestamps' in resource.data)
+          || !(resource.data.timestamps is map)
+          || !('pickedUpAt' in resource.data.timestamps)
+          || resource.data.timestamps.pickedUpAt == null
+        )
+        && (request.resource.data.rider is map)
+        && request.resource.data.rider.size() == 0
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'rider',
+          'pickupProgress',
+          'cashHoldReleased',
+          'timestamps',
+          'updatedAt'
+        ]);
+    }
+
+    function _hasRiderProfile(data) {
+      return data.riderProfile is map;
+    }
+
+    function _protectVerificationFields() {
+      return !_hasRiderProfile(resource.data)
+        || (
+          request.resource.data.riderProfile.isVerified == resource.data.riderProfile.isVerified
+          && request.resource.data.riderProfile.verification == resource.data.riderProfile.verification
+        );
+    }
+    
+    function _canUpdateVehicleType() {
+      return !_hasRiderProfile(resource.data)
+        || (
+          request.resource.data.riderProfile.vehicle.type == resource.data.riderProfile.vehicle.type
+          || (
+            request.resource.data.riderProfile.vehicle.type == 'bicycle'
+          )
+          || (
+            resource.data.riderProfile.isVerified == true
+            && request.resource.data.riderProfile.isVerified == resource.data.riderProfile.isVerified
+            && _hasValidDocsForVehicle(
+              request.resource.data.riderProfile.vehicle.type,
+              request.resource.data.riderProfile.documents
+            )
+          )
+        );
+    }
+
+    function _hasValidDocsForVehicle(vehicleType, docs) {
+      return (vehicleType == 'bicycle')
+        || (vehicleType != 'bicycle'
+          && docs.licenseUrl is string && docs.licenseUrl.size() > 0
+          && docs.padronUrl is string && docs.padronUrl.size() > 0);
+    }
+
+    function _clientAllowedVehicleVerificationStatus(status) {
+      return status == 'submitted' || status == 'not_required';
+    }
+
+    function _vehicleTypeSafe(typeKey, v) {
+      return !(v is map)
+        || !('vehicle' in v)
+        || !(v.vehicle is map)
+        || !('type' in v.vehicle)
+        || v.vehicle.type == typeKey;
+    }
+
+    function _vehicleOcrNotWritable(v) {
+      return !(v is map) || !('ocr' in v);
+    }
+
+    function _vehicleFieldsValidForType(typeKey, v) {
+      return !(v is map)
+        || !('vehicle' in v)
+        || !(v.vehicle is map)
+        || (
+          // Bicycle: must not include car-like fields
+          (typeKey == 'bicycle'
+            && !('plateNumber' in v.vehicle)
+            && !('model' in v.vehicle)
+            && !('year' in v.vehicle)
+            && !('color' in v.vehicle)
+          )
+          || (typeKey != 'bicycle'
+            && (!('plateNumber' in v.vehicle) || (v.vehicle.plateNumber is string && v.vehicle.plateNumber.size() > 0))
+            && (!('model' in v.vehicle) || (v.vehicle.model is string && v.vehicle.model.size() > 0))
+            && (!('color' in v.vehicle) || (v.vehicle.color is string && v.vehicle.color.size() > 0))
+            && (!('year' in v.vehicle) || (v.vehicle.year is int))
+          )
+        );
+    }
+
+    function _vehiclesSchemaSafe() {
+      return !_hasRiderProfile(resource.data)
+        || !('vehicles' in request.resource.data.riderProfile)
+        || !(request.resource.data.riderProfile.vehicles is map)
+        || (
+          request.resource.data.riderProfile.vehicles.keys().all(k,
+            (k in ['bicycle','motorcycle','car','truck'])
+          )
+          && request.resource.data.riderProfile.vehicles.keys().all(k,
+            _vehicleTypeSafe(k, request.resource.data.riderProfile.vehicles[k])
+          )
+          && request.resource.data.riderProfile.vehicles.keys().all(k,
+            _vehicleOcrNotWritable(request.resource.data.riderProfile.vehicles[k])
+          )
+          && request.resource.data.riderProfile.vehicles.keys().all(k,
+            _vehicleFieldsValidForType(k, request.resource.data.riderProfile.vehicles[k])
+          )
+        );
+    }
+
+    function _vehicleVerificationStatusSafe() {
+      return !_hasRiderProfile(resource.data)
+        || !('vehicles' in request.resource.data.riderProfile)
+        || !(request.resource.data.riderProfile.vehicles is map)
+        || (
+          // For any vehicle entry touched, if it includes verification.status,
+          // it must be pending-only.
+          request.resource.data.riderProfile.vehicles.values().all(v,
+            !(v is map)
+            || !('verification' in v)
+            || !('status' in v.verification)
+            || _clientAllowedVehicleVerificationStatus(v.verification.status)
+          )
+        );
+    }
+
+    function _clientAllowedRutVerificationStatus(status) {
+      return status in ['pending', 'submitted', 'failed', 'rejected', 'needs_review'];
+    }
+
+    function _clientAllowedLicenseVerificationStatus(status) {
+      return status in ['pending', 'submitted', 'failed', 'rejected'];
+    }
+
+    function _identityFieldUnchangedOrWasEmpty(fieldKey) {
+      return !(resource.data.identity is map)
+        || !(request.resource.data.identity is map)
+        || (
+          request.resource.data.identity[fieldKey] == resource.data.identity[fieldKey]
+          || (
+            (resource.data.identity[fieldKey] is string)
+            && resource.data.identity[fieldKey].size() == 0
+            && (request.resource.data.identity[fieldKey] is string)
+            && request.resource.data.identity[fieldKey].size() > 0
+          )
+        );
+    }
+
+    function _identityIsImmutableAfterSet() {
+      return (request.resource.data.identity is map)
+        && _identityFieldUnchangedOrWasEmpty('firstName')
+        && _identityFieldUnchangedOrWasEmpty('lastName')
+        && _identityFieldUnchangedOrWasEmpty('documentType')
+        && _identityFieldUnchangedOrWasEmpty('documentId');
+    }
+    // ==========================================
+    // COLECCIÓN: OFFERS
+    // ==========================================
+
+    match /offers/{offerId} {
+      allow read: if resource.data.status == 'active' || resource.data.status == 'sold_out';
+      
+      allow read: if isOwner(resource.data.heroId);
+
+      // Allow authenticated users to increment viewCount when opening details.
+      // Intentionally narrow: only viewCount (+1) can change.
+      allow update: if isAuthenticated()
+        && (resource.data.status == 'active' || resource.data.status == 'sold_out')
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'viewCount'
+        ])
+        && (request.resource.data.viewCount is int)
+        && request.resource.data.viewCount == (
+          (('viewCount' in resource.data && resource.data.viewCount is int)
+            ? resource.data.viewCount
+            : 0) + 1
+        );
+      
+      allow create: if isAuthenticated() &&
+                       request.resource.data.heroId == request.auth.uid &&
+                       (request.resource.data.status == 'draft' || request.resource.data.status == 'active');
+      
+      allow update: if isAuthenticated()
+        && request.resource.data.heroId == request.auth.uid
+        && (
+          !('heroId' in resource.data)
+          || resource.data.heroId == ''
+          || resource.data.heroId == null
+          || resource.data.heroId == request.auth.uid
+        );
+
+      // Allow authenticated users to restore availability (e.g., releasing reserved stock).
+      // This is intentionally limited to increasing `availableQty` (bounded by `stock`)
+      // and optionally switching `status` from sold_out -> active when availability is positive.
+      allow update: if isAuthenticated()
+        && (resource.data.status == 'active' || resource.data.status == 'sold_out')
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'availableQty',
+          'updatedAt',
+          'status'
+        ])
+        && (request.resource.data.availableQty is int)
+        && request.resource.data.availableQty >= resource.data.availableQty
+        && request.resource.data.availableQty >= 0
+        && request.resource.data.availableQty <= resource.data.stock
+        && (
+          request.resource.data.status == resource.data.status
+          || (
+            resource.data.status == 'sold_out'
+            && request.resource.data.status == 'active'
+            && request.resource.data.availableQty > 0
+          )
+        );
+
+      allow update: if isAuthenticated()
+        && (resource.data.status == 'active' || resource.data.status == 'sold_out')
+        && request.resource.data.heroId == resource.data.heroId
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'stock',
+          'availableQty',
+          'orderCount',
+          'updatedAt',
+          'status'
+        ])
+        && (request.resource.data.stock is int)
+        && (request.resource.data.availableQty is int)
+        && (request.resource.data.orderCount is int)
+        && request.resource.data.stock >= 0
+        && request.resource.data.stock <= resource.data.stock
+        && request.resource.data.availableQty >= 0
+        && request.resource.data.availableQty <= resource.data.stock
+        && request.resource.data.orderCount >= resource.data.orderCount
+        && (
+          request.resource.data.status == resource.data.status
+          || (
+            resource.data.status == 'active'
+            && request.resource.data.status == 'sold_out'
+            && request.resource.data.availableQty == 0
+            && request.resource.data.stock == 0
+          )
+          || (
+            resource.data.status == 'sold_out'
+            && request.resource.data.status == 'active'
+            && request.resource.data.availableQty > 0
+          )
+        );
+      
+      allow delete: if isOwner(resource.data.heroId);
+    }
+
+    // Subcolección: QUESTIONS de una OFFER
+    match /offers/{offerId}/questions/{questionId} {
+      function offerData() {
+        return get(/databases/$(database)/documents/offers/$(offerId)).data;
+      }
+
+      allow read: if offerData().status == 'active' || isOwner(offerData().heroId);
+
+      allow create: if isAuthenticated()
+        && request.auth.uid == request.resource.data.askerId
+        && request.resource.data.offerId == offerId;
+
+      allow update: if isAuthenticated()
+        && isOwner(offerData().heroId)
+        && request.resource.data.offerId == offerId
+        && request.resource.data.askerId == resource.data.askerId
+        && request.resource.data.question == resource.data.question
+        && request.resource.data.answeredById == request.auth.uid
+        && request.resource.data.answer is string
+        && request.resource.data.answer.size() > 0;
+
+      allow delete: if false;
+    }
+
+    match /offers/{offerId}/comments/{commentId} {
+      function offerData() {
+        return get(/databases/$(database)/documents/offers/$(offerId)).data;
+      }
+
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.offerId == offerId;
+      
+     
+      allow update: if isAuthenticated() && (
+        request.auth.uid == offerData().heroId ||
+        request.auth.uid == resource.data.userId
+      );
+      
+      allow delete: if isAuthenticated() 
+        && request.auth.uid == resource.data.userId;
+    }
+    
+    // ==========================================
+    // COLECCIÓN: ORDERS
+    // ==========================================
+
+    match /orders/{orderId} {
+      // Allow authenticated users to read orders when:
+      // - they are the buyer hero, OR
+      // - they are one of the sellers (donor heroes) included in sellerHeroIds.
+      // This works for both `get` and queries (`list`) because it's evaluated per-document.
+      allow read: if isAuthenticated()
+        && (
+          resource.data.heroId == request.auth.uid
+          || (
+            _orderSellerContainsUid(resource.data, request.auth.uid)
+          )
+        );
+      
+      allow read: if isRider()
+        && resource != null
+        && (resource.data.rider is map)
+        && ('assignedRiderId' in resource.data.rider)
+        && resource.data.rider.assignedRiderId == request.auth.uid;
+
+      // Allow riders to read queued orders
+      allow read: if isRider() && 
+                     resource != null &&
+                     resource.data.status == 'queued';
+      
+      // Allow heroes to create orders with 'pending_payment' or 'queued' status
+      allow create: if isHero() && 
+                       request.resource.data.heroId == request.auth.uid &&
+                       request.resource.data.status in ['pending_payment', 'queued'];
+      
+      // Allow order owner to cancel their own order.
+      allow update: if isOwner(resource.data.heroId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'cancelReason',
+          'canceledBy',
+          'updatedAt'
+        ])
+        && request.resource.data.status == 'canceled'
+        && request.resource.data.canceledBy == request.auth.uid;
+
+      // Allow hero to confirm delivery and rate rider and seller.
+      allow update: if isOwner(resource.data.heroId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'confirmedByHero',
+          'heroRating',
+          'heroRatingComment',
+          'sellerRating',
+          'sellerRatingComment',
+          'updatedAt'
+        ])
+        && request.resource.data.confirmedByHero == true;
+
+      // Allow seller heroes (donors) to update status for in-person pickup orders.
+      // This enables the donor to mark the order as ready (picked_up) and then delivered.
+      // Intentionally narrow: only status + updatedAt + allowed timestamps can change.
+      allow update: if isAuthenticated()
+        && resource != null
+        && _orderSellerContainsUid(resource.data, request.auth.uid)
+        && (('inPersonPickup' in resource.data) && resource.data.inPersonPickup == true)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'updatedAt',
+          'timestamps',
+          'timestamps.pickedUpAt',
+          'timestamps.deliveredAt'
+        ])
+        && (
+          // Donor can mark ready for pickup from early statuses.
+          (resource.data.status in ['created', 'pending_payment', 'paid', 'queued', 'assigned']
+            && request.resource.data.status == 'picked_up')
+          // Donor can mark delivered after ready/in transit.
+          || (resource.data.status in ['picked_up', 'in_transit']
+            && request.resource.data.status == 'delivered')
+        );
+
+      // Allow riders to claim queued orders (queued -> assigned) for themselves.
+      // Bicycle riders can claim if they are active (verification not required).
+      // Non-bicycle riders must be verified.
+      allow update: if _isClaimUpdate()
+        && (
+          isActiveRider()
+          || isVerifiedRider()
+        );
+
+      // More tolerant claim rule: supports transaction updates that include extra
+      // fields (timestamps/updatedAt) while still enforcing self-claim + rider eligibility.
+      allow update: if isAuthenticated()
+        && resource != null
+        && resource.data.status == 'queued'
+        && request.resource.data.status == 'assigned'
+        && (request.resource.data.rider is map)
+        && ('assignedRiderId' in request.resource.data.rider)
+        && request.resource.data.rider.assignedRiderId == request.auth.uid
+        && (
+          isActiveRider()
+          || isVerifiedRider()
+        );
+
+      // Allow assigned rider to cancel before pickup and put order back in queue.
+      allow update: if isAuthenticated() && _isRiderUnassignUpdate();
+
+      // Allow assigned rider to persist pickup stop progress (per-stop notifications).
+      // This is intentionally narrow: rider can only write pickupProgress + updatedAt.
+      allow update: if isAuthenticated()
+        && resource != null
+        && (
+          (
+            (resource.data.rider is map)
+            && ('assignedRiderId' in resource.data.rider)
+            && resource.data.rider.assignedRiderId == request.auth.uid
+          )
+          || (
+            ('assignedRiderId' in resource.data)
+            && resource.data.assignedRiderId == request.auth.uid
+          )
+        )
+        && resource.data.status in ['assigned', 'picked_up', 'in_transit']
+        && (
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'pickupProgress',
+            'updatedAt'
+          ])
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'pickupProgress',
+            'pickupProgress.currentStopIndex',
+            'pickupProgress.updatedAt',
+            'updatedAt'
+          ])
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'pickupProgress.currentStopIndex',
+            'pickupProgress.updatedAt',
+            'updatedAt'
+          ])
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'pickupProgress',
+            'pickupProgress.currentStopIndex',
+            'pickupProgress.updatedAt',
+            'updatedAt'
+          ])
+        )
+        && (request.resource.data.pickupProgress.currentStopIndex is int)
+        && request.resource.data.pickupProgress.currentStopIndex >= 0;
+
+      // Allow order owner to delete their own orders (e.g., pending payment orders)
+      allow delete: if isAuthenticated()
+        && resource != null
+        && resource.data.heroId == request.auth.uid
+        && (resource.data.status in ['pending_payment', 'pendingPayment', 'pendingpayment']);
+      
+      // Allow assigned rider to update order status during delivery flow.
+      // Verified riders can do it; bicycle riders are allowed if they are active.
+      // Intentionally narrow: only status + updatedAt + relevant timestamps can change.
+      allow update: if isAuthenticated()
+        && resource != null
+        && (resource.data.rider is map)
+        && ('assignedRiderId' in resource.data.rider)
+        && resource.data.rider.assignedRiderId == request.auth.uid
+        && (
+          isVerifiedRider()
+          || isActiveRider()
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'updatedAt',
+          'timestamps',
+          'timestamps.pickedUpAt',
+          'timestamps.deliveredAt',
+          'riderEarningsProcessed',
+          'riderEarningsProcessedAt',
+          'riderEarningsSnapshot',
+          'cashSettlementProcessed',
+          'riderCashSnapshot'
+        ])
+        && (
+          (resource.data.status == 'assigned' && request.resource.data.status == 'picked_up')
+          || (resource.data.status == 'picked_up' && request.resource.data.status == 'in_transit')
+          || (resource.data.status == 'in_transit' && request.resource.data.status == 'delivered')
+        );
+
+      // Subcolección de tracking de rider
+      match /rider_location/{riderId} {
+        function orderData() {
+          return get(/databases/$(database)/documents/orders/$(orderId)).data;
+        }
+
+        allow get, list: if isOwner(orderData().heroId)
+          || (isAuthenticated() && request.auth.uid == riderId)
+          || (isAuthenticated() && orderData().rider.assignedRiderId == request.auth.uid);
+
+        allow create, update: if isAuthenticated()
+          && orderData().rider.assignedRiderId == request.auth.uid
+          && request.auth.uid == riderId;
+
+        allow delete: if false;
+      }
+    }
+
+    // ==========================================
+    // COLECCIÓN: USER_ORDERS (ÍNDICE POR USUARIO)
+    // ==========================================
+
+    match /user_orders/{userId}/orders/{orderId} {
+      function orderData() {
+        return get(/databases/$(database)/documents/orders/$(orderId)).data;
+      }
+
+      function orderExists() {
+        return exists(/databases/$(database)/documents/orders/$(orderId));
+      }
+
+      function isBuyerOrSeller() {
+        return (orderData().heroId == userId)
+          || ((orderData().sellerHeroIds is list)
+            && orderData().sellerHeroIds.hasAny([userId]));
+      }
+
+      function roleMatches() {
+        return (request.resource.data.role == 'buyer' && orderData().heroId == userId)
+          || (request.resource.data.role == 'seller'
+            && (orderData().sellerHeroIds is list)
+            && orderData().sellerHeroIds.hasAny([userId]));
+      }
+
+      allow read: if isOwner(userId);
+
+      // Buyer can create index docs for self + sellers at order creation time.
+      // A user can also create their own index doc.
+      allow create: if isAuthenticated()
+        && orderExists()
+        && isBuyerOrSeller()
+        && roleMatches()
+        && (
+          request.auth.uid == userId
+          || request.auth.uid == orderData().heroId
+        )
+        && request.resource.data.orderId == orderId
+        && request.resource.data.heroId == orderData().heroId;
+
+      // Keep role immutable.
+      allow update: if isOwner(userId)
+        && resource.data.role == request.resource.data.role;
+
+      allow delete: if false;
+    }
+
+    // ==========================================
+    // COLECCIÓN: STOCK_RESERVATIONS
+    // ==========================================
+    
+    match /stockReservations/{orderId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ==========================================
+    // COLECCIÓN: FAVORITES
+    // ==========================================
+
+    match /favorites/{userId} {
+      // Allow users to read their own favorites
+      allow read: if isOwner(userId);
+      
+      match /offers/{offerId} {
+        // Allow users to manage their own favorites
+        allow read, write: if isOwner(userId);
+      }
+    }
+    
+    // ==========================================
+    // COLECCIÓN: USERS
+    // ==========================================
+
+    match /users/{userId} {
+      allow read: if true;
+
+      allow create: if isOwner(userId);
+
+      // Some clients use set(..., merge: true) when bootstrapping the user doc.
+      // Firestore may require update permission even on the first write.
+      // This allows an owner "update" only when the document does not exist yet.
+      allow update: if isOwner(userId) && resource == null;
+
+      // Allow owner to upgrade/complete profile (e.g., hero -> rider) with a limited set of fields.
+      // This is intentionally narrower than a blanket owner update, but more tolerant than the
+      // stricter validation rules below.
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'authProvider',
+          'identity',
+          'contact',
+          'status',
+          'roles',
+          'heroProfile',
+          'riderProfile',
+          'riderWallet',
+          'rutVerification',
+          'licenseVerification'
+        ]);
+
+      // Allow owner to set/migrate authProvider (e.g., old accounts missing the field).
+      // Client is only allowed to set it to a known value and optionally bump status.lastUpdated.
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'authProvider',
+          'status'
+        ])
+        && (request.resource.data.authProvider in ['google', 'password'])
+        && (request.resource.data.status is map)
+        && (request.resource.data.status.lastUpdated is string);
+
+      // Allow owner to complete critical profile fields (RUT + phone) and role upgrades.
+      // Uses changedKeys() because client updates often touch nested fields (identity.*, contact.*).
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'authProvider',
+          'identity',
+          'contact',
+          'status',
+          'roles',
+          'heroProfile',
+          'riderProfile',
+          'riderWallet',
+          'rutVerification',
+          'licenseVerification'
+        ])
+        && _identityIsImmutableAfterSet()
+        && (request.resource.data.identity is map)
+        && (request.resource.data.identity.firstName is string)
+        && (request.resource.data.identity.firstName.size() > 0)
+        && (request.resource.data.identity.lastName is string)
+        && (request.resource.data.identity.lastName.size() > 0)
+        && (!('documentType' in request.resource.data.identity)
+          || request.resource.data.identity.documentType is string)
+        && (request.resource.data.identity.documentId is string)
+        && (request.resource.data.identity.documentId.size() > 0)
+        && (request.resource.data.contact is map)
+        && (request.resource.data.contact.phoneNumber is string)
+        && (request.resource.data.contact.phoneNumber.size() > 0)
+        && (request.resource.data.status is map)
+        && (request.resource.data.status.lastUpdated is string)
+        && (request.resource.data.roles is list)
+        && (!('heroProfile' in request.resource.data) || request.resource.data.heroProfile is map)
+        && (!('riderProfile' in request.resource.data) || request.resource.data.riderProfile is map)
+        && (!('rutVerification' in request.resource.data)
+          || (request.resource.data.rutVerification is map))
+        && (!('rutVerification' in request.resource.data)
+          || !('status' in request.resource.data.rutVerification)
+          || _clientAllowedRutVerificationStatus(request.resource.data.rutVerification.status));
+
+      // Allow owner to update minimal licenseVerification fields (request id, timestamps) from client.
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'licenseVerification',
+          'licenseVerification.status',
+          'licenseVerification.requestId',
+          'licenseVerification.submittedAt',
+          'licenseVerification.verifiedAt',
+          'licenseVerification.mode'
+        ])
+        && (!('licenseVerification' in request.resource.data)
+          || (request.resource.data.licenseVerification is map))
+        && (!('licenseVerification' in request.resource.data)
+          || !('status' in request.resource.data.licenseVerification)
+          || _clientAllowedLicenseVerificationStatus(request.resource.data.licenseVerification.status))
+        && (!('licenseVerification' in request.resource.data)
+          || !('requestId' in request.resource.data.licenseVerification)
+          || request.resource.data.licenseVerification.requestId is string)
+        && (!('licenseVerification' in request.resource.data)
+          || !('submittedAt' in request.resource.data.licenseVerification)
+          || request.resource.data.licenseVerification.submittedAt is string)
+        && (!('licenseVerification' in request.resource.data)
+          || !('verifiedAt' in request.resource.data.licenseVerification)
+          || request.resource.data.licenseVerification.verifiedAt == null
+          || request.resource.data.licenseVerification.verifiedAt is string)
+        && (!('licenseVerification' in request.resource.data)
+          || !('mode' in request.resource.data.licenseVerification)
+          || request.resource.data.licenseVerification.mode == null
+          || request.resource.data.licenseVerification.mode is string);
+
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['contact']);
+
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'address',
+          'addressUnits',
+          'primaryAddressUnitType'
+        ]);
+
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'fcmToken',
+          'fcmTokenUpdatedAt'
+        ]);
+
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'payoutMethod',
+          'payoutMethodUpdatedAt'
+        ])
+        && isRider();
+
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['riderProfile'])
+        && _hasValidDocsForVehicle(
+          request.resource.data.riderProfile.vehicle.type,
+          request.resource.data.riderProfile.documents
+        );
+
+      // Allow owner to update wallet counters/fields (cash balance / holds / earnings).
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'riderWallet',
+          'riderWallet.cashBalance',
+          'riderWallet.cashOnHold',
+          'riderWallet.earningsBalance',
+          'riderWallet.totalEarnings',
+          'riderWallet.cashBalanceCents',
+          'riderWallet.cashOnHoldCents',
+          'riderWallet.earningsBalanceCents',
+          'riderWallet.totalEarningsCents'
+        ]);
+
+      allow update: if isOwner(userId)
+        && _preserveRiderProfile()
+        && _protectVerificationFields()
+        && _canUpdateVehicleType()
+        && _vehicleVerificationStatusSafe()
+        && _vehiclesSchemaSafe();
+
+      // Allow authenticated users to update rider rating when confirming delivery
+      allow update: if isAuthenticated()
+        && (resource.data.riderProfile is map)
+        && (request.resource.data.riderProfile is map)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly(['riderProfile'])
+        && request.resource.data.riderProfile.diff(resource.data.riderProfile).changedKeys().hasOnly(['rating', 'totalRatings']);
+
+      allow delete: if isOwner(userId);
+    }
+
+    match /users/{userId}/riderWalletTransactions/{txId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && (!('type' in request.resource.data)
+          || request.resource.data.type != 'payout');
+      allow update, delete: if false;
+    }
+
+    match /users/{userId}/riderTripEvents/{eventId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && isRider()
+        && request.resource.data.type == 'canceled_trip'
+        && request.resource.data.orderId is string
+        && request.resource.data.createdAt is timestamp;
+      allow update, delete: if false;
+    }
+
+    match /users/{userId}/vehicle_verification_requests/{requestId} {
+      allow read, create: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && request.resource.data.status in ['submitted', 'canceled', 'superseded']
+        && resource.data.status in ['submitted', 'canceled', 'superseded'];
+      allow delete: if false;
+    }
+
+    match /users/{userId}/rut_verification_requests/{requestId} {
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+        && request.resource.data.userId == userId
+        && request.resource.data.status in ['submitted', 'canceled', 'superseded'];
+
+      allow update: if isOwner(userId)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'updatedAt',
+          'documents'
+        ]);
+      allow delete: if false;
+    }
+
+    match /users/{userId}/license_verification_requests/{requestId} {
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+        && request.resource.data.userId == userId
+        && request.resource.data.status in ['submitted', 'canceled', 'superseded'];
+
+      allow update: if isOwner(userId)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'updatedAt',
+          'documents'
+        ]);
+      allow delete: if false;
+    }
+
+    // ==========================================
+    // COLECCIÓN: RIDER_STATS
+    // ==========================================
+
+    match /rider_stats/{riderId} {
+      allow read: if isOwner(riderId) && isRider();
+      allow create, update, delete: if false;
+    }
+    
+    match /users/{userId}/notifications/{notifId} {
+      allow read, write: if isOwner(userId);
+    }
+    
+    // ==========================================
+    // COLECCIÓN: NOTIFICATIONS (TOP-LEVEL)
+    // ==========================================
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==========================================
+    // COLECCIÓN: CHATS (REGLAS SIMPLIFICADAS)
+    // ==========================================
+    
+    match /chats/{chatId} {
+      // TEMPORARY: Ultra-permissive to match orders approach
+      allow read, write: if isAuthenticated();
+      
+      // ==========================================
+      // SUBCOLECCIÓN: MESSAGES
+      // ==========================================
+      match /messages/{messageId} {
+        // TEMPORARY: Ultra-permissive to match orders approach
+        allow read, write: if isAuthenticated();
+      }
+    }
+    
+    // ==========================================
+    // COLECCIÓN: PAYMENTS
+    // ==========================================
+    
+    match /payments/{paymentId} {
+      // Allow authenticated users to create and update their payment records
+      // Note: Using .set() with merge requires both create and update permissions
+      allow create, update: if isAuthenticated();
+      
+      // Allow users to read payment records
+      allow read: if isAuthenticated();
+      
+      allow delete: if false;
+    }
+    
+    // ==========================================
+    // COLECCIÓN: PROMO_BANNERS
+    // ==========================================
+    
+    match /promo_banners/{doc} {
+      allow read: if request.time < timestamp.date(9999, 1, 1);
+    }
+    
+    // ==========================================
+    // REGLA POR DEFECTO (DENEGAR TODO)
+    // ==========================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

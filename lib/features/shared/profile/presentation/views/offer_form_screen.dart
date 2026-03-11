@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/utils/currency_input_formatter.dart';
 import '../../../../../core/utils/price_parser.dart';
@@ -42,7 +44,8 @@ class OfferFormScreen extends ConsumerStatefulWidget {
   ConsumerState<OfferFormScreen> createState() => _OfferFormScreenState();
 }
 
-class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
+class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -56,23 +59,31 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
   final ImagePicker _imagePicker = ImagePicker();
 
   static const _currency = 'CLP';
+  static final Uri _termsAndConditionsUri = Uri.parse(
+    'https://theheroprojects.com/privacy-policy',
+  );
   String _category = 'Electrónicos';
   String _coverAsset = '';
   Uint8List? _coverImageBytes;
   String? _coverImageFileName;
   final List<Uint8List> _additionalImageBytes = [];
   final List<String> _additionalImageFileNames = [];
+  final List<String> _existingAdditionalImageUrls = [];
   int? _hoveredAdditionalIndex;
   OfferCondition _condition = OfferCondition.newProduct;
   bool? _isInGoodState;
   bool? _worksCorrectly;
   bool _isSaving = false;
   bool _publishNow = false;
+  bool _acceptedTerms = false;
   String _weightUnit = 'kg';
   final String _placesApiKey = Env.placesApiKey;
   PickupSchedule? _pickupSchedule;
   bool _allowInPersonPickup = true;
   bool _submitted = false;
+
+  // Animation controller for save button
+  late AnimationController _saveButtonController;
 
   static const _categories = <String>[
     'Electrónicos',
@@ -88,9 +99,28 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     'Juguetes',
   ];
 
+  String _normalizeImageKey(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('assets/')) return trimmed;
+    Uri? uri;
+    try {
+      uri = Uri.parse(trimmed);
+    } catch (_) {
+      return trimmed;
+    }
+    if (uri.scheme.isEmpty || uri.host.isEmpty) return trimmed;
+    return uri.replace(query: '', fragment: '').toString();
+  }
+
   @override
   void initState() {
     super.initState();
+    _saveButtonController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+
     final offer = widget.initialOffer;
     if (offer != null) {
       _titleController.text = offer.title;
@@ -116,12 +146,23 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       if (offer.coverImageUrl.isNotEmpty) {
         _coverAsset = offer.coverImageUrl;
       }
+
+      final coverTrimmed = offer.coverImageUrl.trim();
+      final extras = <String>[];
+      for (final raw in offer.imageUrls) {
+        final url = raw.trim();
+        if (url.isEmpty) continue;
+        if (coverTrimmed.isNotEmpty && url == coverTrimmed) continue;
+        extras.add(url);
+      }
+      _existingAdditionalImageUrls
+        ..clear()
+        ..addAll(extras);
       _publishNow = offer.status == OfferStatus.active;
 
       _pickupSchedule = offer.pickupSchedule;
       _allowInPersonPickup = offer.allowInPersonPickup;
 
-      // Prefill ubicación desde la oferta si existe snapshot
       final snapshot = offer.itemLocationSnapshot;
       if (snapshot != null) {
         _addressController.text = snapshot.fullAddress;
@@ -137,49 +178,108 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _saveButtonController.dispose();
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _priceController.dispose();
+    _stockController.dispose();
+    _weightController.dispose();
+    _addressController.dispose();
+    _latController.dispose();
+    _lngController.dispose();
+    super.dispose();
+  }
+
+  // ── IMAGE HELPERS ──────────────────────────────────────────────
+
   Widget _buildMainImagePreview() {
     final hoveredIndex = _hoveredAdditionalIndex;
     if (hoveredIndex != null &&
         hoveredIndex >= 0 &&
-        hoveredIndex < _additionalImageBytes.length) {
-      return Image.memory(
-        _additionalImageBytes[hoveredIndex],
-        fit: BoxFit.cover,
-      );
+        hoveredIndex <
+            (_additionalImageBytes.length +
+                _existingAdditionalImageUrls.length)) {
+      if (hoveredIndex < _additionalImageBytes.length) {
+        return Image.memory(_additionalImageBytes[hoveredIndex],
+            fit: BoxFit.cover);
+      }
+      final existingIndex = hoveredIndex - _additionalImageBytes.length;
+      if (existingIndex >= 0 &&
+          existingIndex < _existingAdditionalImageUrls.length) {
+        final url = _existingAdditionalImageUrls[existingIndex].trim();
+        if (url.isEmpty) return _buildCoverPreview();
+        if (url.startsWith('assets/')) {
+          return Image.asset(url, fit: BoxFit.cover);
+        }
+        return Image.network(
+          url,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) =>
+              const Center(child: Icon(Icons.image, color: textGray600, size: 44)),
+        );
+      }
     }
-
     return _buildCoverPreview();
   }
 
+  Widget _buildCoverPreview() {
+    if (_coverImageBytes != null) {
+      return Image.memory(_coverImageBytes!, fit: BoxFit.cover);
+    }
+    final cover = _coverAsset.trim();
+    if (cover.isEmpty) {
+      return Container(color: backgroundGray50);
+    }
+    if (cover.startsWith('assets/')) {
+      return Image.asset(cover, fit: BoxFit.cover);
+    }
+    return Image.network(
+      cover,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) =>
+          const Center(child: Icon(Icons.image, color: textGray600, size: 44)),
+    );
+  }
+
   Widget _buildGalleryThumb({required int index}) {
-    final hasImage = index < _additionalImageBytes.length;
+    final hasImage = index <
+        (_additionalImageBytes.length + _existingAdditionalImageUrls.length);
     final selected = _hoveredAdditionalIndex == index;
 
-    final child = hasImage
-        ? ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.memory(
-              _additionalImageBytes[index],
-              fit: BoxFit.cover,
-            ),
-          )
-        : Container(
-            decoration: BoxDecoration(
-              color: backgroundGray50,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: borderGray100,
-                width: 1,
+    Widget imageContent;
+    if (!hasImage) {
+      imageContent = Container(
+        decoration: BoxDecoration(
+          color: backgroundGray50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: borderGray100),
+        ),
+        child: const Center(
+          child: Icon(Icons.add_rounded, size: 22, color: textGray600),
+        ),
+      );
+    } else if (index < _additionalImageBytes.length) {
+      imageContent = ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.memory(_additionalImageBytes[index], fit: BoxFit.cover),
+      );
+    } else {
+      final existingIndex = index - _additionalImageBytes.length;
+      final url = _existingAdditionalImageUrls[existingIndex].trim();
+      imageContent = ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: url.startsWith('assets/')
+            ? Image.asset(url, fit: BoxFit.cover)
+            : Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Center(
+                    child: Icon(Icons.image, color: textGray600, size: 44)),
               ),
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.add_a_photo_outlined,
-                size: 20,
-                color: textGray600,
-              ),
-            ),
-          );
+      );
+    }
 
     return MouseRegion(
       onEnter: (_) {
@@ -205,8 +305,16 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         onLongPress: (!_isSaving && hasImage)
             ? () {
                 setState(() {
-                  _additionalImageBytes.removeAt(index);
-                  _additionalImageFileNames.removeAt(index);
+                  if (index < _additionalImageBytes.length) {
+                    _additionalImageBytes.removeAt(index);
+                    _additionalImageFileNames.removeAt(index);
+                  } else {
+                    final existingIndex = index - _additionalImageBytes.length;
+                    if (existingIndex >= 0 &&
+                        existingIndex < _existingAdditionalImageUrls.length) {
+                      _existingAdditionalImageUrls.removeAt(existingIndex);
+                    }
+                  }
                   if (_hoveredAdditionalIndex == index) {
                     _hoveredAdditionalIndex = null;
                   }
@@ -224,7 +332,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
             ),
           ),
           clipBehavior: Clip.antiAlias,
-          child: child,
+          child: imageContent,
         ),
       ),
     );
@@ -234,64 +342,24 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     try {
       final remaining = 4 - _additionalImageBytes.length;
       if (remaining <= 0) return;
-
       final picked = await _imagePicker.pickImage(
         source: ImageSource.camera,
         imageQuality: 85,
         maxWidth: 1600,
       );
       if (picked == null) return;
-
-      final bytesList = <Uint8List>[];
-      final namesList = <String>[];
-
-      if (remaining > 0) {
-        bytesList.add(await picked.readAsBytes());
-        namesList.add(picked.name);
-      }
-
+      final bytes = await picked.readAsBytes();
       if (!mounted) return;
       setState(() {
-        _additionalImageBytes.addAll(bytesList);
-        _additionalImageFileNames.addAll(namesList);
+        _additionalImageBytes.add(bytes);
+        _additionalImageFileNames.add(picked.name);
       });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudieron seleccionar imágenes: $e'),
-          duration: const Duration(milliseconds: 2200),
-        ),
+        SnackBar(content: Text('No se pudieron seleccionar imágenes: $e')),
       );
     }
-  }
-
-  Widget _buildCoverPreview() {
-    if (_coverImageBytes != null) {
-      return Image.memory(_coverImageBytes!, fit: BoxFit.cover);
-    }
-
-    final cover = _coverAsset.trim();
-    if (cover.isEmpty) {
-      return const Center(
-        child: Icon(Icons.image, color: textGray600, size: 44),
-      );
-    }
-
-    final isAsset = cover.startsWith('assets/');
-    if (isAsset) {
-      return Image.asset(cover, fit: BoxFit.cover);
-    }
-
-    return Image.network(
-      cover,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, _) {
-        return const Center(
-          child: Icon(Icons.image, color: textGray600, size: 44),
-        );
-      },
-    );
   }
 
   Future<void> _pickCoverImage() async {
@@ -302,10 +370,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         maxWidth: 1600,
       );
       if (picked == null) return;
-
       final bytes = await picked.readAsBytes();
       if (!mounted) return;
-
       setState(() {
         _coverImageBytes = bytes;
         _coverImageFileName = picked.name;
@@ -313,26 +379,12 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo seleccionar la imagen: $e'),
-          duration: const Duration(milliseconds: 2200),
-        ),
+        SnackBar(content: Text('No se pudo seleccionar la imagen: $e')),
       );
     }
   }
 
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _descriptionController.dispose();
-    _priceController.dispose();
-    _stockController.dispose();
-    _weightController.dispose();
-    _addressController.dispose();
-    _latController.dispose();
-    _lngController.dispose();
-    super.dispose();
-  }
+  // ── MAP ────────────────────────────────────────────────────────
 
   Future<void> _openMapPicker() async {
     if (_placesApiKey.isEmpty) {
@@ -358,7 +410,6 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         ),
       ),
     );
-
     if (result != null && mounted) {
       setState(() {
         _addressController.text = result.address;
@@ -369,48 +420,34 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     }
   }
 
+  // ── SAVE ───────────────────────────────────────────────────────
+
   List<String> _buildKeywords(String title, String category) {
-    final parts = <String>[title.toLowerCase(), category.toLowerCase()];
-    return parts;
+    return [title.toLowerCase(), category.toLowerCase()];
   }
 
-  Widget _buildYesNoOption({
-    required String label,
-    required bool selected,
-    required bool yes,
-    required VoidCallback onTap,
-  }) {
-    final borderColor = selected ? primaryOrange : borderGray100;
-    final icon = yes ? Icons.check_circle_outline : Icons.cancel_outlined;
+  Address? _buildLocationSnapshot(User user) {
+    final addressText = _addressController.text.trim();
 
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          decoration: BoxDecoration(
-            color: backgroundWhite,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: borderColor, width: selected ? 2 : 1),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 34, color: textGray600),
-              const SizedBox(height: 10),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: textGray900,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    if (addressText.isNotEmpty) {
+      final lat = double.tryParse(_latController.text.trim());
+      final lng = double.tryParse(_lngController.text.trim());
+      final normalizedCountry = _countryCode?.trim();
+
+      if (lat == null || lng == null) return null;
+      if (normalizedCountry == null || normalizedCountry.isEmpty) return null;
+
+      return Address(
+        fullAddress: addressText,
+        geopoint: GeoPoint(lat, lng),
+        locationCheck: true,
+        countryCode: normalizedCountry,
+      );
+    }
+
+    final profileCountry = user.address?.countryCode?.trim();
+    if (profileCountry == null || profileCountry.isEmpty) return null;
+    return user.address;
   }
 
   Future<void> _save() async {
@@ -418,6 +455,18 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     setState(() => _isSaving = true);
 
     try {
+      if (!_acceptedTerms) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Debes aceptar los Términos y Condiciones para guardar la oferta'),
+            backgroundColor: Color(0xFFDC2626),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
       final userCached = ref.read(profileStreamProvider).value;
       final user = userCached ??
           await ref
@@ -430,18 +479,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       if (user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Debes iniciar sesión para crear o editar ofertas'),
-          ),
-        );
-        return;
-      }
-
-      if (_publishNow && !user.isRutVerified) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Debes verificar tu RUT para publicar donaciones.'),
-            duration: Duration(seconds: 3),
-          ),
+              content:
+                  Text('Debes iniciar sesión para crear o editar ofertas')),
         );
         return;
       }
@@ -452,7 +491,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         if (!isEmailVerified || !user.contact.emailVerified) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Debes verificar tu correo para publicar una oferta'),
+              content:
+                  Text('Debes verificar tu correo para publicar una oferta'),
               duration: Duration(seconds: 3),
             ),
           );
@@ -467,71 +507,25 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
           );
           return;
         }
-      }
 
-      Address? buildLocationSnapshot() {
-        final addressText = _addressController.text.trim();
-        if (addressText.isNotEmpty) {
-          final lat = double.tryParse(_latController.text.trim());
-          final lng = double.tryParse(_lngController.text.trim());
-
-          if (_publishNow && (lat == null || lng == null)) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Ingresa latitud y longitud válidas para publicar'),
-                backgroundColor: Color(0xFFDC2626),
-                duration: Duration(seconds: 3),
-              ),
-            );
-            return null;
-          }
-
-          if (lat != null && lng != null) {
-            return Address(
-              fullAddress: addressText,
-              geopoint: GeoPoint(lat, lng),
-              locationCheck: true,
-              countryCode: _countryCode,
-            );
-          }
-
-          // Permitir guardar en borrador con geos vacíos (0,0)
-          return Address(
-            fullAddress: addressText,
-            geopoint: const GeoPoint(0, 0),
-            locationCheck: false,
-            countryCode: _countryCode,
-          );
-        }
-
-        // fallback: dirección del usuario
-        return user.address;
-      }
-
-      // Validar imagen de portada si se intenta publicar
-      if (_publishNow) {
         if (_isInGoodState == null || _worksCorrectly == null) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Responde si está en buen estado y si funciona correctamente',
-              ),
+                  'Responde si está en buen estado y si funciona correctamente'),
               backgroundColor: Color(0xFFDC2626),
               duration: Duration(seconds: 3),
             ),
           );
           return;
         }
-
         final hasCoverImage =
             _coverImageBytes != null || _coverAsset.trim().isNotEmpty;
-
         if (!hasCoverImage) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Debes agregar una imagen de portada para publicar la oferta',
-              ),
+                  'Debes agregar una imagen de portada para publicar la oferta'),
               backgroundColor: Color(0xFFDC2626),
               duration: Duration(seconds: 3),
             ),
@@ -545,12 +539,15 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
 
       final isEdit = widget.initialOffer != null;
       final now = DateTime.now();
-      final price = 0.0;
+      final authUid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
+      final heroUid = (authUid != null && authUid.trim().isNotEmpty)
+          ? authUid
+          : user.id;
+      const price = 0.0;
       final stock = int.tryParse(_stockController.text.trim()) ?? 0;
       final weightInput = parseLocalizedPrice(_weightController.text) ?? 0.5;
       final weight = _weightUnit == 'g' ? (weightInput / 1000) : weightInput;
 
-      // Mantener cantidad vendida al editar: reserved = stockInicial - disponible
       int availableQty = stock;
       if (isEdit) {
         final reserved =
@@ -572,15 +569,22 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       final hasNewCover = _coverImageBytes != null;
       final hasNewAdditional = _additionalImageBytes.isNotEmpty;
       final coverImageUrl = hasNewCover ? '' : _coverAsset;
-      final existingImageUrls =
-          widget.initialOffer?.imageUrls ?? const <String>[];
-      final initialImageUrls = isEdit
-          ? <String>[...existingImageUrls]
-          : (coverImageUrl.trim().isNotEmpty
-              ? <String>[coverImageUrl]
-              : <String>[]);
+      final preservedByKey = <String, String>{};
+      final coverTrimmed = coverImageUrl.trim();
+      if (coverTrimmed.isNotEmpty) {
+        final key = _normalizeImageKey(coverTrimmed);
+        if (key.isNotEmpty) preservedByKey[key] = coverTrimmed;
+      }
+      for (final raw in _existingAdditionalImageUrls) {
+        final url = raw.trim();
+        if (url.isEmpty) continue;
+        final key = _normalizeImageKey(url);
+        if (key.isEmpty) continue;
+        preservedByKey.putIfAbsent(key, () => url);
+      }
+      final preservedImageUrls = preservedByKey.values.toList();
 
-      final locationSnapshot = buildLocationSnapshot();
+      final locationSnapshot = _buildLocationSnapshot(user);
       if (_publishNow && locationSnapshot == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -594,7 +598,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
 
       final offer = Offer(
         offerId: widget.initialOffer?.offerId ?? '',
-        heroId: user.id,
+        heroId: heroUid,
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         category: _category,
@@ -607,12 +611,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         availableQty: availableQty,
         weight: weight,
         coverImageUrl: coverImageUrl,
-        imageUrls: initialImageUrls,
+        imageUrls: preservedImageUrls,
         status: selectedStatus,
-        searchKeywords: _buildKeywords(
-          _titleController.text.trim(),
-          _category,
-        ),
+        searchKeywords: _buildKeywords(_titleController.text.trim(), _category),
         createdAt: widget.initialOffer?.createdAt ?? now,
         updatedAt: now,
         publishedAt: publishedAt,
@@ -631,101 +632,138 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
         if (hasNewCover) {
           final repo = ref.read(offersRepositoryProvider);
           final url = await repo.uploadOfferImage(
-            heroId: user.id,
+            heroId: heroUid,
             offerId: updated.offerId,
             bytes: _coverImageBytes!,
             fileName: _coverImageFileName ?? 'cover.jpg',
           );
-
           final normalized = url.trim();
-          final nextImageUrls = <String>{
-            ...updated.imageUrls,
-            ...existingImageUrls,
-            if (normalized.isNotEmpty) normalized,
-          }.toList();
-
+          final nextByKey = <String, String>{};
+          for (final raw in updated.imageUrls) {
+            final u = raw.trim();
+            if (u.isEmpty) continue;
+            final k = _normalizeImageKey(u);
+            if (k.isEmpty) continue;
+            nextByKey.putIfAbsent(k, () => u);
+          }
+          if (normalized.isNotEmpty) {
+            final k = _normalizeImageKey(normalized);
+            if (k.isNotEmpty) nextByKey[k] = normalized;
+          }
+          final nextImageUrls = nextByKey.values.toList();
           final oldCover = widget.initialOffer?.coverImageUrl.trim() ?? '';
           if (oldCover.isNotEmpty) {
             nextImageUrls.removeWhere((e) => e.trim() == oldCover);
           }
-
           await notifier.updateOffer(
             updated.copyWith(
-              coverImageUrl: normalized,
-              imageUrls: nextImageUrls,
-            ),
+                coverImageUrl: normalized, imageUrls: nextImageUrls),
           );
         }
-
         if (hasNewAdditional) {
           final repo = ref.read(offersRepositoryProvider);
           final urls = <String>[];
           for (var i = 0; i < _additionalImageBytes.length; i++) {
             final url = await repo.uploadOfferImage(
-              heroId: user.id,
+              heroId: heroUid,
               offerId: updated.offerId,
               bytes: _additionalImageBytes[i],
               fileName: _additionalImageFileNames.elementAt(i),
             );
             urls.add(url);
           }
-
+          final nextByKey = <String, String>{};
+          for (final raw in updated.imageUrls) {
+            final u = raw.trim();
+            if (u.isEmpty) continue;
+            final k = _normalizeImageKey(u);
+            if (k.isEmpty) continue;
+            nextByKey.putIfAbsent(k, () => u);
+          }
+          for (final raw in urls) {
+            final u = raw.trim();
+            if (u.isEmpty) continue;
+            final k = _normalizeImageKey(u);
+            if (k.isEmpty) continue;
+            nextByKey.putIfAbsent(k, () => u);
+          }
           await notifier.updateOffer(
-            updated.copyWith(
-              imageUrls: [...updated.imageUrls, ...urls],
-            ),
-          );
+              updated.copyWith(imageUrls: nextByKey.values.toList()));
         }
       } else {
         final created = await notifier.createOffer(offer);
+        var currentImageUrls = <String>[...preservedImageUrls];
         if (hasNewCover) {
           final repo = ref.read(offersRepositoryProvider);
           final url = await repo.uploadOfferImage(
-            heroId: user.id,
+            heroId: heroUid,
             offerId: created.offerId,
             bytes: _coverImageBytes!,
             fileName: _coverImageFileName ?? 'cover.jpg',
           );
-
           final normalized = url.trim();
-          final nextImageUrls = <String>{
-            ...created.imageUrls,
-            if (normalized.isNotEmpty) normalized,
-          }.toList();
-
-          await notifier.updateOffer(
-            created.copyWith(
-              coverImageUrl: normalized,
-              imageUrls: nextImageUrls,
-            ),
-          );
+          final nextByKey = <String, String>{};
+          for (final raw in currentImageUrls) {
+            final u = raw.trim();
+            if (u.isEmpty) continue;
+            final k = _normalizeImageKey(u);
+            if (k.isEmpty) continue;
+            nextByKey.putIfAbsent(k, () => u);
+          }
+          if (normalized.isNotEmpty) {
+            final k = _normalizeImageKey(normalized);
+            if (k.isNotEmpty) nextByKey[k] = normalized;
+          }
+          currentImageUrls = nextByKey.values.toList();
+          await notifier.updateOffer(created.copyWith(
+            coverImageUrl: normalized,
+            imageUrls: currentImageUrls,
+          ));
         }
-
         if (hasNewAdditional) {
           final repo = ref.read(offersRepositoryProvider);
           final urls = <String>[];
           for (var i = 0; i < _additionalImageBytes.length; i++) {
             final url = await repo.uploadOfferImage(
-              heroId: user.id,
+              heroId: heroUid,
               offerId: created.offerId,
               bytes: _additionalImageBytes[i],
               fileName: _additionalImageFileNames.elementAt(i),
             );
             urls.add(url);
           }
-
+          final nextByKey = <String, String>{};
+          for (final raw in currentImageUrls) {
+            final u = raw.trim();
+            if (u.isEmpty) continue;
+            final k = _normalizeImageKey(u);
+            if (k.isEmpty) continue;
+            nextByKey.putIfAbsent(k, () => u);
+          }
+          for (final raw in urls) {
+            final u = raw.trim();
+            if (u.isEmpty) continue;
+            final k = _normalizeImageKey(u);
+            if (k.isEmpty) continue;
+            nextByKey.putIfAbsent(k, () => u);
+          }
+          currentImageUrls = nextByKey.values.toList();
           await notifier.updateOffer(
-            created.copyWith(
-              imageUrls: [...created.imageUrls, ...urls],
-            ),
-          );
+              created.copyWith(imageUrls: currentImageUrls));
         }
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isEdit ? 'Oferta actualizada' : 'Oferta creada'),
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(isEdit ? 'Oferta actualizada' : 'Oferta creada'),
+            ],
+          ),
+          backgroundColor: const Color(0xFF16A34A),
           duration: const Duration(milliseconds: 1500),
         ),
       );
@@ -735,6 +773,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('No se pudo guardar: $e'),
+          backgroundColor: const Color(0xFFDC2626),
           duration: const Duration(milliseconds: 2200),
         ),
       );
@@ -743,712 +782,475 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
     }
   }
 
+  // ── BUILD ──────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.initialOffer != null;
+    final hasCover =
+        _coverImageBytes != null || _coverAsset.trim().isNotEmpty;
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        title: Text(isEdit ? 'Editar oferta' : 'Crear oferta'),
+      appBar: HeroHeaderAppBar(
+        title: isEdit ? 'Editar oferta' : 'Nueva oferta',
+        icon: Icons.add_box_rounded,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          physics: const BouncingScrollPhysics(),
           child: Form(
             key: _formKey,
-            autovalidateMode:
-                _submitted ? AutovalidateMode.onUserInteraction : AutovalidateMode.disabled,
+            autovalidateMode: _submitted
+                ? AutovalidateMode.onUserInteraction
+                : AutovalidateMode.disabled,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _SectionTitle(title: 'Información básica'),
-                _FormFieldWrapper(
-                  label: 'Título',
-                  child: TextFormField(
-                    controller: _titleController,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      hintText: 'Título del producto',
-                      helperText: 'Sé claro y específico (mín. 4 caracteres)',
-                    ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'El título es obligatorio';
-                      }
-                      if (value.trim().length < 4) {
-                        return 'Usa al menos 4 caracteres';
-                      }
-                      return null;
-                    },
+                // ── SECTION: IMÁGENES ──────────────────────
+                _SectionHeader(
+                    label: 'Imágenes', icon: Icons.photo_library_rounded),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: _buildImagesSection(hasCover),
+                ),
+
+                const SizedBox(height: 8),
+
+                // ── SECTION: INFORMACIÓN BÁSICA ────────────
+                _SectionHeader(
+                    label: 'Información básica',
+                    icon: Icons.info_rounded),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      _FieldCard(
+                        label: 'Título',
+                        child: TextFormField(
+                          controller: _titleController,
+                          textInputAction: TextInputAction.next,
+                          style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A)),
+                          decoration: _inputDeco(
+                            hint: 'Nombre del producto',
+                            helper: 'Sé claro y específico (mín. 4 caracteres)',
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'El título es obligatorio';
+                            }
+                            if (value.trim().length < 4) {
+                              return 'Usa al menos 4 caracteres';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _FieldCard(
+                        label: 'Descripción',
+                        child: TextFormField(
+                          controller: _descriptionController,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.newline,
+                          style: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF333333),
+                              height: 1.5),
+                          decoration: _inputDeco(
+                            hint: 'Describe el estado y detalles del artículo...',
+                            helper:
+                                'Incluye accesorios, fallas o uso (mín. 10 caracteres)',
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'La descripción es obligatoria';
+                            }
+                            if (value.trim().length < 10) {
+                              return 'Usa al menos 10 caracteres';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _FieldCard(
+                        label: 'Categoría',
+                        child: DropdownButtonFormField<String>(
+                          value: _category,
+                          isExpanded: true,
+                          style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A)),
+                          decoration: _inputDeco(hint: 'Selecciona una categoría'),
+                          items: _categories
+                              .map((c) => DropdownMenuItem(
+                                    value: c,
+                                    child: Text(c,
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _category = val);
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const _SectionTitle(title: 'Imágenes'),
-                _FormFieldWrapper(
-                  label: 'Imagen',
+
+                const SizedBox(height: 8),
+
+                // ── SECTION: INVENTARIO ────────────────────
+                _SectionHeader(
+                    label: 'Inventario y estado',
+                    icon: Icons.inventory_2_rounded),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                height: 160,
-                                width: double.infinity,
-                                color: borderGray100,
-                                child: _buildMainImagePreview(),
+                            child: _FieldCard(
+                              label: 'Cantidad disponible',
+                              child: TextFormField(
+                                controller: _stockController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: false),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly
+                                ],
+                                style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1A1A1A)),
+                                decoration: _inputDeco(hint: '1'),
+                                validator: (value) {
+                                  final parsed = int.tryParse(value ?? '');
+                                  if (parsed == null || parsed < 0) {
+                                    return 'El stock debe ser 0 o mayor';
+                                  }
+                                  return null;
+                                },
                               ),
                             ),
                           ),
                           const SizedBox(width: 12),
-                          SizedBox(
-                            width: 132,
-                            child: Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: AspectRatio(
-                                        aspectRatio: 1,
-                                        child: _buildGalleryThumb(index: 0),
+                          Expanded(
+                            child: _FieldCard(
+                              label: 'Peso',
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _weightController,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      inputFormatters: [
+                                        CurrencyInputFormatter()
+                                      ],
+                                      style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1A1A1A)),
+                                      decoration:
+                                          _inputDeco(hint: '0.5'),
+                                      validator: (value) {
+                                        final parsed =
+                                            parseLocalizedPrice(value);
+                                        if (parsed == null ||
+                                            parsed <= 0) {
+                                          return 'Peso inválido';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  // Weight unit toggle
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _weightUnit =
+                                            _weightUnit == 'kg'
+                                                ? 'g'
+                                                : 'kg';
+                                      });
+                                    },
+                                    child: AnimatedContainer(
+                                      duration: const Duration(
+                                          milliseconds: 200),
+                                      padding: const EdgeInsets
+                                          .symmetric(
+                                          horizontal: 10,
+                                          vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: primaryOrange,
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        _weightUnit,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                        ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: AspectRatio(
-                                        aspectRatio: 1,
-                                        child: _buildGalleryThumb(index: 1),
-                                      ),
-                                    ),
-                                  ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Stock info card
+                      _InfoCard(
+                        color: primaryYellow.withOpacity(0.25),
+                        borderColor: primaryYellow.withOpacity(0.55),
+                        icon: Icons.info_outline_rounded,
+                        iconColor: textGray900,
+                        text:
+                            '¿Tienes varios del mismo artículo?\n• Si quieres entregarlos todos juntos, deja la cantidad en 1\n• Si quieres ayudar a más personas, pon la cantidad que desees publicar (cada uno se entregará por separado)',
+                        textColor: textGray600,
+                      ),
+                      const SizedBox(height: 10),
+                      // Packaging warning
+                      _InfoCard(
+                        color: primaryOrangeLight.withOpacity(0.10),
+                        borderColor: primaryOrange.withOpacity(0.35),
+                        icon: Icons.inventory_2_outlined,
+                        iconColor: textGray900,
+                        title: '¡Importante!',
+                        titleColor: textGray900,
+                        text:
+                            'Asegúrate de cubrir y proteger bien tu artículo con plástico de burbujas, papel o cartón para evitar que se rompa durante el envío. El rider solo transporta, no embala.',
+                        textColor: textGray600,
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // ── SECTION: ESTADO ────────────────────────
+                if (!widget.hideConditionQuestions) ...[
+                  _SectionHeader(
+                      label: 'Estado del artículo',
+                      icon: Icons.checklist_rounded),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      children: [
+                        _ConditionQuestion(
+                          question: '¿Está en buen estado?',
+                          value: _isInGoodState,
+                          onChanged: _isSaving
+                              ? null
+                              : (v) =>
+                                  setState(() => _isInGoodState = v),
+                        ),
+                        const SizedBox(height: 12),
+                        _ConditionQuestion(
+                          question: '¿Funciona correctamente?',
+                          value: _worksCorrectly,
+                          onChanged: _isSaving
+                              ? null
+                              : (v) =>
+                                  setState(() => _worksCorrectly = v),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // ── SECTION: UBICACIÓN ─────────────────────
+                _SectionHeader(
+                    label: 'Ubicación del producto',
+                    icon: Icons.location_on_rounded),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildLocationSection(),
+                ),
+
+                const SizedBox(height: 8),
+
+                // ── SECTION: HORARIOS ──────────────────────
+                _SectionHeader(
+                    label: 'Horarios de retiro',
+                    icon: Icons.schedule_rounded),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    children: [
+                      if (_publishNow)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _InfoCard(
+                            color: primaryYellow.withOpacity(0.18),
+                            borderColor: primaryYellow.withOpacity(0.50),
+                            icon: Icons.tips_and_updates_outlined,
+                            iconColor: textGray900,
+                            text:
+                                'Recomendado: define horarios para evitar coordinaciones por chat.',
+                            textColor: textGray600,
+                          ),
+                        ),
+                      PickupScheduleSelector(
+                        initialSchedule: _pickupSchedule,
+                        onChanged: (schedule) {
+                          setState(() => _pickupSchedule = schedule);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      // Allow in-person pickup toggle
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: backgroundWhite,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: borderGray100),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: SwitchListTile.adaptive(
+                          value: _allowInPersonPickup,
+                          onChanged: _isSaving
+                              ? null
+                              : (val) => setState(
+                                  () => _allowInPersonPickup = val),
+                          title: const Text(
+                            'Permitir retiro en persona',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: textGray900,
+                              fontSize: 14,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _allowInPersonPickup
+                                ? 'Los compradores podrán coordinar retiro presencial.'
+                                : 'Solo envío o retiro vía concierge (si aplica).',
+                            style: const TextStyle(
+                                color: textGray600, fontSize: 12),
+                          ),
+                          activeColor: primaryOrange,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // ── SECTION: PUBLICACIÓN ───────────────────
+                _SectionHeader(
+                    label: 'Publicación', icon: Icons.rocket_launch_rounded),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildPublicationSection(),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ── TERMS ──────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _buildTermsSection(),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── SAVE BUTTON ────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+                  child: GestureDetector(
+                    onTap: (_isSaving) ? null : _save,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: double.infinity,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: _isSaving
+                            ? primaryOrange.withOpacity(0.6)
+                            : _publishNow
+                                ? primaryOrange
+                                : textGray900,
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: _isSaving
+                            ? []
+                            : [
+                                BoxShadow(
+                                  color: (_publishNow
+                                          ? primaryOrange
+                                          : textGray900)
+                                      .withOpacity(0.30),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 8),
                                 ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: AspectRatio(
-                                        aspectRatio: 1,
-                                        child: _buildGalleryThumb(index: 2),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: AspectRatio(
-                                        aspectRatio: 1,
-                                        child: _buildGalleryThumb(index: 3),
-                                      ),
-                                    ),
-                                  ],
+                              ],
+                      ),
+                      child: _isSaving
+                          ? const Center(
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _publishNow
+                                      ? Icons.rocket_launch_rounded
+                                      : Icons.save_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _publishNow
+                                      ? (isEdit
+                                          ? 'Guardar y publicar'
+                                          : 'Crear y publicar')
+                                      : (isEdit
+                                          ? 'Guardar cambios'
+                                          : 'Guardar borrador'),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    letterSpacing: 0.2,
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: _isSaving ? null : _pickCoverImage,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: primaryOrange,
-                                foregroundColor: backgroundWhite,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: const Text(
-                                'Tomar portada',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (_coverImageBytes != null) ...[
-                            const SizedBox(width: 10),
-                            TextButton(
-                              onPressed: _isSaving
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        _coverImageBytes = null;
-                                        _coverImageFileName = null;
-                                      });
-                                    },
-                              child: const Text('Quitar portada'),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                _FormFieldWrapper(
-                  label: 'Descripción',
-                  child: TextFormField(
-                    controller: _descriptionController,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.newline,
-                    decoration: const InputDecoration(
-                      hintText: 'Cuenta el estado y detalles relevantes',
-                      helperText:
-                          'Incluye accesorios, fallas o uso (mín. 10 caracteres)',
-                    ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'La descripción es obligatoria';
-                      }
-                      if (value.trim().length < 10) {
-                        return 'Usa al menos 10 caracteres';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const _SectionTitle(title: 'Inventario y estado'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _FormFieldWrapper(
-                        label: 'Cantidad disponible',
-                        child: TextFormField(
-                          controller: _stockController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: false,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          decoration: const InputDecoration(
-                            hintText: '0',
-                            helperText: 'Cantidad disponible para donar',
-                          ),
-                          validator: (value) {
-                            final parsed = int.tryParse(value ?? '');
-                            if (parsed == null || parsed < 0) {
-                              return 'El stock debe ser 0 o mayor';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFBFDBFE)),
-                  ),
-                  child: const Text(
-                    '¿Tienes varios del mismo artículo?\n'
-                    '• Si quieres entregarlos todos juntos, deja la cantidad en 1\n'
-                    '• Si quieres ayudar a más personas, pon la cantidad que desees publicar (cada uno se entregará por separado)',
-                    style: TextStyle(
-                      color: const Color(0xFF1D4ED8),
-                      fontSize: 12,
-                      height: 1.35,
-                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF7ED),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFFED7AA)),
-                  ),
-                  child: const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.inventory_2_outlined,
-                          size: 22, color: Color(0xFFEA580C)),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '¡Importante!',
-                              style: TextStyle(
-                                color: Color(0xFFEA580C),
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                              ),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Asegúrate de cubrir y proteger bien tu artículo con plástico de burbujas, papel o cartón para evitar que se rompa durante el envío. El rider solo transporta, no embala.',
-                              style: TextStyle(
-                                color: Color(0xFF9A3412),
-                                fontSize: 12,
-                                height: 1.35,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _FormFieldWrapper(
-                        label: 'Peso',
-                        child: TextFormField(
-                          controller: _weightController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            CurrencyInputFormatter(),
-                          ],
-                          decoration: const InputDecoration(
-                            hintText: '0.5',
-                            helperText: 'Peso del producto',
-                          ),
-                          validator: (value) {
-                            final parsed = parseLocalizedPrice(value);
-                            if (parsed == null || parsed <= 0) {
-                              return 'Ingresa un peso válido';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 90,
-                      child: _FormFieldWrapper(
-                        label: 'Unidad',
-                        child: DropdownButtonFormField<String>(
-                          initialValue: _weightUnit,
-                          items: const [
-                            DropdownMenuItem(value: 'kg', child: Text('kg')),
-                            DropdownMenuItem(value: 'g', child: Text('g')),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) setState(() => _weightUnit = v);
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const _SectionTitle(title: 'Ubicación del producto'),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: backgroundGray50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: borderGray100),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Usaremos esta ubicación para calcular la tarifa y el retiro/envío.',
-                        style: TextStyle(color: textGray700, fontSize: 12),
-                      ),
-                      if (_publishNow) ...[
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Requerido para publicar: dirección + latitud/longitud válidas.',
-                          style: TextStyle(
-                            color: Color(0xFFB45309),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ElevatedButton.icon(
-                            onPressed: _isSaving ? null : _openMapPicker,
-                            icon: const Icon(Icons.map_outlined),
-                            label: const Text('Elegir en mapa'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryOrange,
-                              foregroundColor: backgroundWhite,
-                            ),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: _isSaving
-                                ? null
-                                : () {
-                                    final userAsync = ref.read(profileProvider);
-                                    final user = userAsync.value;
-                                    if (user?.address != null) {
-                                      final addr = user!.address!;
-                                      setState(() {
-                                        _addressController.text =
-                                            addr.fullAddress;
-                                        _latController.text = addr
-                                            .geopoint
-                                            .latitude
-                                            .toStringAsFixed(6);
-                                        _lngController.text = addr
-                                            .geopoint
-                                            .longitude
-                                            .toStringAsFixed(6);
-                                      });
-                                    } else {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'No tienes una dirección guardada en tu perfil',
-                                          ),
-                                          duration: Duration(seconds: 2),
-                                        ),
-                                      );
-                                    }
-                                  },
-                            icon: const Icon(Icons.home_outlined),
-                            label: const Text('Usar dirección del perfil'),
-                          ),
-                          TextButton.icon(
-                            onPressed: _isSaving
-                                ? null
-                                : () {
-                                    setState(() {
-                                      _addressController.clear();
-                                      _latController.clear();
-                                      _lngController.clear();
-                                    });
-                                  },
-                            icon: const Icon(Icons.clear),
-                            label: const Text('Limpiar'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      _FormFieldWrapper(
-                        label: 'Dirección de retiro/envío',
-                        child: TextFormField(
-                          controller: _addressController,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            hintText: 'Dirección de retiro/envío',
-                            helperText:
-                                'Elige en el mapa o usa tu dirección guardada',
-                          ),
-                          validator: (value) {
-                            if (_publishNow &&
-                                (value == null || value.trim().isEmpty)) {
-                              return 'Requerido para publicar';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                _FormFieldWrapper(
-                  label: 'Categoría',
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _category,
-                    isExpanded: true,
-                    items: _categories
-                        .map(
-                          (c) => DropdownMenuItem(
-                            value: c,
-                            child: Text(
-                              c,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => _category = val);
-                    },
-                  ),
-                ),
-                if (!widget.hideConditionQuestions) ...[
-                  const SizedBox(height: 6),
-                  const Text(
-                    '¿Está en buen estado?',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: textGray900,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      _buildYesNoOption(
-                        label: 'Sí',
-                        selected: _isInGoodState == true,
-                        yes: true,
-                        onTap: _isSaving
-                            ? () {}
-                            : () {
-                                setState(() => _isInGoodState = true);
-                              },
-                      ),
-                      const SizedBox(width: 12),
-                      _buildYesNoOption(
-                        label: 'No',
-                        selected: _isInGoodState == false,
-                        yes: false,
-                        onTap: _isSaving
-                            ? () {}
-                            : () {
-                                setState(() => _isInGoodState = false);
-                              },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  const Text(
-                    '¿Funciona correctamente?',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: textGray900,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      _buildYesNoOption(
-                        label: 'Sí',
-                        selected: _worksCorrectly == true,
-                        yes: true,
-                        onTap: _isSaving
-                            ? () {}
-                            : () {
-                                setState(() => _worksCorrectly = true);
-                              },
-                      ),
-                      const SizedBox(width: 12),
-                      _buildYesNoOption(
-                        label: 'No',
-                        selected: _worksCorrectly == false,
-                        yes: false,
-                        onTap: _isSaving
-                            ? () {}
-                            : () {
-                                setState(() => _worksCorrectly = false);
-                              },
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 4),
-
-                // Pickup Schedule Section
-                const _SectionTitle(title: 'Horarios de retiro'),
-                if (_publishNow)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'Recomendado: define horarios para evitar coordinaciones por chat.',
-                      style: TextStyle(color: textGray700, fontSize: 12),
-                    ),
-                  ),
-                PickupScheduleSelector(
-                  initialSchedule: _pickupSchedule,
-                  onChanged: (schedule) {
-                    setState(() => _pickupSchedule = schedule);
-                  },
-                ),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  margin: const EdgeInsets.only(top: 12),
-                  decoration: BoxDecoration(
-                    color: backgroundWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: borderGray100),
-                  ),
-                  child: SwitchListTile.adaptive(
-                    value: _allowInPersonPickup,
-                    onChanged: _isSaving
-                        ? null
-                        : (val) {
-                            setState(() => _allowInPersonPickup = val);
-                          },
-                    title: const Text(
-                      'Permitir retiro en persona',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: textGray900,
-                      ),
-                    ),
-                    subtitle: Text(
-                      _allowInPersonPickup
-                          ? 'Los compradores podrán coordinar retiro presencial.'
-                          : 'Solo envío o retiro vía concierge (si aplica).',
-                      style: const TextStyle(color: textGray700, fontSize: 12),
-                    ),
-                    activeThumbColor: primaryOrange,
-                    activeTrackColor: primaryOrange.withValues(alpha: 0.12),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const SizedBox(height: 4),
-
-                const _SectionTitle(title: 'Publicación'),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: backgroundWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: borderGray100),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SwitchListTile.adaptive(
-                        value: _publishNow,
-                        onChanged: (val) {
-                          setState(() => _publishNow = val);
-                        },
-                        title: const Text(
-                          'Publicar al guardar',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: textGray900,
-                          ),
-                        ),
-                        subtitle: Text(
-                          _publishNow
-                              ? 'La oferta quedará visible (estado activo).'
-                              : 'Se guardará como borrador (no visible).',
-                          style: const TextStyle(color: textGray700, fontSize: 12),
-                        ),
-                        activeThumbColor: primaryOrange,
-                        activeTrackColor: primaryOrange.withValues(alpha: 0.12),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      if (_publishNow) ...[
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Para publicar necesitas:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: textGray900,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Row(
-                          children: [
-                            Icon(Icons.check_circle_outline,
-                                size: 16, color: textGray600),
-                            SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Imagen de portada',
-                                style: TextStyle(color: textGray700, fontSize: 12),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        const Row(
-                          children: [
-                            Icon(Icons.check_circle_outline,
-                                size: 16, color: textGray600),
-                            SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Ubicación válida (mapa o perfil)',
-                                style: TextStyle(color: textGray700, fontSize: 12),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        const Row(
-                          children: [
-                            Icon(Icons.check_circle_outline,
-                                size: 16, color: textGray600),
-                            SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Confirmar estado y funcionamiento',
-                                style: TextStyle(color: textGray700, fontSize: 12),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryOrange,
-                      foregroundColor: backgroundWhite,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: _isSaving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.2,
-                              color: backgroundWhite,
-                            ),
-                          )
-                        : Text(
-                            _publishNow
-                                ? (isEdit
-                                    ? 'Guardar y publicar'
-                                    : 'Crear y publicar')
-                                : (isEdit ? 'Guardar cambios' : 'Guardar borrador'),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const SizedBox(height: 0),
               ],
             ),
           ),
@@ -1456,56 +1258,1007 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen> {
       ),
     );
   }
+
+  // ── SUBSECTION BUILDERS ────────────────────────────────────────
+
+  Widget _buildImagesSection(bool hasCover) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: backgroundWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+            color: hasCover
+                ? primaryOrange.withOpacity(0.4)
+                : borderGray100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Main cover preview
+              Expanded(
+                child: GestureDetector(
+                  onTap: _isSaving ? null : _pickCoverImage,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      height: 180,
+                      color: backgroundGray50,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _buildMainImagePreview(),
+                          if (!hasCover)
+                            Container(
+                              decoration: BoxDecoration(
+                                color: textGray900.withOpacity(0.04),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                    color: borderGray100,
+                                    style: BorderStyle.solid),
+                              ),
+                              child: const Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.add_a_photo_rounded,
+                                        size: 36,
+                                        color: textGray600),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Toca para agregar\nportada',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: textGray600,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (hasCover)
+                            Positioned(
+                              bottom: 8,
+                              right: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: primaryOrange,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.check_circle_rounded,
+                                        color: Colors.white, size: 12),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Portada',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Gallery thumbnails 2x2
+              SizedBox(
+                width: 120,
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                            child: AspectRatio(
+                                aspectRatio: 1,
+                                child: _buildGalleryThumb(index: 0))),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: AspectRatio(
+                                aspectRatio: 1,
+                                child: _buildGalleryThumb(index: 1))),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                            child: AspectRatio(
+                                aspectRatio: 1,
+                                child: _buildGalleryThumb(index: 2))),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: AspectRatio(
+                                aspectRatio: 1,
+                                child: _buildGalleryThumb(index: 3))),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: _isSaving ? null : _pickCoverImage,
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: primaryOrange,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: primaryOrange.withOpacity(0.25),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.camera_alt_rounded,
+                            color: Colors.white, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'Tomar portada',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (_coverImageBytes != null) ...[
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _isSaving
+                      ? null
+                      : () {
+                          setState(() {
+                            _coverImageBytes = null;
+                            _coverImageFileName = null;
+                          });
+                        },
+                  child: Container(
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: backgroundGray50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: borderGray100),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Quitar',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: textGray600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Mantén presionado una imagen adicional para eliminarla',
+            style: TextStyle(
+                fontSize: 11,
+                color: textGray600,
+                fontStyle: FontStyle.italic),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationSection() {
+    final hasAddress = _addressController.text.trim().isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: backgroundWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+            color: hasAddress
+                ? primaryOrange.withOpacity(0.4)
+                : borderGray100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: hasAddress
+                      ? backgroundGray50
+                      : backgroundGray50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  hasAddress
+                      ? Icons.location_on_rounded
+                      : Icons.location_off_rounded,
+                  color: hasAddress
+                      ? primaryOrange
+                      : textGray600,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasAddress ? 'Ubicación configurada' : 'Sin ubicación',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: hasAddress
+                            ? primaryOrange
+                            : textGray600,
+                      ),
+                    ),
+                    if (hasAddress)
+                      Text(
+                        _addressController.text.trim(),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: textGray600,
+                          height: 1.3,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    else
+                      const Text(
+                        'Requerido para publicar',
+                        style: TextStyle(
+                            fontSize: 12, color: textGray600),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (_publishNow && !hasAddress) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: backgroundGray50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: borderGray100),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 16,
+                    color: textGray600,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Requerido para publicar: dirección + lat/lng válidas.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: textGray600,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          // Action buttons row
+          Row(
+            children: [
+              Expanded(
+                child: _ActionButton(
+                  label: 'Elegir en mapa',
+                  icon: Icons.map_rounded,
+                  color: primaryOrange,
+                  onTap: _isSaving ? null : _openMapPicker,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ActionButton(
+                  label: 'Usar mi dirección',
+                  icon: Icons.home_rounded,
+                  color: primaryOrange,
+                  onTap: _isSaving
+                      ? null
+                      : () {
+                          final userAsync = ref.read(profileProvider);
+                          final user = userAsync.value;
+                          if (user?.address != null) {
+                            final addr = user!.address!;
+                            setState(() {
+                              _addressController.text = addr.fullAddress;
+                              _latController.text = addr.geopoint.latitude
+                                  .toStringAsFixed(6);
+                              _lngController.text = addr.geopoint.longitude
+                                  .toStringAsFixed(6);
+                              _countryCode = addr.countryCode;
+                            });
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'No tienes una dirección guardada en tu perfil'),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                ),
+              ),
+            ],
+          ),
+          if (hasAddress) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: _isSaving
+                  ? null
+                  : () {
+                      setState(() {
+                        _addressController.clear();
+                        _latController.clear();
+                        _lngController.clear();
+                        _countryCode = null;
+                      });
+                    },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: backgroundGray50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderGray100),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.clear_rounded,
+                        size: 14, color: textGray600),
+                    SizedBox(width: 6),
+                    Text(
+                      'Limpiar ubicación',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: textGray600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          // Address field (hidden but functional)
+          TextFormField(
+            controller: _addressController,
+            textInputAction: TextInputAction.next,
+            readOnly: true,
+            showCursor: false,
+            enableInteractiveSelection: false,
+            onTap: _isSaving ? null : _openMapPicker,
+            style: const TextStyle(
+                fontSize: 13,
+                color: textGray600),
+            decoration: _inputDeco(
+              hint: 'Dirección de retiro/envío',
+              helper: 'Elige en el mapa o usa tu dirección guardada',
+            ),
+            validator: (value) {
+              if (_publishNow && (value == null || value.trim().isEmpty)) {
+                return 'Requerido para publicar';
+              }
+              return null;
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPublicationSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: backgroundWhite,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+            color: _publishNow
+                ? primaryOrange.withOpacity(0.4)
+                : borderGray100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile.adaptive(
+            value: _publishNow,
+            onChanged: (val) {
+              setState(() {
+                _publishNow = val;
+                if (_publishNow) _acceptedTerms = false;
+              });
+            },
+            title: const Text(
+              'Publicar al guardar',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: textGray900,
+                fontSize: 15,
+              ),
+            ),
+            subtitle: Text(
+              _publishNow
+                  ? 'La oferta quedará visible (estado activo).'
+                  : 'Se guardará como borrador (no visible).',
+              style: const TextStyle(color: textGray600, fontSize: 12),
+            ),
+            activeColor: primaryOrange,
+            contentPadding: EdgeInsets.zero,
+          ),
+          if (_publishNow) ...[
+            const Divider(height: 1, color: borderGray100),
+            const SizedBox(height: 14),
+            const Text(
+              'Para publicar necesitas:',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: textGray900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ...[
+              ('Imagen de portada',
+                  _coverImageBytes != null || _coverAsset.trim().isNotEmpty),
+              ('Ubicación válida (mapa o perfil)',
+                  _addressController.text.trim().isNotEmpty),
+              ('Estado y funcionamiento confirmados',
+                  _isInGoodState != null && _worksCorrectly != null),
+            ].map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: item.$2
+                            ? primaryOrange
+                            : backgroundGray50,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        item.$2
+                            ? Icons.check_rounded
+                            : Icons.remove_rounded,
+                        color: item.$2
+                            ? Colors.white
+                            : textGray600,
+                        size: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      item.$1,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: item.$2
+                            ? textGray900
+                            : textGray600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTermsSection() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderGray100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CheckboxListTile(
+            value: _acceptedTerms,
+            onChanged: _isSaving
+                ? null
+                : (value) =>
+                    setState(() => _acceptedTerms = value ?? false),
+            activeColor: primaryOrange,
+            checkColor: Colors.white,
+            controlAffinity: ListTileControlAffinity.leading,
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  'Acepto los ',
+                  style: TextStyle(
+                    color: textGray600,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _isSaving
+                      ? null
+                      : () async {
+                          await launchUrl(
+                            _termsAndConditionsUri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        },
+                  child: const Text(
+                    'Términos y Condiciones',
+                    style: TextStyle(
+                      color: primaryOrange,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!_acceptedTerms)
+            Padding(
+              padding: const EdgeInsets.only(left: 40, bottom: 8),
+              child: Row(
+                children: const [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 14, color: textGray600),
+                  SizedBox(width: 6),
+                  Text(
+                    'Requerido para guardar.',
+                    style: TextStyle(
+                      color: textGray600,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDeco({String? hint, String? helper}) {
+    return InputDecoration(
+      hintText: hint,
+      helperText: helper,
+      hintStyle: TextStyle(
+        color: textGray600.withOpacity(0.45),
+        fontSize: 14,
+      ),
+      helperStyle:
+          TextStyle(color: textGray600.withOpacity(0.7), fontSize: 11, height: 1.3),
+      filled: true,
+      fillColor: backgroundWhite,
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: borderGray100),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: borderGray100),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: primaryOrange, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide:
+            const BorderSide(color: Color(0xFFDC2626), width: 1.5),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide:
+            const BorderSide(color: Color(0xFFDC2626), width: 2),
+      ),
+    );
+  }
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
+// ─────────────────────────────────────────────
+//  SHARED WIDGETS
+// ─────────────────────────────────────────────
 
-  const _SectionTitle({required this.title});
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  final IconData icon;
+
+  const _SectionHeader({required this.label, required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w900,
-          color: textGray900,
-          letterSpacing: -0.1,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              color: primaryOrange,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Icon(icon, size: 18, color: textGray900),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF1A1A1A),
+              letterSpacing: -0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FieldCard extends StatelessWidget {
+  final String label;
+  final Widget child;
+
+  const _FieldCard({required this.label, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  final Color color;
+  final Color borderColor;
+  final IconData icon;
+  final Color iconColor;
+  final String? title;
+  final Color? titleColor;
+  final String text;
+  final Color textColor;
+
+  const _InfoCard({
+    required this.color,
+    required this.borderColor,
+    required this.icon,
+    required this.iconColor,
+    this.title,
+    this.titleColor,
+    required this.text,
+    required this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: iconColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (title != null) ...[
+                  Text(
+                    title!,
+                    style: TextStyle(
+                      color: titleColor,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 12,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConditionQuestion extends StatelessWidget {
+  final String question;
+  final bool? value;
+  final void Function(bool)? onChanged;
+
+  const _ConditionQuestion({
+    required this.question,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: backgroundWhite,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderGray100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            question,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _YesNoTile(
+                label: 'Sí',
+                yes: true,
+                selected: value == true,
+                onTap: onChanged == null ? null : () => onChanged!(true),
+              ),
+              const SizedBox(width: 10),
+              _YesNoTile(
+                label: 'No',
+                yes: false,
+                selected: value == false,
+                onTap: onChanged == null ? null : () => onChanged!(false),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _YesNoTile extends StatelessWidget {
+  final String label;
+  final bool yes;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _YesNoTile({
+    required this.label,
+    required this.yes,
+    required this.selected,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accentColor =
+        yes ? const Color(0xFF10B981) : const Color(0xFFDC2626);
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            color: selected
+                ? accentColor.withOpacity(0.08)
+                : const Color(0xFFFAFAFA),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? accentColor : const Color(0xFFE0E0E0),
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                yes
+                    ? Icons.check_circle_rounded
+                    : Icons.cancel_rounded,
+                size: 30,
+                color: selected ? accentColor : const Color(0xFFCCCCCC),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                  color: selected ? accentColor : const Color(0xFF999999),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _FormFieldWrapper extends StatelessWidget {
+class _ActionButton extends StatelessWidget {
   final String label;
-  final Widget child;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
 
-  const _FormFieldWrapper({required this.label, required this.child});
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: textGray900,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 17),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-          ),
-          child,
-        ],
+          ],
+        ),
       ),
     );
   }

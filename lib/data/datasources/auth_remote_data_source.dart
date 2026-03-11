@@ -367,6 +367,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           'isActive': true,
           'completedOrders': 0,
           'rating': 0.0,
+          'totalRatings': 0,
           'totalSpent': 0.0,
         },
       };
@@ -656,6 +657,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
               'isActive': true,
               'completedOrders': 0,
               'rating': 0.0,
+              'totalRatings': 0,
               'totalSpent': 0.0,
             };
           } else if (role == 'rider' && userData['riderProfile'] == null) {
@@ -756,6 +758,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           'isActive': true,
           'completedOrders': 0,
           'rating': 0.0,
+          'totalRatings': 0,
           'totalSpent': 0.0,
         };
       } else if (role == 'rider') {
@@ -957,6 +960,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'isActive': true,
         'completedOrders': 0,
         'rating': 0.0,
+        'totalRatings': 0,
         'totalSpent': 0.0,
       };
 

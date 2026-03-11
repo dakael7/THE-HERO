@@ -110,7 +110,6 @@ class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
       _recompute();
     });
 
-    // We start with empty list; listeners will push the real value when ready.
     return const [];
   }
 
@@ -121,9 +120,7 @@ class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
     final maxOrderKm = _maxOrderKm;
     if (orders == null || radius == null) return;
 
-    // If we don't have a rider location yet (permissions/GPS not ready), we still
-    // expose the orders so the rider can see and claim them. Distance will be
-    // shown as "no disponible" in the UI.
+   
     if (loc == null) {
       final distanceCalc = Distance();
       state = AsyncValue.data(

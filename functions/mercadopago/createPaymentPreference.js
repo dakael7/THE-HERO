@@ -100,7 +100,7 @@ exports.createPaymentPreference = onCall(
       );
     }
 
-    const requestedSandbox = Boolean(isSandbox);
+    const requestedSandbox = false;
     const isTestToken =
       typeof accessToken === "string" && accessToken.startsWith("TEST-");
 
@@ -297,25 +297,13 @@ exports.createPaymentPreference = onCall(
     );
 
     const resolvedPayerEmail = (() => {
-      if (
-        requestedSandbox &&
-        typeof payerEmailOverride === "string" &&
-        payerEmailOverride.trim().includes("@")
-      ) {
-        return payerEmailOverride.trim();
-      }
       return userData?.email || `${heroId}@thehero.app`;
     })();
 
     const normalizedPhone =
       userData?.phoneNumber?.toString().replace(/\D/g, "") || "000000000";
 
-    const payerIdentification = requestedSandbox
-      ? {
-          type: "RUT",
-          number: "11111111-1",
-        }
-      : undefined;
+    const payerIdentification = undefined;
 
     const resolvedNotificationUrl =
       (process.env.MERCADOPAGO_NOTIFICATION_URL || "").toString().trim() ||
@@ -355,7 +343,7 @@ exports.createPaymentPreference = onCall(
     return {
       preferenceId: result.id,
       initPoint: result.init_point,
-      sandboxInitPoint: result.sandbox_init_point,
+      sandboxInitPoint: result.init_point,
       orderId: orderId,
       createdAt: new Date().toISOString(),
       expiresAt: preferenceData.expiration_date_to,

@@ -26,7 +26,7 @@ double? parseLocalizedPrice(String? input) {
     // Only comma present: treat as decimal if it looks like decimals (1-2 digits)
     final parts = s.split(',');
     if (parts.length == 2 && parts[1].length <= 2) {
-      normalized = parts[0].replaceAll('.', '') + '.' + parts[1];
+      normalized = '${parts[0].replaceAll('.', '')}.${parts[1]}';
     } else {
       // Otherwise assume commas are thousands separators
       normalized = s.replaceAll(',', '');

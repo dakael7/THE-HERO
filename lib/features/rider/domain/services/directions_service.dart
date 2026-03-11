@@ -225,15 +225,11 @@ class DirectionsService {
     try {
       // When using waypoints, ZERO_RESULTS is common with strict 'via:'.
       // Try progressively looser requests.
-      final attempts = <({String mode, bool via})>[
-        (mode: 'driving', via: true),
-        (mode: 'driving', via: false),
-      ];
-
-      for (final a in attempts) {
-        final route = await _try(mode: a.mode, useViaWaypoint: a.via);
-        if (route != null) return route;
-        if (!hasWaypoint) break;
+      final routeStrict = await _try(mode: 'driving', useViaWaypoint: true);
+      if (routeStrict != null) return routeStrict;
+      if (hasWaypoint) {
+        final routeLoose = await _try(mode: 'driving', useViaWaypoint: false);
+        if (routeLoose != null) return routeLoose;
       }
     } catch (_) {
       // fallthrough

@@ -207,7 +207,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         // This prevents a viewer who can't resolve a name from overwriting
         // the correct name already stored by the original participant.
         final existingData = existing.data() ?? {};
-        final _generic = {
+        final generic = {
           'Hero',
           'Comprador',
           'Rider',
@@ -216,18 +216,18 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           '',
         };
 
-        String? _pickName(String key, String? incoming) {
-          if (incoming == null || _generic.contains(incoming.trim())) {
+        String? pickName(String key, String? incoming) {
+          if (incoming == null || generic.contains(incoming.trim())) {
             return existingData[key]?.toString();
           }
           return incoming;
         }
 
-        final resolvedBuyerName = _pickName(
+        final resolvedBuyerName = pickName(
           'buyerName',
           data['buyerName'] as String?,
         );
-        final resolvedRiderName = _pickName(
+        final resolvedRiderName = pickName(
           'riderName',
           data['riderName'] as String?,
         );
@@ -244,10 +244,12 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         if (type == 'hero_seller') {
           updateData['riderId'] = FieldValue.delete();
         }
-        if (resolvedBuyerName != null)
+        if (resolvedBuyerName != null) {
           updateData['buyerName'] = resolvedBuyerName;
-        if (resolvedRiderName != null)
+        }
+        if (resolvedRiderName != null) {
           updateData['riderName'] = resolvedRiderName;
+        }
 
         await chatRef.set(updateData, SetOptions(merge: true));
       } else {

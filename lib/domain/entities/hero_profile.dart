@@ -3,12 +3,14 @@ class HeroProfile {
   final bool isActive;
   final int completedOrders;
   final double rating;
+  final int totalRatings;
   final double totalSpent;
 
   HeroProfile({
     this.isActive = true,
     this.completedOrders = 0,
     this.rating = 0.0,
+    this.totalRatings = 0,
     this.totalSpent = 0.0,
   });
 
@@ -16,12 +18,14 @@ class HeroProfile {
     bool? isActive,
     int? completedOrders,
     double? rating,
+    int? totalRatings,
     double? totalSpent,
   }) {
     return HeroProfile(
       isActive: isActive ?? this.isActive,
       completedOrders: completedOrders ?? this.completedOrders,
       rating: rating ?? this.rating,
+      totalRatings: totalRatings ?? this.totalRatings,
       totalSpent: totalSpent ?? this.totalSpent,
     );
   }

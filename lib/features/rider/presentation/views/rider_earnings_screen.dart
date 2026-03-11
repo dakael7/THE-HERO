@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/common/hero_header_app_bar.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/order_status.dart';
 import '../../../../domain/entities/order.dart';
@@ -19,14 +20,9 @@ class RiderEarningsScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        title: const Text(
-          'Mis Ganancias',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+      appBar: const HeroHeaderAppBar(
+        title: 'Mis ganancias',
+        icon: Icons.account_balance_wallet_rounded,
       ),
       body: userAsync.when(
         data: (user) {

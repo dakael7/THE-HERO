@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/order.dart';
+import '../../../../../domain/entities/user.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
+import '../../../../shared/profile/presentation/providers/profile_provider.dart';
 
 class DriverRatingScreen extends ConsumerStatefulWidget {
   final Order order;
@@ -16,12 +18,62 @@ class DriverRatingScreen extends ConsumerStatefulWidget {
 
 class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
   int _rating = 5;
+  int _sellerRating = 5;
   final _commentController = TextEditingController();
+  final _sellerCommentController = TextEditingController();
   bool _isSubmitting = false;
+
+  Widget _participantHeader({
+    required String roleLabel,
+    required String name,
+    String? photoUrl,
+  }) {
+    final resolvedUrl = photoUrl?.trim();
+    final hasPhoto = resolvedUrl != null && resolvedUrl.isNotEmpty;
+
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 20,
+          backgroundColor: primaryOrange.withValues(alpha: 0.10),
+          foregroundImage: hasPhoto ? NetworkImage(resolvedUrl) : null,
+          child: const Icon(Icons.person, color: primaryOrange),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                roleLabel,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: textGray600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: textGray900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   void dispose() {
     _commentController.dispose();
+    _sellerCommentController.dispose();
     super.dispose();
   }
 
@@ -33,6 +85,18 @@ class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
     });
 
     try {
+      final sellerId = (() {
+        if (widget.order.sellerHeroIds.isNotEmpty) {
+          final first = widget.order.sellerHeroIds.first.trim();
+          return first.isNotEmpty ? first : null;
+        }
+        if (widget.order.items.isNotEmpty) {
+          final first = widget.order.items.first.sellerHeroIdSnapshot.trim();
+          return first.isNotEmpty ? first : null;
+        }
+        return null;
+      })();
+
       // Update order with confirmation and rating
       await ref
           .read(orderActionsProvider)
@@ -42,6 +106,11 @@ class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
             comment: _commentController.text.trim().isEmpty
                 ? null
                 : _commentController.text.trim(),
+            sellerRating: _sellerRating.toDouble(),
+            sellerHeroId: sellerId,
+            sellerComment: _sellerCommentController.text.trim().isEmpty
+                ? null
+                : _sellerCommentController.text.trim(),
           );
 
       if (!mounted) return;
@@ -87,7 +156,46 @@ class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final riderName = widget.order.rider.riderNameSnapshot ?? 'Tu repartidor';
+    final riderId = widget.order.rider.assignedRiderId?.trim();
+    final riderAsync = (riderId == null || riderId.isEmpty)
+        ? const AsyncValue<User?>.data(null)
+        : ref.watch(userByIdStreamProvider(riderId));
+    final riderName = riderAsync.maybeWhen(
+      data: (u) => (u?.fullName.trim().isNotEmpty ?? false)
+          ? u!.fullName
+          : (widget.order.rider.riderNameSnapshot ?? 'Rider'),
+      orElse: () => widget.order.rider.riderNameSnapshot ?? 'Rider',
+    );
+    final riderPhotoUrl = riderAsync.maybeWhen(
+      data: (u) => u?.profilePhotoUrl,
+      orElse: () => null,
+    );
+
+    final sellerId = (() {
+      if (widget.order.sellerHeroIds.isNotEmpty) {
+        final first = widget.order.sellerHeroIds.first.trim();
+        return first.isNotEmpty ? first : null;
+      }
+      if (widget.order.items.isNotEmpty) {
+        final first = widget.order.items.first.sellerHeroIdSnapshot.trim();
+        return first.isNotEmpty ? first : null;
+      }
+      return null;
+    })();
+
+    final sellerAsync = sellerId == null
+        ? const AsyncValue<User?>.data(null)
+        : ref.watch(userByIdStreamProvider(sellerId));
+    final sellerName = sellerAsync.maybeWhen(
+      data: (u) => (u?.fullName.trim().isNotEmpty ?? false)
+          ? u!.fullName
+          : 'Hero Donador',
+      orElse: () => 'Hero Donador',
+    );
+    final sellerPhotoUrl = sellerAsync.maybeWhen(
+      data: (u) => u?.profilePhotoUrl,
+      orElse: () => null,
+    );
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -96,7 +204,7 @@ class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
         foregroundColor: textGray900,
         elevation: 0,
         title: const Text(
-          'Calificar repartidor',
+          'Calificar pedido',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
@@ -144,7 +252,7 @@ class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Califica tu experiencia con $riderName',
+                  'Califica tu experiencia con el Rider y el Hero Donador',
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 14, color: textGray700),
                 ),
@@ -171,13 +279,10 @@ class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Calificación',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: textGray900,
-                  ),
+                _participantHeader(
+                  roleLabel: 'Rider',
+                  name: riderName,
+                  photoUrl: riderPhotoUrl,
                 ),
                 const SizedBox(height: 16),
                 Center(
@@ -230,6 +335,97 @@ class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
                 const SizedBox(height: 8),
                 TextField(
                   controller: _commentController,
+                  maxLines: 4,
+                  maxLength: 200,
+                  decoration: InputDecoration(
+                    hintText: 'Cuéntanos sobre tu experiencia...',
+                    hintStyle: const TextStyle(color: textGray600),
+                    filled: true,
+                    fillColor: backgroundGray50,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.all(16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _participantHeader(
+                  roleLabel: 'Hero Donador',
+                  name: sellerName,
+                  photoUrl: sellerPhotoUrl,
+                ),
+                const SizedBox(height: 16),
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(5, (index) {
+                      final starIndex = index + 1;
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _sellerRating = starIndex;
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(
+                            starIndex <= _sellerRating
+                                ? Icons.star
+                                : Icons.star_border,
+                            size: 48,
+                            color: starIndex <= _sellerRating
+                                ? primaryYellow
+                                : textGray600,
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    _getRatingText(_sellerRating),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: textGray700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Comentario (opcional)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: textGray900,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _sellerCommentController,
                   maxLines: 4,
                   maxLength: 200,
                   decoration: InputDecoration(
