@@ -11,23 +11,23 @@ import '../models/user_status_model.dart';
 class UserMapper {
   /// Convierte UserModel (Data) a User (Domain)
   static User toEntity(UserModel model) {
-    final addressUnits = <AddressUnitType, Address>{};
-    for (final entry in model.addressUnits.entries) {
+    final addressSlots = <AddressSlot, Address>{};
+    for (final entry in model.addressSlots.entries) {
       try {
-        final t = AddressUnitType.fromString(entry.key);
-        addressUnits[t] = entry.value.toEntity();
+        final t = AddressSlot.fromString(entry.key);
+        addressSlots[t] = entry.value.toEntity();
       } catch (_) {
         // Ignore invalid keys
       }
     }
 
-    AddressUnitType? primaryType;
-    final rawPrimary = model.primaryAddressUnitType;
+    AddressSlot? primarySlot;
+    final rawPrimary = model.primaryAddressSlot;
     if (rawPrimary != null && rawPrimary.trim().isNotEmpty) {
       try {
-        primaryType = AddressUnitType.fromString(rawPrimary);
+        primarySlot = AddressSlot.fromString(rawPrimary);
       } catch (_) {
-        primaryType = null;
+        primarySlot = null;
       }
     }
 
@@ -36,8 +36,8 @@ class UserMapper {
       identity: model.identity.toEntity(),
       contact: model.contact.toEntity(),
       address: model.address?.toEntity(),
-      addressUnits: addressUnits,
-      primaryAddressUnitType: primaryType,
+      addressSlots: addressSlots,
+      primaryAddressSlot: primarySlot,
       roles: model.roles.map((r) => UserRole.fromString(r)).toList(),
       status: model.status.toEntity(),
       heroProfile: model.heroProfile?.toEntity(),
@@ -56,11 +56,11 @@ class UserMapper {
       identity: IdentityModel.fromEntity(entity.identity),
       contact: ContactModel.fromEntity(entity.contact),
       address: entity.address != null ? AddressModel.fromEntity(entity.address!) : null,
-      addressUnits: {
-        for (final e in entity.addressUnits.entries)
+      addressSlots: {
+        for (final e in entity.addressSlots.entries)
           e.key.jsonValue: AddressModel.fromEntity(e.value),
       },
-      primaryAddressUnitType: entity.primaryAddressUnitType?.jsonValue,
+      primaryAddressSlot: entity.primaryAddressSlot?.jsonValue,
       roles: entity.roles.map((r) => r.name).toList(),
       status: UserStatusModel.fromEntity(entity.status),
       heroProfile: entity.heroProfile != null ? HeroProfileModel.fromEntity(entity.heroProfile!) : null,

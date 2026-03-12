@@ -6,16 +6,18 @@ class AddressModel {
   final GeoPoint geopoint;
   final bool locationCheck;
   final String? countryCode;
-  final AddressUnitType? unitType;
   final String? unitIdentifier;
+  final String? name;
+  final String? description;
 
   AddressModel({
     required this.fullAddress,
     required this.geopoint,
     this.locationCheck = false,
     this.countryCode,
-    this.unitType,
     this.unitIdentifier,
+    this.name,
+    this.description,
   });
 
   factory AddressModel.fromJson(Map<String, dynamic> json) {
@@ -44,10 +46,9 @@ class AddressModel {
       geopoint: geopoint,
       locationCheck: json['locationCheck'] as bool? ?? false,
       countryCode: json['countryCode'] as String?,
-      unitType: json['unitType'] != null
-          ? AddressUnitType.fromString(json['unitType'].toString())
-          : null,
       unitIdentifier: json['unitIdentifier'] as String?,
+      name: json['name'] as String?,
+      description: json['description'] as String?,
     );
   }
 
@@ -59,8 +60,9 @@ class AddressModel {
       'longitude': geopoint.longitude,
       'locationCheck': locationCheck,
       'countryCode': countryCode,
-      'unitType': unitType?.jsonValue,
       'unitIdentifier': unitIdentifier,
+      'name': name,
+      'description': description,
     };
   }
 
@@ -70,8 +72,9 @@ class AddressModel {
       geopoint: geopoint,
       locationCheck: locationCheck,
       countryCode: countryCode,
-      unitType: unitType,
       unitIdentifier: unitIdentifier,
+      name: name,
+      description: description,
     );
   }
 
@@ -81,8 +84,9 @@ class AddressModel {
       geopoint: entity.geopoint,
       locationCheck: entity.locationCheck,
       countryCode: entity.countryCode,
-      unitType: entity.unitType,
       unitIdentifier: entity.unitIdentifier,
+      name: entity.name,
+      description: entity.description,
     );
   }
 }

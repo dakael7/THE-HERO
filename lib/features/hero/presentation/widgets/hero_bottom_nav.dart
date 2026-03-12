@@ -17,7 +17,6 @@ class HeroBottomNav extends ConsumerWidget {
     final viewModel = ref.read(heroHomeViewModelProvider.notifier);
     final mediaQuery = MediaQuery.of(context);
     final screenWidth = mediaQuery.size.width;
-    final safeBottom = mediaQuery.padding.bottom;
 
     // Responsive breakpoints
     final isVeryCompact = screenWidth < 340;
@@ -48,9 +47,6 @@ class HeroBottomNav extends ConsumerWidget {
 
     // Responsive padding
     final padding = (8.0 * scaleFactor).clamp(6.0, 20.0);
-    final bottomPadding = safeBottom > 0
-        ? safeBottom
-        : (12.0 * scaleFactor).clamp(10.0, 24.0);
 
     // Responsive item padding
     final itemPadding = (6.0 * scaleFactor).clamp(4.0, 12.0);
@@ -62,7 +58,7 @@ class HeroBottomNav extends ConsumerWidget {
     final iconSize = (26.0 * scaleFactor).clamp(22.0, 32.0);
 
     // Responsive center gap (for FAB)
-    final centerGapWidth = (64.0 * scaleFactor).clamp(50.0, 80.0);
+    final centerGapWidth = (82.0 * scaleFactor).clamp(64.0, 104.0);
 
     // Responsive border radius
     final navRadius = (26.0 * scaleFactor).clamp(22.0, 32.0);
@@ -79,12 +75,11 @@ class HeroBottomNav extends ConsumerWidget {
       top: false,
       left: false,
       right: false,
-      bottom: false,
+      bottom: true,
       child: Padding(
         padding: EdgeInsets.only(
           left: padding,
           right: padding,
-          bottom: bottomPadding,
         ),
         child: Container(
           decoration: BoxDecoration(

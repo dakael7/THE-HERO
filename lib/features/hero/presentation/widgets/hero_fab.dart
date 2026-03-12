@@ -62,18 +62,20 @@ class _HeroFABState extends ConsumerState<HeroFAB>
       ),
     ]).animate(_badgeController);
 
-    _cartSubscription = ref.listenManual<List<CartItem>>(cartProvider,
-        (previous, next) {
-      final prevCount = (previous ?? const <CartItem>[])
-          .fold<int>(0, (sum, item) => sum + item.quantity);
-      final nextCount =
-          next.fold<int>(0, (sum, item) => sum + item.quantity);
+    _cartSubscription = ref.listenManual<List<CartItem>>(
+      cartProvider,
+      (previous, next) {
+        final prevCount = (previous ?? const <CartItem>[])
+            .fold<int>(0, (sum, item) => sum + item.quantity);
+        final nextCount =
+            next.fold<int>(0, (sum, item) => sum + item.quantity);
 
-      if (nextCount > prevCount) {
-        _bumpController.forward(from: 0);
-        _badgeController.forward(from: 0);
-      }
-    });
+        if (nextCount > prevCount) {
+          _bumpController.forward(from: 0);
+          _badgeController.forward(from: 0);
+        }
+      },
+    );
   }
 
   @override
@@ -84,6 +86,14 @@ class _HeroFABState extends ConsumerState<HeroFAB>
     super.dispose();
   }
 
+  void _navigateToCart() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const HeroCartScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final itemCount = ref.watch(
@@ -92,86 +102,90 @@ class _HeroFABState extends ConsumerState<HeroFAB>
       ),
     );
     final isMobile = ResponsiveUtils.isMobile(context);
-    final fabSize = isMobile ? 70.0 : 80.0;
-    final fabHeight = isMobile ? 80.0 : 90.0;
-    final yOffset = isMobile ? 40.0 : 45.0;
-    final iconSize = isMobile ? 32.0 : 38.0;
+    final fabSize = isMobile ? 74.0 : 86.0;
+    final iconSize = isMobile ? 34.0 : 40.0;
 
-    return Transform.translate(
-      offset: Offset(0, yOffset),
-      child: ScaleTransition(
-        scale: _bumpScale,
-        child: SizedBox(
-          width: fabSize,
-          height: fabHeight,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const HeroCartScreen(),
-                ),
-              );
-            },
-            child: Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: primaryOrange.withValues(alpha: 0.2),
-              ),
+    // ✅ FIX: Sin Transform.translate — desplazaba visualmente el FAB
+    // pero el hit-test quedaba en la posición original, rompiendo los toques.
+    // El Scaffold con centerFloat posiciona el FAB correctamente.
+    return ScaleTransition(
+      scale: _bumpScale,
+      child: SizedBox(
+        width: fabSize,
+        height: fabSize,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _navigateToCart,
+            borderRadius: BorderRadius.circular(fabSize / 2),
+            splashColor: Colors.white.withValues(alpha: 0.2),
+            highlightColor: Colors.white.withValues(alpha: 0.1),
+            child: IgnorePointer(
               child: Container(
+                width: fabSize,
+                height: fabSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: primaryOrange,
-                  boxShadow: [
-                    BoxShadow(
-                      color: primaryOrange.withValues(alpha: 0.4),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  color: primaryOrange.withValues(alpha: 0.2),
                 ),
-                child: Center(
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.center,
-                    children: [
-                      SizedBox(
-                        width: iconSize * 2,
-                        height: iconSize * 2,
-                        child: Image.asset(
-                          'assets/wheel.png',
-                          fit: BoxFit.contain,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: primaryOrange,
+                      boxShadow: [
+                        BoxShadow(
+                          color: primaryOrange.withValues(alpha: 0.4),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
                         ),
-                      ),
-                      if (itemCount > 0)
-                        Positioned(
-                          right: -2,
-                          top: -4,
-                          child: ScaleTransition(
-                            scale: _badgeScale,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: backgroundWhite,
-                                shape: BoxShape.circle,
-                              ),
-                              constraints: const BoxConstraints(
-                                minWidth: 18,
-                                minHeight: 18,
-                              ),
-                              child: Text(
-                                itemCount.toString(),
-                                style: const TextStyle(
-                                  color: primaryOrange,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: iconSize * 2,
+                            height: iconSize * 2,
+                            child: Image.asset(
+                              'assets/wheel.png',
+                              fit: BoxFit.contain,
                             ),
                           ),
-                        ),
-                    ],
+                          if (itemCount > 0)
+                            Positioned(
+                              right: -2,
+                              top: -4,
+                              child: ScaleTransition(
+                                scale: _badgeScale,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: backgroundWhite,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 18,
+                                    minHeight: 18,
+                                  ),
+                                  child: Text(
+                                    itemCount.toString(),
+                                    style: const TextStyle(
+                                      color: primaryOrange,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),

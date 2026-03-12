@@ -10,8 +10,8 @@ class UserModel {
   final IdentityModel identity;
   final ContactModel contact;
   final AddressModel? address;
-  final Map<String, AddressModel> addressUnits;
-  final String? primaryAddressUnitType;
+  final Map<String, AddressModel> addressSlots;
+  final String? primaryAddressSlot;
   final List<String> roles;
   final UserStatusModel status;
   final HeroProfileModel? heroProfile;
@@ -26,8 +26,8 @@ class UserModel {
     required this.identity,
     required this.contact,
     this.address,
-    this.addressUnits = const <String, AddressModel>{},
-    this.primaryAddressUnitType,
+    this.addressSlots = const <String, AddressModel>{},
+    this.primaryAddressSlot,
     required this.roles,
     required this.status,
     this.heroProfile,
@@ -73,8 +73,9 @@ class UserModel {
       address: json['address'] != null
           ? AddressModel.fromJson(json['address'] as Map<String, dynamic>)
           : null,
-      addressUnits: (() {
-        final raw = json['addressUnits'];
+      addressSlots: (() {
+        Map? raw = json['addressSlots'] as Map?;
+        raw ??= json['addressUnits'] as Map?;
         if (raw is! Map) return <String, AddressModel>{};
         final out = <String, AddressModel>{};
         for (final entry in raw.entries) {
@@ -89,7 +90,9 @@ class UserModel {
         }
         return out;
       })(),
-      primaryAddressUnitType: json['primaryAddressUnitType']?.toString(),
+      primaryAddressSlot:
+          (json['primaryAddressSlot'] ?? json['primaryAddressUnitType'])
+              ?.toString(),
       roles: rolesSet.toList(),
       status: UserStatusModel.fromJson(
         json['status'] as Map<String, dynamic>? ?? {},
@@ -121,10 +124,10 @@ class UserModel {
       'identity': identity.toJson(),
       'contact': contact.toJson(),
       'address': address?.toJson(),
-      'addressUnits': {
-        for (final e in addressUnits.entries) e.key: e.value.toJson(),
+      'addressSlots': {
+        for (final e in addressSlots.entries) e.key: e.value.toJson(),
       },
-      'primaryAddressUnitType': primaryAddressUnitType,
+      'primaryAddressSlot': primaryAddressSlot,
       'roles': roles,
       'status': status.toJson(),
       'heroProfile': heroProfile?.toJson(),

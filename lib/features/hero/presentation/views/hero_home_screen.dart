@@ -38,6 +38,7 @@ class HeroHomeScreen extends ConsumerStatefulWidget {
 
 class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
   final ScrollController _scrollController = ScrollController();
+  bool _isSearchExpanded = false;
 
   @override
   void initState() {
@@ -48,7 +49,6 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
         statusBarIconBrightness: Brightness.dark,
       ),
     );
-    // Reset navigation to first tab on mount
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(heroHomeViewModelProvider.notifier).reset();
     });
@@ -66,23 +66,19 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
     });
 
     if (expanded) {
-      // Collapse header when search is activated
       _scrollController.animateTo(
-        80.0, // Scroll enough to collapse the header
+        80.0,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
     } else {
-      // Expand header when search is closed
       _scrollController.animateTo(
-        0.0, // Scroll back to top
+        0.0,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
     }
   }
-
-  bool _isSearchExpanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -108,7 +104,6 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                 child: profile.ProfileScreen(
                   isRiderProfile: false,
                   onBackPressed: () {
-                  
                     ref
                         .read(heroHomeViewModelProvider.notifier)
                         .selectNavItem(0);
@@ -129,7 +124,6 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
               controller: _scrollController,
               slivers: [
                 HeroHeader(onSearchExpandedChanged: _onSearchExpandedChanged),
-
                 if (_isSearchExpanded)
                   const SliverFillRemaining(child: HeroSearchContent())
                 else
@@ -143,14 +137,11 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            // --- SECCIÓN BANNER PROMOCIONAL ---
-                            // const RepaintBoundary(child: HeroPromoBanner()),
                             const HeroAdMobNative(height: 160),
                             const SizedBox(height: paddingNormal),
                           ],
                         ),
                       ),
-
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: paddingNormal,
@@ -158,31 +149,22 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                         child: LayoutBuilder(
                           builder: (context, constraints) {
                             final width = constraints.maxWidth;
-                            final scale = (width / 390.0)
-                                .clamp(0.88, 1.10)
-                                .toDouble();
-
-                            final cardPadding = (14.0 * scale)
-                                .clamp(12.0, 16.0)
-                                .toDouble();
-                            final titleSize = (15.0 * scale)
-                                .clamp(13.0, 16.0)
-                                .toDouble();
-                            final bodySize = (12.5 * scale)
-                                .clamp(11.0, 13.0)
-                                .toDouble();
-                            final buttonVPadding = (11.0 * scale)
-                                .clamp(10.0, 12.0)
-                                .toDouble();
-                            final iconSize = (18.0 * scale)
-                                .clamp(16.0, 20.0)
-                                .toDouble();
-                            final cornerRadius = (16.0 * scale)
-                                .clamp(14.0, 18.0)
-                                .toDouble();
-                            final cardHeight = (174.0 * scale)
-                                .clamp(160.0, 190.0)
-                                .toDouble();
+                            final scale =
+                                (width / 390.0).clamp(0.88, 1.10).toDouble();
+                            final cardPadding =
+                                (14.0 * scale).clamp(12.0, 16.0).toDouble();
+                            final titleSize =
+                                (15.0 * scale).clamp(13.0, 16.0).toDouble();
+                            final bodySize =
+                                (12.5 * scale).clamp(11.0, 13.0).toDouble();
+                            final buttonVPadding =
+                                (11.0 * scale).clamp(10.0, 12.0).toDouble();
+                            final iconSize =
+                                (18.0 * scale).clamp(16.0, 20.0).toDouble();
+                            final cornerRadius =
+                                (16.0 * scale).clamp(14.0, 18.0).toDouble();
+                            final cardHeight =
+                                (174.0 * scale).clamp(160.0, 190.0).toDouble();
 
                             final publishCard = SizedBox(
                               height: cardHeight,
@@ -191,7 +173,8 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                                 padding: EdgeInsets.all(cardPadding),
                                 decoration: BoxDecoration(
                                   color: backgroundWhite,
-                                  borderRadius: BorderRadius.circular(cornerRadius),
+                                  borderRadius:
+                                      BorderRadius.circular(cornerRadius),
                                   border: Border.all(
                                     color: borderGray100,
                                     width: 1,
@@ -206,7 +189,8 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                                   ],
                                 ),
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     Text(
                                       'Sé un Hero',
@@ -279,7 +263,8 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: textGray900.withValues(alpha: 0.05),
+                                      color:
+                                          textGray900.withValues(alpha: 0.05),
                                       blurRadius: 12,
                                       offset: const Offset(0, 8),
                                     ),
@@ -380,8 +365,7 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                             return Column(
                               children: [
                                 Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Expanded(child: publishCard),
                                     const SizedBox(width: 12),
@@ -395,7 +379,6 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                           },
                         ),
                       ),
-
                       const SizedBox(height: spacingScreenBottom),
                     ]),
                   ),
@@ -403,13 +386,24 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
             );
           },
         ),
-
-        // 3. Navegación Inferior y FAB - solo visible cuando no hay búsqueda activa
         bottomNavigationBar: _isSearchExpanded ? null : const HeroBottomNav(),
-        floatingActionButton: _isSearchExpanded ? null : HeroFAB(),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        floatingActionButton: _isSearchExpanded ? null : const HeroFAB(),
+        floatingActionButtonLocation: const _CenterDockedWithOffset(44.0),
       ),
     );
+  }
+}
+
+class _CenterDockedWithOffset extends FloatingActionButtonLocation {
+  const _CenterDockedWithOffset(this.dy);
+
+  final double dy;
+
+  @override
+  Offset getOffset(ScaffoldPrelayoutGeometry scaffoldGeometry) {
+    final base = FloatingActionButtonLocation.centerDocked
+        .getOffset(scaffoldGeometry);
+    return Offset(base.dx, base.dy + dy);
   }
 }
 
@@ -444,7 +438,6 @@ class _CatalogSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Title
         const Text(
           'Catálogo de productos',
           style: TextStyle(
@@ -454,22 +447,14 @@ class _CatalogSection extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 12),
-
-        // Category chips
         const CategoryFilterChips(),
         const SizedBox(height: 12),
-
-        // Sort and price filter
         Row(
           children: const [
             SortOptionsButton(),
           ],
         ),
-
-        // Active filters indicator
         const ActiveFiltersIndicator(),
-
-        // Products list
         offersAsync.when(
           loading: () => const Padding(
             padding: EdgeInsets.all(32),
@@ -501,7 +486,6 @@ class _CatalogSection extends ConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Results count
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
@@ -513,8 +497,6 @@ class _CatalogSection extends ConsumerWidget {
                     ),
                   ),
                 ),
-
-                // Products
                 Container(
                   decoration: BoxDecoration(
                     color: backgroundWhite,
@@ -555,9 +537,7 @@ class _CatalogSection extends ConsumerWidget {
                                 name: offer.title,
                                 sellerHeroId: offer.heroId,
                                 condition: offer.condition.displayName,
-                                colorCondition: _conditionColor(
-                                  offer.condition,
-                                ),
+                                colorCondition: _conditionColor(offer.condition),
                                 category: offer.category,
                                 availableQty: offer.availableQty,
                                 viewCount: offer.viewCount,
@@ -574,18 +554,23 @@ class _CatalogSection extends ConsumerWidget {
                                 avgRating: offer.avgRating,
                                 ratingCount: offer.ratingCount,
                                 sellerName: _sellerNameFor(
-                                  ref.watch(userByIdStreamProvider(offer.heroId)),
+                                  ref.watch(
+                                      userByIdStreamProvider(offer.heroId)),
                                 ),
                                 sellerHeroRating: ref
-                                    .watch(userByIdStreamProvider(offer.heroId))
+                                    .watch(
+                                        userByIdStreamProvider(offer.heroId))
                                     .maybeWhen(
-                                      data: (u) => (u?.heroProfile?.rating) ?? 0.0,
+                                      data: (u) =>
+                                          (u?.heroProfile?.rating) ?? 0.0,
                                       orElse: () => null,
                                     ),
                                 sellerHeroRatingCount: ref
-                                    .watch(userByIdStreamProvider(offer.heroId))
+                                    .watch(
+                                        userByIdStreamProvider(offer.heroId))
                                     .maybeWhen(
-                                      data: (u) => (u?.heroProfile?.totalRatings) ?? 0,
+                                      data: (u) =>
+                                          (u?.heroProfile?.totalRatings) ?? 0,
                                       orElse: () => null,
                                     ),
                               ),

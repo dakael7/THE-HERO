@@ -10,8 +10,8 @@ class User {
   final Identity identity;
   final Contact contact;
   final Address? address;
-  final Map<AddressUnitType, Address> addressUnits;
-  final AddressUnitType? primaryAddressUnitType;
+  final Map<AddressSlot, Address> addressSlots;
+  final AddressSlot? primaryAddressSlot;
   final List<UserRole> roles;
   final UserStatus status;
   final HeroProfile? heroProfile;
@@ -26,8 +26,8 @@ class User {
     required this.identity,
     required this.contact,
     this.address,
-    this.addressUnits = const <AddressUnitType, Address>{},
-    this.primaryAddressUnitType,
+    this.addressSlots = const <AddressSlot, Address>{},
+    this.primaryAddressSlot,
     required this.roles,
     required this.status,
     this.heroProfile,
@@ -71,8 +71,8 @@ class User {
     Identity? identity,
     Contact? contact,
     Address? address,
-    Map<AddressUnitType, Address>? addressUnits,
-    AddressUnitType? primaryAddressUnitType,
+    Map<AddressSlot, Address>? addressSlots,
+    AddressSlot? primaryAddressSlot,
     List<UserRole>? roles,
     UserStatus? status,
     HeroProfile? heroProfile,
@@ -87,9 +87,8 @@ class User {
       identity: identity ?? this.identity,
       contact: contact ?? this.contact,
       address: address ?? this.address,
-      addressUnits: addressUnits ?? this.addressUnits,
-      primaryAddressUnitType:
-          primaryAddressUnitType ?? this.primaryAddressUnitType,
+      addressSlots: addressSlots ?? this.addressSlots,
+      primaryAddressSlot: primaryAddressSlot ?? this.primaryAddressSlot,
       roles: roles ?? this.roles,
       status: status ?? this.status,
       heroProfile: heroProfile ?? this.heroProfile,

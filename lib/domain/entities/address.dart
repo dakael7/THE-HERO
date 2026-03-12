@@ -1,36 +1,51 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum AddressUnitType {
-  apartment,
-  house,
-  office;
+enum AddressSlot {
+  one,
+  two,
+  three;
 
   String get displayName {
     switch (this) {
-      case AddressUnitType.apartment:
-        return 'Departamento';
-      case AddressUnitType.house:
-        return 'Casa';
-      case AddressUnitType.office:
-        return 'Oficina';
+      case AddressSlot.one:
+        return 'Dirección 1';
+      case AddressSlot.two:
+        return 'Dirección 2';
+      case AddressSlot.three:
+        return 'Dirección 3';
     }
   }
 
-  String get jsonValue => name;
+  String get jsonValue {
+    switch (this) {
+      case AddressSlot.one:
+        return '1';
+      case AddressSlot.two:
+        return '2';
+      case AddressSlot.three:
+        return '3';
+    }
+  }
 
-  static AddressUnitType fromString(String value) {
-    switch (value.toLowerCase()) {
-      case 'apartment':
-      case 'departamento':
-        return AddressUnitType.apartment;
-      case 'house':
-      case 'casa':
-        return AddressUnitType.house;
-      case 'office':
-      case 'oficina':
-        return AddressUnitType.office;
+  static AddressSlot fromString(String value) {
+    switch (value.trim().toLowerCase()) {
+      case '1':
+      case 'one':
+      case 'direccion 1':
+      case 'dirección 1':
+        return AddressSlot.one;
+      case '2':
+      case 'two':
+      case 'direccion 2':
+      case 'dirección 2':
+        return AddressSlot.two;
+      case '3':
+      case 'three':
+      case 'direccion 3':
+      case 'dirección 3':
+        return AddressSlot.three;
       default:
-        throw ArgumentError('Tipo de unidad inválido: $value');
+        throw ArgumentError('Slot de dirección inválido: $value');
     }
   }
 }
@@ -40,27 +55,27 @@ class Address {
   final GeoPoint geopoint; 
   final bool locationCheck; 
   final String? countryCode;
-  final AddressUnitType? unitType;
   final String? unitIdentifier;
+  final String? name;
+  final String? description;
 
   Address({
     required this.fullAddress,
     required this.geopoint,
     this.locationCheck = false,
     this.countryCode,
-    this.unitType,
     this.unitIdentifier,
+    this.name,
+    this.description,
   });
 
   double get latitude => geopoint.latitude;
   double get longitude => geopoint.longitude;
 
   String? get unitDisplayLine {
-    final type = unitType;
     final id = unitIdentifier?.trim();
-    if (type == null) return null;
-    if (id == null || id.isEmpty) return 'Unidad: ${type.displayName}';
-    return 'Unidad: ${type.displayName} - $id';
+    if (id == null || id.isEmpty) return null;
+    return 'Dpto./Casa/Oficina/Condominio: $id';
   }
 
   String get displayAddressMultiline {
@@ -74,16 +89,18 @@ class Address {
     GeoPoint? geopoint,
     bool? locationCheck,
     String? countryCode,
-    AddressUnitType? unitType,
     String? unitIdentifier,
+    String? name,
+    String? description,
   }) {
     return Address(
       fullAddress: fullAddress ?? this.fullAddress,
       geopoint: geopoint ?? this.geopoint,
       locationCheck: locationCheck ?? this.locationCheck,
       countryCode: countryCode ?? this.countryCode,
-      unitType: unitType ?? this.unitType,
       unitIdentifier: unitIdentifier ?? this.unitIdentifier,
+      name: name ?? this.name,
+      description: description ?? this.description,
     );
   }
 
@@ -95,8 +112,9 @@ class Address {
         other.geopoint == geopoint &&
         other.locationCheck == locationCheck &&
         other.countryCode == countryCode &&
-        other.unitType == unitType &&
-        other.unitIdentifier == unitIdentifier;
+        other.unitIdentifier == unitIdentifier &&
+        other.name == name &&
+        other.description == description;
   }
 
   @override
@@ -105,7 +123,8 @@ class Address {
         geopoint,
         locationCheck,
         countryCode,
-        unitType,
         unitIdentifier,
+        name,
+        description,
       );
 }

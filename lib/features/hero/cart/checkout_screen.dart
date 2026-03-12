@@ -229,7 +229,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   bool _isSubmitting = false;
   bool _deliverToReception = false;
   bool _useAccountAddress = false;
-  AddressUnitType? _selectedAccountAddressUnitType;
+  AddressSlot? _selectedAccountAddressSlot;
   double? _deliveryLatitude;
   double? _deliveryLongitude;
 
@@ -357,26 +357,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       _addressController.text = user.address!.fullAddress;
     }
 
-    if (_selectedAccountAddressUnitType == null &&
-        user.addressUnits.isNotEmpty) {
-      _selectedAccountAddressUnitType =
-          user.primaryAddressUnitType ?? user.addressUnits.keys.first;
+    if (_selectedAccountAddressSlot == null && user.addressSlots.isNotEmpty) {
+      _selectedAccountAddressSlot =
+          user.primaryAddressSlot ?? user.addressSlots.keys.first;
     }
     _prefilled = true;
   }
 
   Address? _resolveSelectedAccountAddress(User user) {
-    final selectedType = _selectedAccountAddressUnitType;
-    if (selectedType != null) {
-      final addr = user.addressUnits[selectedType];
+    final selectedSlot = _selectedAccountAddressSlot;
+    if (selectedSlot != null) {
+      final addr = user.addressSlots[selectedSlot];
       if (addr != null) return addr;
     }
-    final primaryType = user.primaryAddressUnitType;
-    if (primaryType != null) {
-      final addr = user.addressUnits[primaryType];
+    final primarySlot = user.primaryAddressSlot;
+    if (primarySlot != null) {
+      final addr = user.addressSlots[primarySlot];
       if (addr != null) return addr;
     }
-    if (user.addressUnits.isNotEmpty) return user.addressUnits.values.first;
+    if (user.addressSlots.isNotEmpty) return user.addressSlots.values.first;
     return user.address;
   }
 
@@ -1377,12 +1376,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                 _manualDeliveryLongitude = _deliveryLongitude;
                                 setState(() => _useAccountAddress = true);
                                 if (user != null) {
-                                  if (_selectedAccountAddressUnitType ==
+                                  if (_selectedAccountAddressSlot ==
                                           null &&
-                                      user.addressUnits.isNotEmpty) {
-                                    _selectedAccountAddressUnitType =
-                                        user.primaryAddressUnitType ??
-                                            user.addressUnits.keys.first;
+                                      user.addressSlots.isNotEmpty) {
+                                    _selectedAccountAddressSlot =
+                                        user.primaryAddressSlot ??
+                                            user.addressSlots.keys.first;
                                   }
                                   _setDeliveryFromAccountAddress(user);
                                 } else {
@@ -1433,8 +1432,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             u.address!.fullAddress.trim().isNotEmpty) {
                           return u.address!.displayAddressMultiline;
                         }
-                        if (u.addressUnits.isNotEmpty) {
-                          final first = u.addressUnits.values.first;
+                        if (u.addressSlots.isNotEmpty) {
+                          final first = u.addressSlots.values.first;
                           if (first.fullAddress.trim().isNotEmpty) {
                             return first.displayAddressMultiline;
                           }
@@ -1450,7 +1449,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   // Saved address unit type selector
                   if (!inPersonPickupSelected &&
                       _useAccountAddress &&
-                      (user?.addressUnits.isNotEmpty ?? false)) ...[
+                      (user?.addressSlots.isNotEmpty ?? false)) ...[
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
@@ -1494,16 +1493,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
-                            children: user!.addressUnits.keys.map((t) {
-                              final sel =
-                                  _selectedAccountAddressUnitType == t;
+                            children: user!.addressSlots.keys.map((t) {
+                              final sel = _selectedAccountAddressSlot == t;
                               return GestureDetector(
                                 onTap: _isSubmitting
                                     ? null
                                     : () {
                                         setState(() =>
-                                            _selectedAccountAddressUnitType =
-                                                t);
+                                            _selectedAccountAddressSlot = t);
                                         _setDeliveryFromAccountAddress(
                                             user);
                                       },
