@@ -6,6 +6,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/order_status.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/services/rider_commission_calculator.dart';
+import '../../../../domain/config/pricing_config_provider.dart';
 import '../../../../domain/providers/orders_usecase_providers.dart';
 import '../providers/rider_cumulative_stats_provider.dart';
 import '../providers/rider_earnings_breakdown_provider.dart';
@@ -32,49 +33,51 @@ class RiderEarningsScreen extends ConsumerWidget {
 
           final ordersUseCase = ref.read(getOrdersByRiderUseCaseProvider);
           final statsAsync = ref.watch(riderCumulativeStatsProvider(user.id));
-          final breakdownAsync =
-              ref.watch(riderEarningsBreakdownProvider(user.id));
+          final breakdownAsync = ref.watch(
+            riderEarningsBreakdownProvider(user.id),
+          );
 
           return StreamBuilder(
             stream: ordersUseCase.execute(user.id),
             builder: (context, ordersSnapshot) {
               final hasOrders = ordersSnapshot.hasData;
-              final List<Order> orders =
-                  hasOrders ? (ordersSnapshot.data ?? const <Order>[]) : const <Order>[];
+              final List<Order> orders = hasOrders
+                  ? (ordersSnapshot.data ?? const <Order>[])
+                  : const <Order>[];
 
-                  final List<Order>? completedOrders = hasOrders
-                      ? orders
-                          .where((order) => order.status == OrderStatus.delivered)
-                          .toList()
-                      : null;
+              final List<Order>? completedOrders = hasOrders
+                  ? orders
+                        .where((order) => order.status == OrderStatus.delivered)
+                        .toList()
+                  : null;
 
-                  final stats = statsAsync.asData?.value;
-                  final int deliveryCount = stats?.completedTrips ?? 0;
-                  final int? canceledCount = stats?.canceledTrips;
-                  final double totalTips = stats?.totalTips ?? 0.0;
-                  final double totalEarnings = stats?.totalEarnings ?? 0.0;
-                  final double totalNetEarnings = totalEarnings + totalTips;
-                  final double pendingBalance = stats?.pendingBalance ?? 0.0;
+              final stats = statsAsync.asData?.value;
+              final int deliveryCount = stats?.completedTrips ?? 0;
+              final int? canceledCount = stats?.canceledTrips;
+              final double totalTips = stats?.totalTips ?? 0.0;
+              final double totalEarnings = stats?.totalEarnings ?? 0.0;
+              final double totalNetEarnings = totalEarnings + totalTips;
+              final double pendingBalance = stats?.pendingBalance ?? 0.0;
 
-                  final breakdown = breakdownAsync.asData?.value;
-                  final earningsOnline = breakdown?.earningsOnline ?? 0.0;
-                  final earningsCash = breakdown?.earningsCash ?? 0.0;
-                  final cashToRender = breakdown?.cashToRender ?? 0.0;
-                  final avgPerDelivery = deliveryCount <= 0
-                      ? 0.0
-                      : (totalNetEarnings / deliveryCount);
+              final breakdown = breakdownAsync.asData?.value;
+              final earningsOnline = breakdown?.earningsOnline ?? 0.0;
+              final earningsCash = breakdown?.earningsCash ?? 0.0;
+              final cashToRender = breakdown?.cashToRender ?? 0.0;
+              final avgPerDelivery = deliveryCount <= 0
+                  ? 0.0
+                  : (totalNetEarnings / deliveryCount);
 
-                  final completedCountText =
-                      '$deliveryCount entrega${deliveryCount == 1 ? '' : 's'} completada${deliveryCount == 1 ? '' : 's'}';
+              final completedCountText =
+                  '$deliveryCount entrega${deliveryCount == 1 ? '' : 's'} completada${deliveryCount == 1 ? '' : 's'}';
 
-                  return RefreshIndicator(
-                    color: primaryOrange,
-                    onRefresh: () async {
-                      ref.invalidate(profileProvider);
-                    },
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                      children: [
+              return RefreshIndicator(
+                color: primaryOrange,
+                onRefresh: () async {
+                  ref.invalidate(profileProvider);
+                },
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  children: [
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -156,7 +159,8 @@ class RiderEarningsScreen extends ConsumerWidget {
                                 child: _MetricChip(
                                   icon: Icons.trending_up,
                                   label: 'Promedio',
-                                  value: '\$${avgPerDelivery.toStringAsFixed(0)}',
+                                  value:
+                                      '\$${avgPerDelivery.toStringAsFixed(0)}',
                                 ),
                               ),
                             ],
@@ -224,7 +228,9 @@ class RiderEarningsScreen extends ConsumerWidget {
                       const Center(
                         child: Padding(
                           padding: EdgeInsets.only(top: 24),
-                          child: CircularProgressIndicator(color: primaryOrange),
+                          child: CircularProgressIndicator(
+                            color: primaryOrange,
+                          ),
                         ),
                       )
                     else if (completedOrders.isEmpty)
@@ -269,8 +275,7 @@ class RiderEarningsScreen extends ConsumerWidget {
                       )
                     else ...[
                       const Padding(
-                        padding:
-                            EdgeInsets.only(left: 4, top: 4, bottom: 10),
+                        padding: EdgeInsets.only(left: 4, top: 4, bottom: 10),
                         child: Text(
                           'Entregas recientes',
                           style: TextStyle(
@@ -281,13 +286,24 @@ class RiderEarningsScreen extends ConsumerWidget {
                         ),
                       ),
                       ...completedOrders.take(10).map((order) {
-                        final earnings =
-                            RiderCommissionCalculator.calculateCommission(
-                          deliveryFee: order.deliveryFee,
+                        final commissionConfig = ref.watch(
+                          riderCommissionConfigProvider,
                         );
+                        final earnings =
+                            RiderCommissionCalculator.calculateCommissionWith(
+                              deliveryFee: order.deliveryFee,
+                              serviceFeeCLP: commissionConfig.serviceFeeCLP,
+                              taxPercentage: commissionConfig.taxPercentage,
+                            );
                         final shortId = order.orderId.length <= 8
                             ? order.orderId
                             : order.orderId.substring(0, 8);
+                        final isCash = order.rider.isCashOrder;
+                        // Efectivo: rider cobró el total en mano
+                        // Online: rider recibe netEarnings + propina via plataforma
+                        final displayAmount = isCash
+                            ? order.amountTotal
+                            : (earnings.netEarnings + order.tip);
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 10),
@@ -308,8 +324,10 @@ class RiderEarningsScreen extends ConsumerWidget {
                                 color: primaryOrange.withValues(alpha: 0.10),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Icon(
-                                Icons.check_circle_outline,
+                              child: Icon(
+                                isCash
+                                    ? Icons.payments_outlined
+                                    : Icons.check_circle_outline,
                                 color: primaryOrange,
                               ),
                             ),
@@ -321,16 +339,16 @@ class RiderEarningsScreen extends ConsumerWidget {
                                 color: textGray900,
                               ),
                             ),
-                            subtitle: const Text(
-                              'Entregada',
-                              style: TextStyle(
+                            subtitle: Text(
+                              isCash ? 'Entregada · Efectivo' : 'Entregada',
+                              style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 color: textGray600,
                               ),
                             ),
                             trailing: Text(
-                              '\$${(earnings.netEarnings + order.tip).toStringAsFixed(0)}',
+                              '\$${displayAmount.toStringAsFixed(0)}',
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w900,
@@ -342,9 +360,9 @@ class RiderEarningsScreen extends ConsumerWidget {
                       }),
                     ],
                   ],
-                    ),
-                  );
-                },
+                ),
+              );
+            },
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),

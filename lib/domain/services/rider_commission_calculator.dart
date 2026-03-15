@@ -1,10 +1,10 @@
 /// Resultado del cálculo de comisiones para riders
 class RiderCommissionResult {
-  final double deliveryFee; // Tarifa total de envío
-  final double serviceFee; // Comisión de servicio fija ($2,000)
-  final double taxDeduction; // Descuento por impuestos (14.5%)
-  final double netEarnings; // Ganancia neta del rider
-  final String breakdown; // Desglose detallado
+  final double deliveryFee;
+  final double serviceFee;
+  final double taxDeduction;
+  final double netEarnings;
+  final String breakdown;
 
   const RiderCommissionResult({
     required this.deliveryFee,
@@ -16,25 +16,46 @@ class RiderCommissionResult {
 }
 
 class RiderCommissionCalculator {
+  /// Default comisión fija (fallback local).
   static const double serviceFeeCLP = 2000.0;
 
+  /// Default porcentaje de descuento (fallback local) — 0..1.
   static const double taxPercentage = 0.07;
 
+  /// Calcula la comisión usando los defaults hardcodeados (retrocompatible).
   static RiderCommissionResult calculateCommission({
     required double deliveryFee,
   }) {
-    const serviceFee = serviceFeeCLP;
+    return calculateCommissionWith(
+      deliveryFee: deliveryFee,
+      serviceFeeCLP: serviceFeeCLP,
+      taxPercentage: taxPercentage,
+    );
+  }
 
-    final netDeliveryFee = (deliveryFee - serviceFee).clamp(0.0, double.infinity);
+  /// Calcula la comisión con valores personalizados (para remote config).
+  static RiderCommissionResult calculateCommissionWith({
+    required double deliveryFee,
+    required double serviceFeeCLP,
+    required double taxPercentage,
+  }) {
+    final serviceFee = serviceFeeCLP;
+
+    final netDeliveryFee = (deliveryFee - serviceFee).clamp(
+      0.0,
+      double.infinity,
+    );
     final taxDeduction = netDeliveryFee * taxPercentage;
 
     final netEarnings = netDeliveryFee - taxDeduction;
+
+    final taxPercent = (taxPercentage * 100).toStringAsFixed(0);
 
     final breakdown =
         '''
 Tarifa de envío: \$${deliveryFee.toStringAsFixed(0)}
 Comisión de servicio: -\$${serviceFee.toStringAsFixed(0)}
-Descuento (7% sobre envío neto): -\$${taxDeduction.toStringAsFixed(0)}
+Descuento ($taxPercent% sobre envío neto): -\$${taxDeduction.toStringAsFixed(0)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Ganancia neta: \$${netEarnings.toStringAsFixed(0)}
 ''';

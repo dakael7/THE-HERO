@@ -4,9 +4,19 @@ class UpdateOrderStatusUseCase {
   final OrdersRepository _repository;
 
   UpdateOrderStatusUseCase({required OrdersRepository repository})
-      : _repository = repository;
+    : _repository = repository;
 
-  Future<void> execute(String orderId, String status) async {
-    await _repository.updateOrderStatus(orderId, status);
+  Future<void> execute(
+    String orderId,
+    String status, {
+    double riderServiceFeeCLP = 2000.0,
+    double riderTaxPercentage = 0.07,
+  }) async {
+    await _repository.updateOrderStatus(
+      orderId,
+      status,
+      riderServiceFeeCLP: riderServiceFeeCLP,
+      riderTaxPercentage: riderTaxPercentage,
+    );
   }
 }

@@ -7,6 +7,7 @@ class OrderRiderModel {
   final String? vehicleTypeSnapshot;
   final String? riderNameSnapshot;
   final String? riderPhoneSnapshot;
+  final double? cashHoldAmount;
 
   OrderRiderModel({
     this.assignedRiderId,
@@ -14,6 +15,7 @@ class OrderRiderModel {
     this.vehicleTypeSnapshot,
     this.riderNameSnapshot,
     this.riderPhoneSnapshot,
+    this.cashHoldAmount,
   });
 
   factory OrderRiderModel.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,7 @@ class OrderRiderModel {
       vehicleTypeSnapshot: json['vehicleTypeSnapshot'] as String?,
       riderNameSnapshot: json['riderNameSnapshot'] as String?,
       riderPhoneSnapshot: json['riderPhoneSnapshot'] as String?,
+      cashHoldAmount: (json['cashHoldAmount'] as num?)?.toDouble(),
     );
   }
 
@@ -37,6 +40,7 @@ class OrderRiderModel {
     if (riderPhoneSnapshot != null) {
       data['riderPhoneSnapshot'] = riderPhoneSnapshot;
     }
+    if (cashHoldAmount != null) data['cashHoldAmount'] = cashHoldAmount;
     return data;
   }
 
@@ -47,6 +51,7 @@ class OrderRiderModel {
       vehicleTypeSnapshot: vehicleTypeSnapshot,
       riderNameSnapshot: riderNameSnapshot,
       riderPhoneSnapshot: riderPhoneSnapshot,
+      cashHoldAmount: cashHoldAmount,
     );
   }
 
@@ -57,6 +62,7 @@ class OrderRiderModel {
       vehicleTypeSnapshot: entity.vehicleTypeSnapshot,
       riderNameSnapshot: entity.riderNameSnapshot,
       riderPhoneSnapshot: entity.riderPhoneSnapshot,
+      cashHoldAmount: entity.cashHoldAmount,
     );
   }
 }

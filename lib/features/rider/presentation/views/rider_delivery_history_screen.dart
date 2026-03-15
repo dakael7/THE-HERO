@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/common/hero_header_app_bar.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/services/rider_commission_calculator.dart';
+import '../../../../domain/config/pricing_config_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
@@ -73,9 +74,16 @@ class RiderDeliveryHistoryScreen extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   final order = delivered[index];
                   final orderId = order.orderId;
-                  final earnings = RiderCommissionCalculator.calculateCommission(
-                    deliveryFee: order.deliveryFee,
-                  );
+                  final earnings =
+                      RiderCommissionCalculator.calculateCommissionWith(
+                        deliveryFee: order.deliveryFee,
+                        serviceFeeCLP: ref
+                            .watch(riderCommissionConfigProvider)
+                            .serviceFeeCLP,
+                        taxPercentage: ref
+                            .watch(riderCommissionConfigProvider)
+                            .taxPercentage,
+                      );
 
                   return Container(
                     padding: const EdgeInsets.all(14),

@@ -12,6 +12,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/location_entity.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/services/rider_commission_calculator.dart';
+import '../../../../domain/config/pricing_config_provider.dart';
 import '../../../../data/repositories/location_repository_impl.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
@@ -26,21 +27,21 @@ import 'rider_earnings_screen.dart';
 
 final _currentDeviceLocationProvider =
     FutureProvider.autoDispose<LocationEntity>((ref) {
-  final repo = LocationRepositoryImpl();
-  return repo.getCurrentLocation();
-});
+      final repo = LocationRepositoryImpl();
+      return repo.getCurrentLocation();
+    });
 
 final _routeProvider = FutureProvider.autoDispose
     .family<DirectionsRoute, _RouteRequestParams>((ref, params) {
-  final service = DirectionsService();
-  return service.getRoute(
-    pickupLat: params.originLat,
-    pickupLng: params.originLng,
-    deliveryLat: params.destinationLat,
-    deliveryLng: params.destinationLng,
-    waypoints: params.waypoints,
-  );
-});
+      final service = DirectionsService();
+      return service.getRoute(
+        pickupLat: params.originLat,
+        pickupLng: params.originLng,
+        deliveryLat: params.destinationLat,
+        deliveryLng: params.destinationLng,
+        waypoints: params.waypoints,
+      );
+    });
 
 class _RouteRequestParams {
   final double originLat;
@@ -71,12 +72,12 @@ class _RouteRequestParams {
 
   @override
   int get hashCode => Object.hash(
-        originLat,
-        originLng,
-        destinationLat,
-        destinationLng,
-        waypointsKey,
-      );
+    originLat,
+    originLng,
+    destinationLat,
+    destinationLng,
+    waypointsKey,
+  );
 }
 
 class DeliveryDetailsScreen extends ConsumerStatefulWidget {
@@ -204,7 +205,11 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                           color: const Color(0xFFF5F5F5),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.close, size: 16, color: textGray600),
+                        child: const Icon(
+                          Icons.close,
+                          size: 16,
+                          color: textGray600,
+                        ),
                       ),
                     ),
                   ],
@@ -352,25 +357,32 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
   Widget build(BuildContext context) {
     final claimState = ref.watch(orderNotifierProvider);
 
+    final commissionConfig = ref.watch(riderCommissionConfigProvider);
     final stops = widget.order.pickupStops ?? const [];
-    final earnings = RiderCommissionCalculator.calculateCommission(
+    final earnings = RiderCommissionCalculator.calculateCommissionWith(
       deliveryFee: widget.order.deliveryFee,
+      serviceFeeCLP: commissionConfig.serviceFeeCLP,
+      taxPercentage: commissionConfig.taxPercentage,
     );
 
-    final paymentAsync =
-        ref.watch(watchPaymentByOrderIdProvider(widget.order.orderId));
+    final paymentAsync = ref.watch(
+      watchPaymentByOrderIdProvider(widget.order.orderId),
+    );
     final payment = paymentAsync.asData?.value;
     final isCashPayment =
         payment?.paymentMethod == PaymentMethod.cash ||
-            (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
-            (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
+        (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
     final baseAmountToShow = isCashPayment
-        ? (widget.order.amountTotal - widget.order.tip)
-            .clamp(0, double.infinity)
+        ? (widget.order.amountTotal - widget.order.tip).clamp(
+            0,
+            double.infinity,
+          )
         : earnings.netEarnings;
 
-    final primaryPickupGeo =
-        stops.isNotEmpty ? stops.first.geo : widget.order.pickup.geo;
+    final primaryPickupGeo = stops.isNotEmpty
+        ? stops.first.geo
+        : widget.order.pickup.geo;
     final pickupLat = primaryPickupGeo.latitude;
     final pickupLng = primaryPickupGeo.longitude;
     final deliveryLat = widget.order.delivery.geo.latitude;
@@ -390,10 +402,10 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
 
     final effectiveRiderLatLng =
         (deviceLatLng != null && _isValidLatLng(deviceLatLng))
-            ? deviceLatLng
-            : ((currentLatLng != null && _isValidLatLng(currentLatLng))
-                ? currentLatLng
-                : null);
+        ? deviceLatLng
+        : ((currentLatLng != null && _isValidLatLng(currentLatLng))
+              ? currentLatLng
+              : null);
 
     final riderLatLngStable = effectiveRiderLatLng == null
         ? null
@@ -402,28 +414,30 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
             _roundCoord(effectiveRiderLatLng.longitude),
           );
 
-    final showFullRoute = riderLatLngStable != null &&
-        _isValidLatLng(riderLatLngStable);
+    final showFullRoute =
+        riderLatLngStable != null && _isValidLatLng(riderLatLngStable);
 
     final pickupPoints = stops.isNotEmpty
         ? stops.map((s) => s.geo).toList()
         : <GeoPoint>[widget.order.pickup.geo];
     final pickupWaypoints = pickupPoints
-        .map((geo) =>
-            DirectionsPoint(latitude: geo.latitude, longitude: geo.longitude))
+        .map(
+          (geo) =>
+              DirectionsPoint(latitude: geo.latitude, longitude: geo.longitude),
+        )
         .toList(growable: false);
     final pickupWaypointsKey = pickupPoints
-        .map((geo) =>
-            '${geo.latitude.toStringAsFixed(5)},${geo.longitude.toStringAsFixed(5)}')
+        .map(
+          (geo) =>
+              '${geo.latitude.toStringAsFixed(5)},${geo.longitude.toStringAsFixed(5)}',
+        )
         .join('|');
 
     final routeAsync = ref.watch(
       _routeProvider(
         _RouteRequestParams(
-          originLat:
-              showFullRoute ? riderLatLngStable.latitude : pickupLat,
-          originLng:
-              showFullRoute ? riderLatLngStable.longitude : pickupLng,
+          originLat: showFullRoute ? riderLatLngStable.latitude : pickupLat,
+          originLng: showFullRoute ? riderLatLngStable.longitude : pickupLng,
           destinationLat: deliveryLat,
           destinationLng: deliveryLng,
           waypoints: showFullRoute
@@ -438,8 +452,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
     final deliveryLocation = gmap.LatLng(deliveryLat, deliveryLng);
     final allPickupLocations = stops.isNotEmpty
         ? stops
-            .map((s) => gmap.LatLng(s.geo.latitude, s.geo.longitude))
-            .toList(growable: false)
+              .map((s) => gmap.LatLng(s.geo.latitude, s.geo.longitude))
+              .toList(growable: false)
         : <gmap.LatLng>[pickupLocation];
     final initialCenter = gmap.LatLng(
       (pickupLat + deliveryLat) / 2,
@@ -479,7 +493,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
           markerId: const gmap.MarkerId('pickup'),
           position: pickupLocation,
           icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-              gmap.BitmapDescriptor.hueOrange),
+            gmap.BitmapDescriptor.hueOrange,
+          ),
           infoWindow: const gmap.InfoWindow(title: 'Recogida'),
         )
       else
@@ -487,11 +502,15 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
           gmap.Marker(
             markerId: gmap.MarkerId('pickup_${i + 1}'),
             position: gmap.LatLng(
-                stops[i].geo.latitude, stops[i].geo.longitude),
+              stops[i].geo.latitude,
+              stops[i].geo.longitude,
+            ),
             icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                gmap.BitmapDescriptor.hueOrange),
+              gmap.BitmapDescriptor.hueOrange,
+            ),
             infoWindow: gmap.InfoWindow(
-                title: 'Recogida ${i + 1}/${stops.length}'),
+              title: 'Recogida ${i + 1}/${stops.length}',
+            ),
           ),
     };
 
@@ -499,10 +518,14 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       final lats = points.map((p) => p.latitude).toList();
       final lngs = points.map((p) => p.longitude).toList();
       return gmap.LatLngBounds(
-        southwest: gmap.LatLng(lats.reduce((a, b) => a < b ? a : b),
-            lngs.reduce((a, b) => a < b ? a : b)),
-        northeast: gmap.LatLng(lats.reduce((a, b) => a > b ? a : b),
-            lngs.reduce((a, b) => a > b ? a : b)),
+        southwest: gmap.LatLng(
+          lats.reduce((a, b) => a < b ? a : b),
+          lngs.reduce((a, b) => a < b ? a : b),
+        ),
+        northeast: gmap.LatLng(
+          lats.reduce((a, b) => a > b ? a : b),
+          lngs.reduce((a, b) => a > b ? a : b),
+        ),
       );
     }
 
@@ -559,7 +582,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                     markerId: const gmap.MarkerId('delivery'),
                     position: deliveryLocation,
                     icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                        gmap.BitmapDescriptor.hueGreen),
+                      gmap.BitmapDescriptor.hueGreen,
+                    ),
                     infoWindow: const gmap.InfoWindow(title: 'Entrega'),
                   ),
                   if (effectiveRiderLatLng != null &&
@@ -568,9 +592,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                       markerId: const gmap.MarkerId('rider'),
                       position: effectiveRiderLatLng,
                       icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                          gmap.BitmapDescriptor.hueAzure),
-                      infoWindow:
-                          const gmap.InfoWindow(title: 'Rider (Tú)'),
+                        gmap.BitmapDescriptor.hueAzure,
+                      ),
+                      infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
                     ),
                 },
                 myLocationEnabled: true,
@@ -608,8 +632,11 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                         ],
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded,
-                            color: textGray900, size: 20),
+                        icon: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: textGray900,
+                          size: 20,
+                        ),
                         onPressed: () => Navigator.pop(context),
                         padding: EdgeInsets.zero,
                       ),
@@ -620,17 +647,23 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 11),
+                          horizontal: 16,
+                          vertical: 11,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.55),
                           borderRadius: BorderRadius.circular(22),
                           border: Border.all(
-                              color: Colors.white.withOpacity(0.15)),
+                            color: Colors.white.withOpacity(0.15),
+                          ),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.local_shipping_outlined,
-                                color: Colors.white, size: 16),
+                            const Icon(
+                              Icons.local_shipping_outlined,
+                              color: Colors.white,
+                              size: 16,
+                            ),
                             const SizedBox(width: 8),
                             const Text(
                               'Detalles de Entrega',
@@ -696,8 +729,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
               return Container(
                 decoration: const BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(28)),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black26,
@@ -737,32 +769,37 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                 decoration: BoxDecoration(
                                   color: backgroundGray50,
                                   borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                      color: borderGray100),
+                                  border: Border.all(color: borderGray100),
                                 ),
                                 clipBehavior: Clip.antiAlias,
-                                child: widget.order.items.isNotEmpty &&
-                                        widget.order.items.first
+                                child:
+                                    widget.order.items.isNotEmpty &&
+                                        widget
+                                            .order
+                                            .items
+                                            .first
                                             .imageUrlSnapshot
                                             .startsWith('http')
                                     ? CachedNetworkImage(
-                                        imageUrl: widget.order.items.first
+                                        imageUrl: widget
+                                            .order
+                                            .items
+                                            .first
                                             .imageUrlSnapshot,
                                         fit: BoxFit.cover,
                                         placeholder: (context, url) =>
                                             const Center(
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: primaryOrange,
-                                          ),
-                                        ),
-                                        errorWidget:
-                                            (context, url, error) =>
-                                                const Icon(
-                                          Icons
-                                              .image_not_supported_outlined,
-                                          color: textGray600,
-                                        ),
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: primaryOrange,
+                                              ),
+                                            ),
+                                        errorWidget: (context, url, error) =>
+                                            const Icon(
+                                              Icons
+                                                  .image_not_supported_outlined,
+                                              color: textGray600,
+                                            ),
                                       )
                                     : const Icon(
                                         Icons.shopping_bag_outlined,
@@ -775,8 +812,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               // Order info
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Pedido #${widget.order.orderId.substring(0, widget.order.orderId.length.clamp(0, 8)).toUpperCase()}',
@@ -791,20 +827,21 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                     Consumer(
                                       builder: (context, ref, _) {
                                         final buyerAsync = ref.watch(
-                                            userByIdProvider(widget.order.heroId));
+                                          userByIdProvider(widget.order.heroId),
+                                        );
                                         final buyerName = buyerAsync.maybeWhen(
                                           data: (u) =>
                                               (u?.fullName.trim().isNotEmpty ??
-                                                      false)
-                                                  ? u!.fullName
-                                                  : 'Hero',
+                                                  false)
+                                              ? u!.fullName
+                                              : 'Hero',
                                           orElse: () => 'Hero',
                                         );
-                                        final buyerPhotoUrl =
-                                            buyerAsync.maybeWhen(
-                                          data: (u) => u?.profilePhotoUrl,
-                                          orElse: () => null,
-                                        );
+                                        final buyerPhotoUrl = buyerAsync
+                                            .maybeWhen(
+                                              data: (u) => u?.profilePhotoUrl,
+                                              orElse: () => null,
+                                            );
                                         final hasBuyerPhoto =
                                             (buyerPhotoUrl ?? '')
                                                 .trim()
@@ -825,14 +862,19 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                                   ? Image.network(
                                                       buyerPhotoUrl!.trim(),
                                                       fit: BoxFit.cover,
-                                                      errorBuilder: (context,
-                                                          error, stackTrace) {
-                                                        return const Icon(
-                                                          Icons.person,
-                                                          color: primaryOrange,
-                                                          size: 14,
-                                                        );
-                                                      },
+                                                      errorBuilder:
+                                                          (
+                                                            context,
+                                                            error,
+                                                            stackTrace,
+                                                          ) {
+                                                            return const Icon(
+                                                              Icons.person,
+                                                              color:
+                                                                  primaryOrange,
+                                                              size: 14,
+                                                            );
+                                                          },
                                                     )
                                                   : const Icon(
                                                       Icons.person,
@@ -872,10 +914,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                           _TagChip(
                                             icon: Icons.payments_outlined,
                                             label: 'Efectivo',
-                                            bgColor:
-                                                const Color(0xFFFFF3E0),
-                                            textColor:
-                                                const Color(0xFFFF6B00),
+                                            bgColor: const Color(0xFFFFF3E0),
+                                            textColor: const Color(0xFFFF6B00),
                                           ),
                                       ],
                                     ),
@@ -886,21 +926,24 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               // Earnings badge
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 10),
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                     colors: [
                                       Color(0xFF22C55E),
-                                      Color(0xFF16A34A)
+                                      Color(0xFF16A34A),
                                     ],
                                   ),
                                   borderRadius: BorderRadius.circular(14),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: const Color(0xFF16A34A)
-                                          .withOpacity(0.3),
+                                      color: const Color(
+                                        0xFF16A34A,
+                                      ).withOpacity(0.3),
                                       blurRadius: 10,
                                       offset: const Offset(0, 4),
                                     ),
@@ -940,10 +983,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                           const SizedBox(height: 16),
 
                           // Divider
-                          Container(
-                            height: 1,
-                            color: const Color(0xFFF0F0F0),
-                          ),
+                          Container(height: 1, color: const Color(0xFFF0F0F0)),
                           const SizedBox(height: 16),
 
                           // ── PRODUCTS ──
@@ -959,12 +999,12 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                 color: const Color(0xFFFFFBEB),
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                    color: const Color(0xFFFFCC00),
-                                    width: 1.5),
+                                  color: const Color(0xFFFFCC00),
+                                  width: 1.5,
+                                ),
                               ),
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     children: [
@@ -972,8 +1012,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFFFF3E0),
-                                          borderRadius:
-                                              BorderRadius.circular(10),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
                                         ),
                                         child: const Icon(
                                           Icons.business_rounded,
@@ -997,22 +1038,29 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                     icon: Icons.apartment_rounded,
                                     label: 'Edificio',
                                     value: widget
-                                        .order.conciergeInfo!.buildingName,
+                                        .order
+                                        .conciergeInfo!
+                                        .buildingName,
                                   ),
                                   const SizedBox(height: 8),
                                   _buildConciergeInfoRow(
                                     icon: Icons.inventory_2_rounded,
                                     label: 'Paquete',
-                                    value: widget
-                                        .order.conciergeInfo!.packageName,
+                                    value:
+                                        widget.order.conciergeInfo!.packageName,
                                   ),
-                                  if (widget.order.conciergeInfo!.instructions
+                                  if (widget
+                                      .order
+                                      .conciergeInfo!
+                                      .instructions
                                       .isNotEmpty) ...[
                                     const SizedBox(height: 8),
                                     _buildConciergeInfoRow(
                                       icon: Icons.info_outline_rounded,
                                       label: 'Instrucciones',
-                                      value: widget.order.conciergeInfo!
+                                      value: widget
+                                          .order
+                                          .conciergeInfo!
                                           .instructions,
                                     ),
                                   ],
@@ -1033,12 +1081,12 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                 ? Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
-                                    children: List.generate(stops.length,
-                                        (i) {
+                                    children: List.generate(stops.length, (i) {
                                       final stop = stops[i];
                                       return Padding(
                                         padding: EdgeInsets.only(
-                                            top: i == 0 ? 0 : 8),
+                                          top: i == 0 ? 0 : 8,
+                                        ),
                                         child: Row(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -1055,8 +1103,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                                   '${i + 1}',
                                                   style: const TextStyle(
                                                     fontSize: 11,
-                                                    fontWeight:
-                                                        FontWeight.w800,
+                                                    fontWeight: FontWeight.w800,
                                                     color: Colors.white,
                                                   ),
                                                 ),
@@ -1065,18 +1112,15 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: _ResolvedAddressText(
-                                                snapshot:
-                                                    stop.addressSnapshot,
+                                                snapshot: stop.addressSnapshot,
                                                 geo: stop.geo,
                                                 style: const TextStyle(
                                                   fontSize: 13,
-                                                  fontWeight:
-                                                      FontWeight.w600,
+                                                  fontWeight: FontWeight.w600,
                                                   color: textGray900,
                                                 ),
                                                 maxLines: 2,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
                                           ],
@@ -1089,8 +1133,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       _ResolvedAddressText(
-                                        snapshot: widget
-                                            .order.pickup.addressSnapshot,
+                                        snapshot:
+                                            widget.order.pickup.addressSnapshot,
                                         geo: widget.order.pickup.geo,
                                         style: const TextStyle(
                                           fontSize: 13,
@@ -1104,8 +1148,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                           .trim()
                                           .isNotEmpty)
                                         Padding(
-                                          padding:
-                                              const EdgeInsets.only(top: 4),
+                                          padding: const EdgeInsets.only(
+                                            top: 4,
+                                          ),
                                           child: Text(
                                             widget.order.pickup.instructions
                                                 .trim(),
@@ -1125,12 +1170,14 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               final copy =
                                   '${widget.order.pickup.addressSnapshot}\n(${geo.latitude}, ${geo.longitude})';
                               await Clipboard.setData(
-                                  ClipboardData(text: copy));
+                                ClipboardData(text: copy),
+                              );
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                      'Recogida copiada al portapapeles'),
+                                    'Recogida copiada al portapapeles',
+                                  ),
                                   behavior: SnackBarBehavior.floating,
                                 ),
                               );
@@ -1139,8 +1186,11 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
 
                           // Route line
                           Padding(
-                            padding:
-                                const EdgeInsets.only(left: 22, top: 2, bottom: 2),
+                            padding: const EdgeInsets.only(
+                              left: 22,
+                              top: 2,
+                              bottom: 2,
+                            ),
                             child: Column(
                               children: List.generate(
                                 3,
@@ -1165,8 +1215,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 _ResolvedAddressText(
-                                  snapshot: widget
-                                      .order.delivery.addressSnapshot,
+                                  snapshot:
+                                      widget.order.delivery.addressSnapshot,
                                   geo: widget.order.delivery.geo,
                                   style: const TextStyle(
                                     fontSize: 13,
@@ -1176,15 +1226,13 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                if (widget
-                                    .order.delivery.instructions
+                                if (widget.order.delivery.instructions
                                     .trim()
                                     .isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Text(
-                                      widget.order.delivery.instructions
-                                          .trim(),
+                                      widget.order.delivery.instructions.trim(),
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
@@ -1201,12 +1249,14 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                               final copy =
                                   '${widget.order.delivery.addressSnapshot}\n(${geo.latitude}, ${geo.longitude})';
                               await Clipboard.setData(
-                                  ClipboardData(text: copy));
+                                ClipboardData(text: copy),
+                              );
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                      'Entrega copiada al portapapeles'),
+                                    'Entrega copiada al portapapeles',
+                                  ),
                                   behavior: SnackBarBehavior.floating,
                                 ),
                               );
@@ -1218,12 +1268,13 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 11),
+                                horizontal: 14,
+                                vertical: 11,
+                              ),
                               decoration: BoxDecoration(
                                 color: categoryBgGreen,
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                    color: categoryTextGreen),
+                                border: Border.all(color: categoryTextGreen),
                               ),
                               child: const Row(
                                 children: [
@@ -1296,8 +1347,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                     ),
                                   )
                                 : const Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Icon(
                                         Icons.check_circle_rounded,
@@ -1380,8 +1430,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
             if (onTap != null)
               Padding(
                 padding: const EdgeInsets.only(left: 8, top: 2),
-                child: Icon(Icons.copy_outlined,
-                    size: 16, color: textGray600),
+                child: Icon(Icons.copy_outlined, size: 16, color: textGray600),
               ),
           ],
         ),
@@ -1456,15 +1505,13 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content:
-                Text('Debes verificar tu RUT para aceptar pedidos.'),
+            content: Text('Debes verificar tu RUT para aceptar pedidos.'),
             duration: Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
           ),
         );
         Navigator.of(context).push(
-          MaterialPageRoute(
-              builder: (_) => const RutVerificationScreen()),
+          MaterialPageRoute(builder: (_) => const RutVerificationScreen()),
         );
       }
       if (mounted) {
@@ -1480,7 +1527,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
     final riderPhone = user.contact.phoneNumber;
 
     try {
-      await ref.read(orderNotifierProvider.notifier).claimOrder(
+      await ref
+          .read(orderNotifierProvider.notifier)
+          .claimOrder(
             orderId: widget.order.orderId,
             riderId: user.id,
             riderVehicleType: riderVehicleType,
@@ -1532,10 +1581,10 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
         final msg = _normalizeErrorMessage(e);
         final alreadyClaimed =
             msg.toLowerCase().contains('pedido ya tiene rider asignado') ||
-                msg.toLowerCase().contains('pedido ya no está disponible');
+            msg.toLowerCase().contains('pedido ya no está disponible');
         final isCashHoldError =
             msg.toLowerCase().contains('pago en efectivo') ||
-                msg.toLowerCase().contains('pendiente por pagar');
+            msg.toLowerCase().contains('pendiente por pagar');
         if (alreadyClaimed) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -1780,14 +1829,14 @@ class _ResolvedAddressTextState extends State<_ResolvedAddressText> {
 
   String _sanitizeAddress(String value) {
     final trimmed = value.trim();
-    final plusCodeAtStart =
-        RegExp(r'^\s*([A-Z0-9]{4,8}\+[A-Z0-9]{2,3})(?:\s+|,\s*)');
-    final removedLeading =
-        trimmed.replaceFirst(plusCodeAtStart, '').trim();
-    final plusCodeAtEnd =
-        RegExp(r'(?:\s+|,\s*)([A-Z0-9]{4,8}\+[A-Z0-9]{2,3})\s*$');
-    final removedPlusCode =
-        removedLeading.replaceAll(plusCodeAtEnd, '').trim();
+    final plusCodeAtStart = RegExp(
+      r'^\s*([A-Z0-9]{4,8}\+[A-Z0-9]{2,3})(?:\s+|,\s*)',
+    );
+    final removedLeading = trimmed.replaceFirst(plusCodeAtStart, '').trim();
+    final plusCodeAtEnd = RegExp(
+      r'(?:\s+|,\s*)([A-Z0-9]{4,8}\+[A-Z0-9]{2,3})\s*$',
+    );
+    final removedPlusCode = removedLeading.replaceAll(plusCodeAtEnd, '').trim();
     return removedPlusCode.replaceAll(RegExp(r'[\s,]+$'), '').trim();
   }
 
@@ -1832,12 +1881,11 @@ class _ResolvedAddressTextState extends State<_ResolvedAddressText> {
   @override
   Widget build(BuildContext context) {
     final raw = widget.snapshot.trim();
-    final show =
-        (_resolved != null && _resolved!.trim().isNotEmpty)
-            ? _resolved!.trim()
-            : (raw.isEmpty || raw.startsWith('Lat:')
-                ? 'Ubicación en el mapa'
-                : raw);
+    final show = (_resolved != null && _resolved!.trim().isNotEmpty)
+        ? _resolved!.trim()
+        : (raw.isEmpty || raw.startsWith('Lat:')
+              ? 'Ubicación en el mapa'
+              : raw);
 
     return Row(
       children: [
@@ -1896,8 +1944,11 @@ class _OrderItemsCard extends StatelessWidget {
                   color: const Color(0xFFFFF3E0),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.shopping_bag_outlined,
-                    size: 14, color: primaryOrange),
+                child: const Icon(
+                  Icons.shopping_bag_outlined,
+                  size: 14,
+                  color: primaryOrange,
+                ),
               ),
               const SizedBox(width: 10),
               const Expanded(
@@ -1911,8 +1962,7 @@ class _OrderItemsCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: borderGray100,
                   borderRadius: BorderRadius.circular(8),
@@ -1935,8 +1985,7 @@ class _OrderItemsCard extends StatelessWidget {
           if (items.isEmpty)
             const Text(
               'Sin productos',
-              style: TextStyle(
-                  color: textGray600, fontWeight: FontWeight.w600),
+              style: TextStyle(color: textGray600, fontWeight: FontWeight.w600),
             )
           else
             ...List.generate(items.length, (index) {
@@ -1945,7 +1994,8 @@ class _OrderItemsCard extends StatelessWidget {
 
               return Padding(
                 padding: EdgeInsets.only(
-                    bottom: index == items.length - 1 ? 0 : 12),
+                  bottom: index == items.length - 1 ? 0 : 12,
+                ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1971,10 +2021,10 @@ class _OrderItemsCard extends StatelessWidget {
                                 ),
                                 errorWidget: (context, url, error) =>
                                     const Icon(
-                                  Icons.image_not_supported_outlined,
-                                  color: textGray600,
-                                  size: 16,
-                                ),
+                                      Icons.image_not_supported_outlined,
+                                      color: textGray600,
+                                      size: 16,
+                                    ),
                               )
                             : const Icon(
                                 Icons.shopping_bag_outlined,
@@ -2013,7 +2063,9 @@ class _OrderItemsCard extends StatelessWidget {
                     const SizedBox(width: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF7F7F5),
                         borderRadius: BorderRadius.circular(8),

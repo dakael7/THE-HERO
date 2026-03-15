@@ -12,7 +12,12 @@ abstract class OrdersRemoteDataSource {
     required List<String> requiredVehicles,
     int limit = 50,
   });
-  Future<void> updateOrderStatus(String orderId, String status);
+  Future<void> updateOrderStatus(
+    String orderId,
+    String status, {
+    double riderServiceFeeCLP,
+    double riderTaxPercentage,
+  });
   Future<void> assignRider(
     String orderId,
     String riderId,
@@ -20,10 +25,7 @@ abstract class OrdersRemoteDataSource {
     String riderName,
     String riderPhone,
   );
-  Future<void> unassignRiderAndRequeue(
-    String orderId,
-    String riderId,
-  );
+  Future<void> unassignRiderAndRequeue(String orderId, String riderId);
   Future<void> cancelOrder(String orderId, String reason, String canceledBy);
 }
 
@@ -41,7 +43,9 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     final required = requiredVehicle.toLowerCase().trim();
 
     if (rider == 'car') {
-      return required == 'car' || required == 'motorcycle' || required == 'bicycle';
+      return required == 'car' ||
+          required == 'motorcycle' ||
+          required == 'bicycle';
     }
     if (rider == 'truck') {
       return required == 'truck' ||
@@ -72,8 +76,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
 
   double _cashAmountToCollectFromOrder(Map<String, dynamic> orderData) {
     final total = (orderData['amountTotal'] as num?)?.toDouble() ?? 0.0;
-    final tip = (orderData['tip'] as num?)?.toDouble() ?? 0.0;
-    return (total - tip).clamp(0.0, double.infinity);
+    return total.clamp(0.0, double.infinity); // incluye propina — el rider cobra el total completo
   }
 
   int _toCents(num value) {
@@ -89,7 +92,9 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
       } on FirebaseException catch (e) {
         final code = e.code.toLowerCase();
         final isTransient =
-            code == 'unavailable' || code == 'aborted' || code == 'deadline-exceeded';
+            code == 'unavailable' ||
+            code == 'aborted' ||
+            code == 'deadline-exceeded';
 
         if (!isTransient || attempt >= 3) rethrow;
 
@@ -101,10 +106,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   }
 
   @override
-  Future<void> unassignRiderAndRequeue(
-    String orderId,
-    String riderId,
-  ) async {
+  Future<void> unassignRiderAndRequeue(String orderId, String riderId) async {
     try {
       if (orderId.trim().isEmpty) {
         throw Exception('orderId inválido');
@@ -126,22 +128,27 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
             throw Exception('Solo puedes cancelar antes de recoger');
           }
 
-          final riderMap = (data['rider'] is Map) ? (data['rider'] as Map) : null;
+          final riderMap = (data['rider'] is Map)
+              ? (data['rider'] as Map)
+              : null;
           final assignedId = (riderMap?['assignedRiderId'] as String?) ?? '';
           if (assignedId.isEmpty || assignedId != riderId) {
             throw Exception('Pedido no asignado a este rider');
           }
 
-          final timestamps =
-              (data['timestamps'] is Map) ? (data['timestamps'] as Map) : null;
+          final timestamps = (data['timestamps'] is Map)
+              ? (data['timestamps'] as Map)
+              : null;
           if (timestamps != null && timestamps['pickedUpAt'] != null) {
             throw Exception('No puedes cancelar: ya marcaste recogido');
           }
 
-          final paymentRef =
-              _firestore.collection('payments').doc('cash-$orderId');
+          final paymentRef = _firestore
+              .collection('payments')
+              .doc('cash-$orderId');
           final paymentSnap = await transaction.get(paymentRef);
-          final isCashOrder = paymentSnap.exists &&
+          final isCashOrder =
+              paymentSnap.exists &&
               _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
 
           final riderRef = _firestore.collection('users').doc(riderId);
@@ -182,8 +189,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
             'timestamps.assignedAt': FieldValue.delete(),
             'timestamps.pickedUpAt': FieldValue.delete(),
             'timestamps.deliveredAt': FieldValue.delete(),
-            if (isCashOrder && !holdAlreadyReleased)
-              'cashHoldReleased': true,
+            if (isCashOrder && !holdAlreadyReleased) 'cashHoldReleased': true,
             'timestamps.queuedAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           });
@@ -217,13 +223,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
         .doc(buyerId)
         .collection('orders')
         .doc(orderId);
-    batch.set(
-      buyerIndexRef,
-      {
-        ...createdOrder,
-        'role': 'buyer',
-      },
-    );
+    batch.set(buyerIndexRef, {...createdOrder, 'role': 'buyer'});
 
     final sellerIdsRaw = createdOrder['sellerHeroIds'];
     if (sellerIdsRaw is! List) return;
@@ -240,13 +240,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .doc(sellerId)
           .collection('orders')
           .doc(orderId);
-      batch.set(
-        sellerIndexRef,
-        {
-          ...createdOrder,
-          'role': 'seller',
-        },
-      );
+      batch.set(sellerIndexRef, {...createdOrder, 'role': 'seller'});
     }
   }
 
@@ -331,7 +325,10 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .snapshots()
           .map(
             (snapshot) => snapshot.docs
-                .map((doc) => OrderModel.fromJson(_withOrderId(doc.data(), doc.id)))
+                .map(
+                  (doc) =>
+                      OrderModel.fromJson(_withOrderId(doc.data(), doc.id)),
+                )
                 .toList(),
           );
     } catch (e) {
@@ -352,7 +349,10 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .snapshots()
           .map(
             (snapshot) => snapshot.docs
-                .map((doc) => OrderModel.fromJson(_withOrderId(doc.data(), doc.id)))
+                .map(
+                  (doc) =>
+                      OrderModel.fromJson(_withOrderId(doc.data(), doc.id)),
+                )
                 .toList(),
           );
     } catch (e) {
@@ -375,7 +375,10 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           .snapshots()
           .map(
             (snapshot) => snapshot.docs
-                .map((doc) => OrderModel.fromJson(_withOrderId(doc.data(), doc.id)))
+                .map(
+                  (doc) =>
+                      OrderModel.fromJson(_withOrderId(doc.data(), doc.id)),
+                )
                 .toList(),
           );
     } catch (e) {
@@ -384,7 +387,12 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   }
 
   @override
-  Future<void> updateOrderStatus(String orderId, String status) async {
+  Future<void> updateOrderStatus(
+    String orderId,
+    String status, {
+    double riderServiceFeeCLP = RiderCommissionCalculator.serviceFeeCLP,
+    double riderTaxPercentage = RiderCommissionCalculator.taxPercentage,
+  }) async {
     try {
       if (orderId.trim().isEmpty) {
         throw Exception('orderId inválido');
@@ -412,37 +420,42 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
               updateData['timestamps.queuedAt'] = FieldValue.serverTimestamp();
               break;
             case 'picked_up':
-              updateData['timestamps.pickedUpAt'] = FieldValue.serverTimestamp();
+              updateData['timestamps.pickedUpAt'] =
+                  FieldValue.serverTimestamp();
               break;
             case 'in_transit':
               break;
             case 'delivered':
-              updateData['timestamps.deliveredAt'] = FieldValue.serverTimestamp();
+              updateData['timestamps.deliveredAt'] =
+                  FieldValue.serverTimestamp();
               break;
           }
 
           if (status == 'delivered') {
-            final riderMap = (data['rider'] is Map) ? (data['rider'] as Map) : null;
+            final riderMap = (data['rider'] is Map)
+                ? (data['rider'] as Map)
+                : null;
             final riderId = riderMap?['assignedRiderId']?.toString() ?? '';
             final alreadyProcessed = data['riderEarningsProcessed'] == true;
             if (riderId.isNotEmpty && !alreadyProcessed) {
-              final deliveryFee = (data['deliveryFee'] as num?)?.toDouble() ?? 0.0;
+              final deliveryFee =
+                  (data['deliveryFee'] as num?)?.toDouble() ?? 0.0;
               final tip = (data['tip'] as num?)?.toDouble() ?? 0.0;
-              final earnings = RiderCommissionCalculator.calculateCommission(
-                deliveryFee: deliveryFee,
-              );
+              final earnings =
+                  RiderCommissionCalculator.calculateCommissionWith(
+                    deliveryFee: deliveryFee,
+                    serviceFeeCLP: riderServiceFeeCLP,
+                    taxPercentage: riderTaxPercentage,
+                  );
 
-              final paymentRef =
-                  _firestore.collection('payments').doc('cash-$orderId');
+              final paymentRef = _firestore
+                  .collection('payments')
+                  .doc('cash-$orderId');
               final paymentSnap = await transaction.get(paymentRef);
-              final isCash = paymentSnap.exists &&
+              final isCash =
+                  paymentSnap.exists &&
                   _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
 
-              final tipCents = _toCents(tip);
-              final earningsAmount = isCash
-                  ? earnings.netEarnings
-                  : (earnings.netEarnings + tip);
-              final earningsCents = _toCents(earningsAmount);
 
               final riderRef = _firestore.collection('users').doc(riderId);
               final riderSnap = await transaction.get(riderRef);
@@ -454,72 +467,89 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
               final wallet = (riderData['riderWallet'] is Map)
                   ? (riderData['riderWallet'] as Map)
                   : const <String, dynamic>{};
-              final cashBalance = (wallet['cashBalance'] as num?)?.toDouble() ?? 0.0;
-              final cashOnHold = (wallet['cashOnHold'] as num?)?.toDouble() ?? 0.0;
+              final cashBalance =
+                  (wallet['cashBalance'] as num?)?.toDouble() ?? 0.0;
+              final cashOnHold =
+                  (wallet['cashOnHold'] as num?)?.toDouble() ?? 0.0;
 
-              final txCollection = riderRef.collection('riderWalletTransactions');
-              final earningsTxRef = txCollection.doc();
+              final txCollection = riderRef.collection(
+                'riderWalletTransactions',
+              );
 
-              transaction.set(earningsTxRef, {
-                'type': 'delivery_earnings',
-                'orderId': orderId,
-                'amount': earningsAmount,
-                'amountCents': earningsCents,
-                'currency': data['currency']?.toString() ?? 'CLP',
-                'createdAt': FieldValue.serverTimestamp(),
-                'meta': {
-                  'deliveryFee': deliveryFee,
-                  'tip': tip,
-                  'tipCents': tipCents,
-                  'breakdown': earnings.breakdown,
-                  'isCashOrder': isCash,
-                },
-              });
+              if (!isCash) {
+                // ── PAGO ONLINE: acreditar netEarnings + propina al saldo ──
+                final earningsAmount = earnings.netEarnings + tip;
+                final earningsCents = _toCents(earningsAmount);
 
-              final walletUpdate = <String, Object?>{
-                'riderWallet.earningsBalance': FieldValue.increment(earningsAmount),
-                'riderWallet.totalEarnings': FieldValue.increment(earningsAmount),
-                'riderWallet.earningsBalanceCents': FieldValue.increment(earningsCents),
-                'riderWallet.totalEarningsCents': FieldValue.increment(earningsCents),
-              };
+                final earningsTxRef = txCollection.doc();
+                transaction.set(earningsTxRef, {
+                  'type': 'delivery_earnings',
+                  'orderId': orderId,
+                  'amount': earningsAmount,
+                  'amountCents': earningsCents,
+                  'currency': data['currency']?.toString() ?? 'CLP',
+                  'createdAt': FieldValue.serverTimestamp(),
+                  'meta': {
+                    'deliveryFee': deliveryFee,
+                    'tip': tip,
+                    'tipCents': _toCents(tip),
+                    'breakdown': earnings.breakdown,
+                    'isCashOrder': false,
+                  },
+                });
 
-              if (isCash) {
-                final cashSettlementProcessed = data['cashSettlementProcessed'] == true;
+                transaction.update(riderRef, {
+                  'riderWallet.earningsBalance': FieldValue.increment(earningsAmount),
+                  'riderWallet.earningsBalanceCents': FieldValue.increment(earningsCents),
+                  'riderWallet.totalEarnings': FieldValue.increment(earningsAmount),
+                  'riderWallet.totalEarningsCents': FieldValue.increment(earningsCents),
+                });
+              } else {
+                // ── PAGO EFECTIVO: el rider ya cobró en mano ──
+                // Solo descontar el monto cobrado del saldo (balance = lo que la plataforma le debe).
+                // No se acredita delivery_earnings porque el rider ya tiene el efectivo.
+                final cashSettlementProcessed =
+                    data['cashSettlementProcessed'] == true;
                 if (!cashSettlementProcessed) {
                   final holdRaw = riderMap?['cashHoldAmount'];
-                  final holdAmount = (holdRaw is num)
+                  final cashAmount = (holdRaw is num)
                       ? holdRaw.toDouble()
                       : _cashAmountToCollectFromOrder(data);
-                  final holdCents = _toCents(holdAmount);
+                  final cashCents = _toCents(cashAmount);
 
                   final settlementTxRef = txCollection.doc();
                   transaction.set(settlementTxRef, {
                     'type': 'cash_settlement',
                     'orderId': orderId,
-                    'amount': -holdAmount,
-                    'amountCents': -holdCents,
+                    'amount': -cashAmount,
+                    'amountCents': -cashCents,
                     'currency': data['currency']?.toString() ?? 'CLP',
                     'createdAt': FieldValue.serverTimestamp(),
+                    'meta': {
+                      'deliveryFee': deliveryFee,
+                      'netEarnings': earnings.netEarnings,
+                      'isCashOrder': true,
+                    },
                   });
 
-                  walletUpdate['riderWallet.cashOnHold'] =
-                      FieldValue.increment(-holdAmount);
-                  walletUpdate['riderWallet.cashOnHoldCents'] =
-                      FieldValue.increment(-holdCents);
-
-                  walletUpdate['riderWallet.earningsBalance'] =
-                      FieldValue.increment(-holdAmount);
-                  walletUpdate['riderWallet.earningsBalanceCents'] =
-                      FieldValue.increment(-holdCents);
+                  transaction.update(riderRef, {
+                    // Liberar el hold y descontar del saldo en una sola operación
+                    'riderWallet.cashOnHold': FieldValue.increment(-cashAmount),
+                    'riderWallet.cashOnHoldCents': FieldValue.increment(-_toCents(cashAmount)),
+                    'riderWallet.earningsBalance': FieldValue.increment(-cashAmount),
+                    'riderWallet.earningsBalanceCents': FieldValue.increment(-cashCents),
+                    // totalEarnings para estadísticas (netEarnings del envío, sin registrar en balance)
+                    'riderWallet.totalEarnings': FieldValue.increment(earnings.netEarnings),
+                    'riderWallet.totalEarningsCents': FieldValue.increment(_toCents(earnings.netEarnings)),
+                  });
 
                   updateData['cashSettlementProcessed'] = true;
                 }
               }
 
-              transaction.update(riderRef, walletUpdate);
-
               updateData['riderEarningsProcessed'] = true;
-              updateData['riderEarningsProcessedAt'] = FieldValue.serverTimestamp();
+              updateData['riderEarningsProcessedAt'] =
+                  FieldValue.serverTimestamp();
               updateData['riderEarningsSnapshot'] = {
                 'deliveryFee': deliveryFee,
                 'tip': tip,
@@ -595,9 +625,12 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
             );
           }
 
-          final paymentRef = _firestore.collection('payments').doc('cash-$orderId');
+          final paymentRef = _firestore
+              .collection('payments')
+              .doc('cash-$orderId');
           final paymentSnap = await transaction.get(paymentRef);
-          final isCashOrder = paymentSnap.exists &&
+          final isCashOrder =
+              paymentSnap.exists &&
               _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
 
           double? cashHoldAmount;
@@ -621,13 +654,16 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                 ? (earningsBalanceCents / 100.0)
                 : (wallet['earningsBalance'] as num?)?.toDouble() ?? 0.0;
 
-            final cashOnHoldCents = (wallet['cashOnHoldCents'] as num?)?.toInt();
+            final cashOnHoldCents = (wallet['cashOnHoldCents'] as num?)
+                ?.toInt();
             final cashOnHold = cashOnHoldCents != null
                 ? (cashOnHoldCents / 100.0)
                 : (wallet['cashOnHold'] as num?)?.toDouble() ?? 0.0;
 
-            final available =
-                (earningsBalance - cashOnHold).clamp(0.0, double.infinity);
+            final available = (earningsBalance - cashOnHold).clamp(
+              0.0,
+              double.infinity,
+            );
 
             if (available < holdAmount) {
               throw Exception(
@@ -720,8 +756,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                   if (offerId == null || offerId.isEmpty) continue;
                   final qtyInt = (qty == null || qty <= 0) ? 1 : qty;
 
-                  final offerRef =
-                      _firestore.collection('offers').doc(offerId);
+                  final offerRef = _firestore.collection('offers').doc(offerId);
                   final offerSnap = await transaction.get(offerRef);
                   if (!offerSnap.exists) continue;
                   final offerData = offerSnap.data() ?? <String, dynamic>{};

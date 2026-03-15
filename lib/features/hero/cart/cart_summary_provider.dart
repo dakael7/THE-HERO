@@ -7,7 +7,6 @@ import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 
 import '../../../core/config/donation_pricing_config.dart';
 import '../../../domain/config/pricing_config_provider.dart';
-import '../../../domain/config/transport_pricing_config.dart';
 import '../../../domain/entities/order_requirements.dart';
 import 'cart_provider.dart';
 import 'cart_item.dart';
@@ -55,7 +54,8 @@ double? computeEffectiveDistanceKm({
     return null;
   }
 
-  final hasRouteDistance = routeDistanceKm != null &&
+  final hasRouteDistance =
+      routeDistanceKm != null &&
       routeDistanceKm.isFinite &&
       !routeDistanceKm.isNaN &&
       routeDistanceKm > 0;
@@ -95,8 +95,9 @@ final effectiveDistanceKmProvider = Provider<double?>((ref) {
   final deliveryGeo = ref.watch(deliveryGeoProvider);
   final routeDistanceKm = ref.watch(routeDistanceKmProvider);
   final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
-  final allItemsAllowInPersonPickup =
-      ref.watch(allItemsAllowInPersonPickupProvider);
+  final allItemsAllowInPersonPickup = ref.watch(
+    allItemsAllowInPersonPickupProvider,
+  );
 
   return computeEffectiveDistanceKm(
     cartItems: cartItems,
@@ -120,10 +121,7 @@ bool _isValidGeo(firestore.GeoPoint? geo) {
 
 double _toRadians(double degrees) => degrees * 3.141592653589793 / 180.0;
 
-double _haversineKm(
-  firestore.GeoPoint a,
-  firestore.GeoPoint b,
-) {
+double _haversineKm(firestore.GeoPoint a, firestore.GeoPoint b) {
   const earthRadiusKm = 6371.0;
 
   final dLat = _toRadians(b.latitude - a.latitude);
@@ -135,7 +133,8 @@ double _haversineKm(
   final sinDLat = math.sin(dLat / 2);
   final sinDLng = math.sin(dLng / 2);
 
-  final h = sinDLat * sinDLat + sinDLng * sinDLng * math.cos(lat1) * math.cos(lat2);
+  final h =
+      sinDLat * sinDLat + sinDLng * sinDLng * math.cos(lat1) * math.cos(lat2);
   final c = 2 * math.asin(math.sqrt(h));
   return earthRadiusKm * c;
 }
@@ -151,11 +150,12 @@ double _calculateTransportFee({
   );
   final minimum = pricingConfig.getMinimumCharge(vehicle);
   final basePerKm = pricingConfig.getPricePerKm(vehicle);
+  final discount = pricingConfig.getDistanceDiscount(vehicle);
 
   var kmFee = 0.0;
-  if (TransportPricingConfig.hasDistanceDiscount(vehicle)) {
-    final threshold = TransportPricingConfig.distanceThresholdForDiscount;
-    final reduced = TransportPricingConfig.getReducedPricePerKm(vehicle) ?? basePerKm;
+  if (discount.hasDiscount && distanceKm > discount.thresholdKm!) {
+    final threshold = discount.thresholdKm!;
+    final reduced = discount.reducedPricePerKm!;
     final firstLeg = distanceKm.clamp(0.0, threshold);
     final remaining = (distanceKm - threshold).clamp(0.0, double.infinity);
     kmFee = firstLeg * basePerKm + remaining * reduced;
@@ -163,7 +163,7 @@ double _calculateTransportFee({
     kmFee = distanceKm * basePerKm;
   }
 
-  return minimum + kmFee;
+  return math.max(minimum, kmFee);
 }
 
 CartSummary computeCartSummary({
@@ -182,7 +182,7 @@ CartSummary computeCartSummary({
     totalWeight += item.weight * item.quantity;
   }
 
-  final serviceFeeFixed = DonationPricingConfig.buyerServiceFee;
+  final serviceFeeFixed = pricingConfig.riderCommissionConfig.serviceFeeCLP;
   final taxPercentage = pricingConfig.taxPercentage;
 
   final hasItems = cartItems.isNotEmpty;
@@ -204,7 +204,8 @@ CartSummary computeCartSummary({
       final hasDeliveryGeo = _isValidGeo(deliveryGeo);
       final hasPickupGeos = pickupGeos.isNotEmpty;
 
-      final hasRouteDistance = routeDistanceKm != null &&
+      final hasRouteDistance =
+          routeDistanceKm != null &&
           routeDistanceKm.isFinite &&
           !routeDistanceKm.isNaN &&
           routeDistanceKm > 0;
@@ -218,8 +219,7 @@ CartSummary computeCartSummary({
             pricingConfig: pricingConfig,
           );
 
-          final requiredVehicle =
-              OrderRequirements.calculateRequiredVehicleFor(
+          final requiredVehicle = OrderRequirements.calculateRequiredVehicleFor(
             weightKg: totalWeight,
             distanceKm: totalKm,
           );
@@ -271,9 +271,9 @@ CartSummary computeCartSummary({
 
             final requiredVehicle =
                 OrderRequirements.calculateRequiredVehicleFor(
-              weightKg: totalWeight,
-              distanceKm: totalKm,
-            );
+                  weightKg: totalWeight,
+                  distanceKm: totalKm,
+                );
             shippingBreakdown =
                 '${totalKm.toStringAsFixed(1)} km · ${requiredVehicle.displayName}';
           } catch (_) {
@@ -323,8 +323,9 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
   final deliveryGeo = ref.watch(deliveryGeoProvider);
   final routeDistanceKm = ref.watch(routeDistanceKmProvider);
   final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
-  final allItemsAllowInPersonPickup =
-      ref.watch(allItemsAllowInPersonPickupProvider);
+  final allItemsAllowInPersonPickup = ref.watch(
+    allItemsAllowInPersonPickupProvider,
+  );
   final pricingConfig = ref.watch(pricingConfigProvider);
 
   return computeCartSummary(

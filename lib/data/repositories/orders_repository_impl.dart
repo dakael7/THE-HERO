@@ -7,7 +7,7 @@ class OrdersRepositoryImpl implements OrdersRepository {
   final OrdersRemoteDataSource _remoteDataSource;
 
   OrdersRepositoryImpl({required OrdersRemoteDataSource remoteDataSource})
-      : _remoteDataSource = remoteDataSource;
+    : _remoteDataSource = remoteDataSource;
 
   @override
   Future<Order> createOrder(Order order) async {
@@ -78,9 +78,19 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }
 
   @override
-  Future<void> updateOrderStatus(String orderId, String status) async {
+  Future<void> updateOrderStatus(
+    String orderId,
+    String status, {
+    double riderServiceFeeCLP = 2000.0,
+    double riderTaxPercentage = 0.07,
+  }) async {
     try {
-      await _remoteDataSource.updateOrderStatus(orderId, status);
+      await _remoteDataSource.updateOrderStatus(
+        orderId,
+        status,
+        riderServiceFeeCLP: riderServiceFeeCLP,
+        riderTaxPercentage: riderTaxPercentage,
+      );
     } catch (e) {
       throw Exception('Error al actualizar estado del pedido: $e');
     }
@@ -117,7 +127,11 @@ class OrdersRepositoryImpl implements OrdersRepository {
   }
 
   @override
-  Future<void> cancelOrder(String orderId, String reason, String canceledBy) async {
+  Future<void> cancelOrder(
+    String orderId,
+    String reason,
+    String canceledBy,
+  ) async {
     try {
       await _remoteDataSource.cancelOrder(orderId, reason, canceledBy);
     } catch (e) {

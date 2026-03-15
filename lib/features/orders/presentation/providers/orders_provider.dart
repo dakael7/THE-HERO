@@ -5,6 +5,7 @@ import '../../../../domain/providers/orders_usecase_providers.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../../data/models/order_model.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../../domain/config/pricing_config_provider.dart';
 
 final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   ref,
@@ -47,20 +48,21 @@ final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
       });
 });
 
-final riderOrdersProvider = StreamProvider.autoDispose.family<List<Order>, String>((
+final riderOrdersProvider = StreamProvider.autoDispose
+    .family<List<Order>, String>((ref, riderId) {
+      final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+      if (currentUid == null || currentUid != riderId) {
+        return Stream.value(const []);
+      }
+
+      final useCase = ref.read(getOrdersByRiderUseCaseProvider);
+      return useCase.execute(riderId);
+    });
+
+final orderByIdProvider = StreamProvider.autoDispose.family<Order?, String>((
   ref,
-  riderId,
+  orderId,
 ) {
-  final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
-  if (currentUid == null || currentUid != riderId) {
-    return Stream.value(const []);
-  }
-
-  final useCase = ref.read(getOrdersByRiderUseCaseProvider);
-  return useCase.execute(riderId);
-});
-
-final orderByIdProvider = StreamProvider.autoDispose.family<Order?, String>((ref, orderId) {
   final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
   if (currentUid == null) {
     return Stream.value(null);
@@ -89,9 +91,9 @@ final availableOrdersProvider = StreamProvider.autoDispose
         '🔍 [AvailableOrders] Fetching orders for vehicle type: ${riderVehicleType.name}',
       );
       final useCase = ref.read(getAvailableOrdersUseCaseProvider);
-      return useCase
-          .execute(riderVehicleType: riderVehicleType, limit: 20)
-          .map((orders) {
+      return useCase.execute(riderVehicleType: riderVehicleType, limit: 20).map((
+        orders,
+      ) {
         final filtered = orders.where((o) => !o.inPersonPickup).toList();
         print(
           '📦 [AvailableOrders] Received ${filtered.length} orders from stream',
@@ -176,9 +178,7 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
     }
   }
 
-  Future<void> confirmInPersonPickupReceived({
-    required String orderId,
-  }) async {
+  Future<void> confirmInPersonPickupReceived({required String orderId}) async {
     state = const AsyncValue.loading();
     try {
       final firestore = ref.read(firebaseFirestoreProvider);
@@ -197,7 +197,13 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
     state = const AsyncValue.loading();
     try {
       final useCase = ref.read(updateOrderStatusUseCaseProvider);
-      await useCase.execute(orderId, status);
+      final commissionConfig = ref.read(riderCommissionConfigProvider);
+      await useCase.execute(
+        orderId,
+        status,
+        riderServiceFeeCLP: commissionConfig.serviceFeeCLP,
+        riderTaxPercentage: commissionConfig.taxPercentage,
+      );
       state = const AsyncValue.data(null);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);

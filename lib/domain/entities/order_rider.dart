@@ -4,6 +4,8 @@ class OrderRider {
   final String? vehicleTypeSnapshot;
   final String? riderNameSnapshot;
   final String? riderPhoneSnapshot;
+  /// Monto en efectivo retenido al asignar el pedido. null = no es pedido en efectivo.
+  final double? cashHoldAmount;
 
   OrderRider({
     this.assignedRiderId,
@@ -11,10 +13,13 @@ class OrderRider {
     this.vehicleTypeSnapshot,
     this.riderNameSnapshot,
     this.riderPhoneSnapshot,
+    this.cashHoldAmount,
   });
 
   bool get isAssigned =>
       assignedRiderId != null && assignedRiderId!.trim().isNotEmpty;
+
+  bool get isCashOrder => cashHoldAmount != null && cashHoldAmount! > 0;
 
   OrderRider copyWith({
     String? assignedRiderId,
@@ -22,6 +27,7 @@ class OrderRider {
     String? vehicleTypeSnapshot,
     String? riderNameSnapshot,
     String? riderPhoneSnapshot,
+    double? cashHoldAmount,
   }) {
     return OrderRider(
       assignedRiderId: assignedRiderId ?? this.assignedRiderId,
@@ -29,6 +35,7 @@ class OrderRider {
       vehicleTypeSnapshot: vehicleTypeSnapshot ?? this.vehicleTypeSnapshot,
       riderNameSnapshot: riderNameSnapshot ?? this.riderNameSnapshot,
       riderPhoneSnapshot: riderPhoneSnapshot ?? this.riderPhoneSnapshot,
+      cashHoldAmount: cashHoldAmount ?? this.cashHoldAmount,
     );
   }
 }

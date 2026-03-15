@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/config/env.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/services/rider_commission_calculator.dart';
+import '../../../../domain/config/pricing_config_provider.dart';
 import '../widgets/rider_bottom_nav.dart';
 import '../widgets/rider_header.dart';
 import '../viewmodels/rider_home_viewmodel.dart';
@@ -185,11 +186,13 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
     if (!mounted) return false;
     if (payment == null) return true;
 
-    final isCashPayment = payment.paymentMethod == PaymentMethod.cash ||
+    final isCashPayment =
+        payment.paymentMethod == PaymentMethod.cash ||
         (payment.paymentMethodId?.toLowerCase() == 'cash') ||
         (payment.statusDetail?.toLowerCase() == 'cash_on_delivery');
 
-    final shouldConfirm = isCashPayment && payment.status == PaymentStatus.pending;
+    final shouldConfirm =
+        isCashPayment && payment.status == PaymentStatus.pending;
     if (!shouldConfirm) return true;
 
     final confirm = await showDialog<bool>(
@@ -379,7 +382,9 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
             ],
           );
         }
-        final cumulativeAsync = ref.watch(riderCumulativeStatsProvider(user.id));
+        final cumulativeAsync = ref.watch(
+          riderCumulativeStatsProvider(user.id),
+        );
         final riderProfile = user.riderProfile;
         final ordersUseCase = ref.read(getOrdersByRiderUseCaseProvider);
 
@@ -388,14 +393,17 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
         return StreamBuilder(
           stream: ordersUseCase.execute(user.id),
           builder: (context, snapshot) {
-            final pendingAsync = ref.watch(riderPendingEarningsProvider(user.id));
+            final pendingAsync = ref.watch(
+              riderPendingEarningsProvider(user.id),
+            );
             final pendingAmount = pendingAsync.asData?.value;
 
             final cumulative = cumulativeAsync.asData?.value;
 
             final orders = snapshot.data ?? const [];
-            final computedFailedTrips =
-                orders.where((o) => o.status == OrderStatus.failed).length;
+            final computedFailedTrips = orders
+                .where((o) => o.status == OrderStatus.failed)
+                .length;
 
             final effectiveDeliveredTrips = cumulative?.completedTrips ?? 0;
             final canceledTrips = cumulative?.canceledTrips ?? 0;
@@ -405,12 +413,15 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
             final tips = cumulative?.totalTips ?? 0.0;
 
             final effectiveCompletionRate =
-                (effectiveDeliveredTrips + canceledTrips + effectiveFailedTrips) == 0
-                    ? 0.0
-                    : effectiveDeliveredTrips /
-                        (effectiveDeliveredTrips +
-                            canceledTrips +
-                            effectiveFailedTrips);
+                (effectiveDeliveredTrips +
+                        canceledTrips +
+                        effectiveFailedTrips) ==
+                    0
+                ? 0.0
+                : effectiveDeliveredTrips /
+                      (effectiveDeliveredTrips +
+                          canceledTrips +
+                          effectiveFailedTrips);
 
             final headlineAmount = cumulative?.totalEarnings ?? 0.0;
             final secondaryAmount = pendingAmount ?? 0.0;
@@ -660,18 +671,24 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
   Widget _buildActiveDeliveryCard(dynamic order) {
     final currentStatus = order.status;
 
-    final paymentAsync = ref.watch(watchPaymentByOrderIdProvider(order.orderId));
+    final paymentAsync = ref.watch(
+      watchPaymentByOrderIdProvider(order.orderId),
+    );
     final payment = paymentAsync.asData?.value;
-    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
+    final isCashPayment =
+        payment?.paymentMethod == PaymentMethod.cash ||
         (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
         (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
 
-    final earnings = RiderCommissionCalculator.calculateCommission(
+    final commissionConfig = ref.watch(riderCommissionConfigProvider);
+    final earnings = RiderCommissionCalculator.calculateCommissionWith(
       deliveryFee: order.deliveryFee,
+      serviceFeeCLP: commissionConfig.serviceFeeCLP,
+      taxPercentage: commissionConfig.taxPercentage,
     );
 
     final baseAmountToShow = isCashPayment
-        ? (order.amountTotal - order.tip).clamp(0, double.infinity)
+        ? order.amountTotal.toDouble()
         : earnings.netEarnings;
 
     return Card(
@@ -907,11 +924,10 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  OrderReceiptScreen(
-                                    orderId: order.orderId,
-                                    isRiderView: true,
-                                  ),
+                              builder: (_) => OrderReceiptScreen(
+                                orderId: order.orderId,
+                                isRiderView: true,
+                              ),
                             ),
                           );
                         },
@@ -955,8 +971,9 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
           ? () async {
               try {
                 if (target == 'delivered') {
-                  final okToDeliver =
-                      await _maybeConfirmCashPayment(orderId: orderId);
+                  final okToDeliver = await _maybeConfirmCashPayment(
+                    orderId: orderId,
+                  );
                   if (!okToDeliver || !context.mounted) return;
                 }
 
@@ -1226,11 +1243,9 @@ class _OrderListSliver extends ConsumerWidget {
   });
 
   double _computePickupToDeliveryKm(NearbyOrder n) {
-    final pickupPoints = (n.order.pickupStops != null &&
-            n.order.pickupStops!.isNotEmpty)
-        ? n.order.pickupStops!
-            .map((s) => s.geo)
-            .toList(growable: false)
+    final pickupPoints =
+        (n.order.pickupStops != null && n.order.pickupStops!.isNotEmpty)
+        ? n.order.pickupStops!.map((s) => s.geo).toList(growable: false)
         : <GeoPoint>[n.order.pickup.geo];
 
     final deliveryGeo = n.order.delivery.geo;
@@ -1375,25 +1390,32 @@ class _OrderListSliver extends ConsumerWidget {
   Widget _buildOrderCard(BuildContext context, WidgetRef ref, NearbyOrder n) {
     final isSelected = selectedOrderId == n.order.orderId;
 
-    final paymentAsync = ref.watch(watchPaymentByOrderIdProvider(n.order.orderId));
+    final paymentAsync = ref.watch(
+      watchPaymentByOrderIdProvider(n.order.orderId),
+    );
     final isPaymentLoading = paymentAsync.isLoading;
     final payment = paymentAsync.asData?.value;
-    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
+    final isCashPayment =
+        payment?.paymentMethod == PaymentMethod.cash ||
         (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
         (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
 
-    final earnings = RiderCommissionCalculator.calculateCommission(
+    final commissionConfig2 = ref.watch(riderCommissionConfigProvider);
+    final earnings = RiderCommissionCalculator.calculateCommissionWith(
       deliveryFee: n.order.deliveryFee,
+      serviceFeeCLP: commissionConfig2.serviceFeeCLP,
+      taxPercentage: commissionConfig2.taxPercentage,
     );
 
     final baseAmountToShow = isPaymentLoading
         ? null
         : (isCashPayment
-            ? (n.order.amountTotal - n.order.tip).clamp(0, double.infinity)
-            : earnings.netEarnings);
+              ? n.order.amountTotal.toDouble()
+              : earnings.netEarnings);
 
-    final distanceToPickupKm =
-        n.distanceMeters != null ? (n.distanceMeters! / 1000) : null;
+    final distanceToPickupKm = n.distanceMeters != null
+        ? (n.distanceMeters! / 1000)
+        : null;
 
     final estimatedKm = n.order.requirements.estimatedDistanceKm;
     final orderDistanceKm = (estimatedKm.isFinite && estimatedKm > 0.01)
@@ -1479,8 +1501,8 @@ class _OrderListSliver extends ConsumerWidget {
                       color: isPaymentLoading
                           ? Colors.white.withValues(alpha: 0.15)
                           : isCashPayment
-                              ? const Color(0xFF4CAF50).withValues(alpha: 0.9)
-                              : const Color(0xFF2196F3).withValues(alpha: 0.9),
+                          ? const Color(0xFF4CAF50).withValues(alpha: 0.9)
+                          : const Color(0xFF2196F3).withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
@@ -1492,12 +1514,16 @@ class _OrderListSliver extends ConsumerWidget {
                             height: 12,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
                             ),
                           )
                         else ...[
                           Icon(
-                            isCashPayment ? Icons.payments_outlined : Icons.credit_card,
+                            isCashPayment
+                                ? Icons.payments_outlined
+                                : Icons.credit_card,
                             color: Colors.white,
                             size: 14,
                           ),

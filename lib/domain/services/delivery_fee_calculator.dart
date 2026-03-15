@@ -1,5 +1,6 @@
 import '../entities/vehicle.dart';
 import '../config/transport_pricing_config.dart';
+import '../config/pricing_config_provider.dart';
 
 /// Resultado del cálculo de tarifa de envío
 class DeliveryFeeResult {
@@ -22,56 +23,84 @@ class DeliveryFeeResult {
 
 /// Servicio para calcular tarifas de envío
 class DeliveryFeeCalculator {
-  /// Calcula la tarifa de envío basada en el tipo de vehículo y la distancia
+  /// Calcula la tarifa usando los valores hardcodeados en [TransportPricingConfig]
   static DeliveryFeeResult calculateFee({
     required VehicleType vehicleType,
     required double distanceKm,
   }) {
-    // Validar que la distancia no exceda el máximo del vehículo
-    final maxDistance = TransportPricingConfig.getMaxDistance(vehicleType);
-    final effectiveDistanceKm =
-        distanceKm > maxDistance ? maxDistance : distanceKm;
+    final discount = TransportPricingConfig.hasDistanceDiscount(vehicleType)
+        ? TransportPricingConfig.getReducedPricePerKm(vehicleType)
+        : null;
 
-    final minimumCharge = TransportPricingConfig.getMinimumCharge(vehicleType);
+    return _compute(
+      vehicleType: vehicleType,
+      distanceKm: distanceKm,
+      maxDistance: TransportPricingConfig.getMaxDistance(vehicleType),
+      minimumCharge: TransportPricingConfig.getMinimumCharge(vehicleType),
+      pricePerKm: TransportPricingConfig.getPricePerKm(vehicleType),
+      discountThresholdKm:
+          TransportPricingConfig.hasDistanceDiscount(vehicleType)
+          ? TransportPricingConfig.distanceThresholdForDiscount
+          : null,
+      reducedPricePerKm: discount,
+    );
+  }
+
+  /// Calcula la tarifa usando un [PricingConfig] remoto.
+  static DeliveryFeeResult calculateFeeWith({
+    required VehicleType vehicleType,
+    required double distanceKm,
+    required PricingConfig config,
+  }) {
+    final discount = config.getDistanceDiscount(vehicleType);
+    return _compute(
+      vehicleType: vehicleType,
+      distanceKm: distanceKm,
+      maxDistance: config.getMaxDistance(vehicleType),
+      minimumCharge: config.getMinimumCharge(vehicleType),
+      pricePerKm: config.getPricePerKm(vehicleType),
+      discountThresholdKm: discount.thresholdKm,
+      reducedPricePerKm: discount.reducedPricePerKm,
+    );
+  }
+
+  static DeliveryFeeResult _compute({
+    required VehicleType vehicleType,
+    required double distanceKm,
+    required double maxDistance,
+    required double minimumCharge,
+    required double pricePerKm,
+    required double? discountThresholdKm,
+    required double? reducedPricePerKm,
+  }) {
+    final effectiveDistanceKm = distanceKm > maxDistance
+        ? maxDistance
+        : distanceKm;
+
     double calculatedFee = 0.0;
     bool minimumChargeApplied = false;
     bool distanceDiscountApplied = false;
     String breakdown = '';
 
-    // Calcular tarifa base
-    if (effectiveDistanceKm <=
-            TransportPricingConfig.distanceThresholdForDiscount ||
-        !TransportPricingConfig.hasDistanceDiscount(vehicleType)) {
-      // Tarifa normal para toda la distancia
-      final pricePerKm = TransportPricingConfig.getPricePerKm(vehicleType);
+    final threshold = discountThresholdKm;
+    final reduced = reducedPricePerKm;
+    final hasDiscount = threshold != null && reduced != null;
+
+    if (!hasDiscount || effectiveDistanceKm <= threshold) {
       calculatedFee = effectiveDistanceKm * pricePerKm;
       breakdown =
           '${effectiveDistanceKm.toStringAsFixed(1)} km × \$${pricePerKm.toStringAsFixed(0)} = \$${calculatedFee.toStringAsFixed(0)}';
     } else {
-      // Aplicar descuento por distancia (solo para auto y camión)
-      final pricePerKm = TransportPricingConfig.getPricePerKm(vehicleType);
-      final reducedPrice = TransportPricingConfig.getReducedPricePerKm(
-        vehicleType,
-      )!;
-
-      // Primeros 30 km a precio normal
-      final normalDistanceFee =
-          TransportPricingConfig.distanceThresholdForDiscount * pricePerKm;
-
-      // Distancia adicional a precio reducido
-      final extraDistance =
-          effectiveDistanceKm -
-          TransportPricingConfig.distanceThresholdForDiscount;
-      final reducedDistanceFee = extraDistance * reducedPrice;
-
+      final normalDistanceFee = threshold * pricePerKm;
+      final extraDistance = effectiveDistanceKm - threshold;
+      final reducedDistanceFee = extraDistance * reduced;
       calculatedFee = normalDistanceFee + reducedDistanceFee;
       distanceDiscountApplied = true;
 
       breakdown =
-          '30 km × \$${pricePerKm.toStringAsFixed(0)} + ${extraDistance.toStringAsFixed(1)} km × \$${reducedPrice.toStringAsFixed(0)} = \$${calculatedFee.toStringAsFixed(0)}';
+          '${threshold.toStringAsFixed(0)} km × \$${pricePerKm.toStringAsFixed(0)} + ${extraDistance.toStringAsFixed(1)} km × \$${reduced.toStringAsFixed(0)} = \$${calculatedFee.toStringAsFixed(0)}';
     }
 
-    // Aplicar cobro mínimo si la tarifa calculada es menor
     double finalFee = calculatedFee;
     if (calculatedFee < minimumCharge) {
       finalFee = minimumCharge;
@@ -89,7 +118,6 @@ class DeliveryFeeCalculator {
     );
   }
 
-  /// Calcula la tarifa de envío con validación de distancia máxima
   static DeliveryFeeResult? tryCalculateFee({
     required VehicleType vehicleType,
     required double distanceKm,
@@ -101,7 +129,6 @@ class DeliveryFeeCalculator {
     }
   }
 
-  /// Obtiene una estimación de tarifa cuando no se conoce la distancia exacta
   static double estimateFee({
     required VehicleType vehicleType,
     double estimatedDistanceKm = 5.0,
@@ -113,7 +140,6 @@ class DeliveryFeeCalculator {
       );
       return result.fee;
     } catch (e) {
-      // Si falla, retornar el cobro mínimo
       return TransportPricingConfig.getMinimumCharge(vehicleType);
     }
   }

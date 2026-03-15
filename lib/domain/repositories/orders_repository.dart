@@ -10,7 +10,12 @@ abstract class OrdersRepository {
     required List<String> requiredVehicles,
     int limit = 50,
   });
-  Future<void> updateOrderStatus(String orderId, String status);
+  Future<void> updateOrderStatus(
+    String orderId,
+    String status, {
+    double riderServiceFeeCLP = 2000.0,
+    double riderTaxPercentage = 0.07,
+  });
   Future<void> assignRider(
     String orderId,
     String riderId,
