@@ -22,6 +22,13 @@ class OrderBuilder {
     double tip = 0.0,
     double estimatedDistanceKm = 0.0,
     required String heroId,
+    String documentType = 'boleta',
+    String? invoiceBusinessName,
+    String? invoiceRut,
+    String? invoiceGiro,
+    String? invoiceAddress,
+    String? invoiceEmail,
+    String? invoicePhone,
     required OrderDelivery delivery,
     OrderStatus status = OrderStatus.pendingPayment,
     String pickupAddress = '',
@@ -70,22 +77,29 @@ class OrderBuilder {
 
     final pickupStops = <OrderPickupStop>[];
     final byKey = <String, Set<String>>{};
+    final addressByKey = <String, String>{};
     for (final item in cartItems) {
       final geo = item.pickupGeo;
       if (geo == null) continue;
       if (geo.latitude == 0.0 && geo.longitude == 0.0) continue;
       final key = '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
       (byKey[key] ??= <String>{}).add(item.offerId);
+
+      final snapshot = (item.pickupAddressSnapshot ?? '').trim();
+      if (snapshot.isNotEmpty) {
+        addressByKey.putIfAbsent(key, () => snapshot);
+      }
     }
 
     for (final entry in byKey.entries) {
       final parts = entry.key.split(',');
       final lat = double.tryParse(parts.first) ?? 0.0;
       final lng = double.tryParse(parts.length > 1 ? parts[1] : '') ?? 0.0;
+      final snapshot = (addressByKey[entry.key] ?? '').trim();
       pickupStops.add(
         OrderPickupStop(
           geo: firestore.GeoPoint(lat, lng),
-          addressSnapshot: '',
+          addressSnapshot: snapshot,
           offerIds: entry.value.toList(),
         ),
       );
@@ -135,6 +149,13 @@ class OrderBuilder {
       tip: safeTip,
       amountTotal: cartSummary.total + safeTip,
       currency: 'CLP',
+      documentType: documentType,
+      invoiceBusinessName: invoiceBusinessName,
+      invoiceRut: invoiceRut,
+      invoiceGiro: invoiceGiro,
+      invoiceAddress: invoiceAddress,
+      invoiceEmail: invoiceEmail,
+      invoicePhone: invoicePhone,
       pickup: pickup,
       pickupStops: pickupStops.isEmpty ? null : pickupStops,
       delivery: delivery,

@@ -13,6 +13,12 @@ class CartNotifier extends Notifier<List<CartItem>> {
     return const [];
   }
 
+  void removeOneItem(String offerId) {
+    final index = state.indexWhere((e) => e.offerId == offerId);
+    if (index == -1) return;
+    removeOne(state[index]);
+  }
+
   void addItem({
     required String offerId,
     required String name,

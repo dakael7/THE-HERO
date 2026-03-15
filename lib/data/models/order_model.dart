@@ -23,6 +23,13 @@ class OrderModel {
   final double tip;
   final double amountTotal;
   final String currency;
+  final String documentType;
+  final String? invoiceBusinessName;
+  final String? invoiceRut;
+  final String? invoiceGiro;
+  final String? invoiceAddress;
+  final String? invoiceEmail;
+  final String? invoicePhone;
   final OrderPickupModel pickup;
   final List<OrderPickupStopModel>? pickupStops;
   final int? pickupProgressCurrentStopIndex;
@@ -55,6 +62,13 @@ class OrderModel {
     this.tip = 0.0,
     required this.amountTotal,
     required this.currency,
+    this.documentType = 'boleta',
+    this.invoiceBusinessName,
+    this.invoiceRut,
+    this.invoiceGiro,
+    this.invoiceAddress,
+    this.invoiceEmail,
+    this.invoicePhone,
     required this.pickup,
     this.pickupStops,
     this.pickupProgressCurrentStopIndex,
@@ -122,6 +136,15 @@ class OrderModel {
       tip: (json['tip'] as num?)?.toDouble() ?? 0.0,
       amountTotal: (json['amountTotal'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] as String? ?? 'CLP',
+      documentType: (json['documentType'] as String?)?.trim().isNotEmpty == true
+          ? (json['documentType'] as String).trim()
+          : 'boleta',
+      invoiceBusinessName: (json['invoiceBusinessName'] as String?)?.trim(),
+      invoiceRut: (json['invoiceRut'] as String?)?.trim(),
+      invoiceGiro: (json['invoiceGiro'] as String?)?.trim(),
+      invoiceAddress: (json['invoiceAddress'] as String?)?.trim(),
+      invoiceEmail: (json['invoiceEmail'] as String?)?.trim(),
+      invoicePhone: (json['invoicePhone'] as String?)?.trim(),
       pickup: OrderPickupModel.fromJson(
         json['pickup'] as Map<String, dynamic>? ?? {},
       ),
@@ -178,6 +201,13 @@ class OrderModel {
       'tip': tip,
       'amountTotal': amountTotal,
       'currency': currency,
+      'documentType': documentType,
+      'invoiceBusinessName': invoiceBusinessName,
+      'invoiceRut': invoiceRut,
+      'invoiceGiro': invoiceGiro,
+      'invoiceAddress': invoiceAddress,
+      'invoiceEmail': invoiceEmail,
+      'invoicePhone': invoicePhone,
       'pickup': pickup.toJson(),
       'pickupStops': pickupStops?.map((e) => e.toJson()).toList(),
       'delivery': delivery.toJson(),
@@ -214,6 +244,13 @@ class OrderModel {
       tip: tip,
       amountTotal: amountTotal,
       currency: currency,
+      documentType: documentType,
+      invoiceBusinessName: invoiceBusinessName,
+      invoiceRut: invoiceRut,
+      invoiceGiro: invoiceGiro,
+      invoiceAddress: invoiceAddress,
+      invoiceEmail: invoiceEmail,
+      invoicePhone: invoicePhone,
       pickup: pickup.toEntity(),
       pickupStops: pickupStops?.map((e) => e.toEntity()).toList(),
       pickupProgressCurrentStopIndex: pickupProgressCurrentStopIndex,
@@ -251,6 +288,13 @@ class OrderModel {
       tip: entity.tip,
       amountTotal: entity.amountTotal,
       currency: entity.currency,
+      documentType: entity.documentType,
+      invoiceBusinessName: entity.invoiceBusinessName,
+      invoiceRut: entity.invoiceRut,
+      invoiceGiro: entity.invoiceGiro,
+      invoiceAddress: entity.invoiceAddress,
+      invoiceEmail: entity.invoiceEmail,
+      invoicePhone: entity.invoicePhone,
       pickup: OrderPickupModel.fromEntity(entity.pickup),
       pickupStops: entity.pickupStops?.map(OrderPickupStopModel.fromEntity).toList(),
       delivery: OrderDeliveryModel.fromEntity(entity.delivery),

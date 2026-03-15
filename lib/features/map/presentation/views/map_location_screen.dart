@@ -26,6 +26,8 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   double _sheetExtent = 0.35;
+  double? _pendingSheetExtent;
+  bool _sheetExtentUpdateScheduled = false;
 
   AnimationController? _headerAnimController;
   Animation<double> _headerOpacity = const AlwaysStoppedAnimation<double>(1.0);
@@ -47,7 +49,20 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
     _sheetController.addListener(() {
       final next = _sheetController.size;
       if ((next - _sheetExtent).abs() < 0.001) return;
-      setState(() => _sheetExtent = next);
+
+      // DraggableScrollableController notifications can fire during layout/
+      // paint. Deferring avoids: "Build scheduled during frame".
+      _pendingSheetExtent = next;
+      if (_sheetExtentUpdateScheduled) return;
+      _sheetExtentUpdateScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _sheetExtentUpdateScheduled = false;
+        if (!mounted) return;
+        final pending = _pendingSheetExtent;
+        if (pending == null) return;
+        if ((pending - _sheetExtent).abs() < 0.001) return;
+        setState(() => _sheetExtent = pending);
+      });
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -647,10 +662,10 @@ class _RadiusSelectorSheet extends ConsumerWidget {
                   const RoundSliderThumbShape(enabledThumbRadius: 10),
             ),
             child: Slider(
-              value: searchRadius.clamp(1000, 15000),
+              value: searchRadius.clamp(1000, 100000),
               min: 1000,
-              max: 15000,
-              divisions: 14,
+              max: 100000,
+              divisions: 99,
               onChanged: (value) {
                 ref
                     .read(mapViewModelProvider.notifier)
@@ -670,7 +685,7 @@ class _RadiusSelectorSheet extends ConsumerWidget {
               const SizedBox(width: 8),
               _buildPreset(context, ref, '5 km', 5000, searchRadius),
               const SizedBox(width: 8),
-              _buildPreset(context, ref, '10 km', 10000, searchRadius),
+              _buildPreset(context, ref, '100 km', 100000, searchRadius),
             ],
           ),
         ],
@@ -792,6 +807,10 @@ class _ProductsMapSectionState
   gmap.CameraPosition? _initialCameraPosition;
   Set<gmap.Marker> _markers = const {};
   Set<gmap.Circle> _circles = const {};
+
+  bool _overlayUpdateScheduled = false;
+  Set<gmap.Marker>? _pendingMarkers;
+  Set<gmap.Circle>? _pendingCircles;
 
   List<MapProduct> _lastProducts = const [];
   MapProduct? _lastSelected;
@@ -950,9 +969,22 @@ class _ProductsMapSectionState
       );
     }
 
-    setState(() {
-      _markers = markers;
-      _circles = circles;
+    // Provider notifications may arrive during build/layout; schedule overlay
+    // updates after the frame to avoid rebuild-during-frame assertions.
+    _pendingMarkers = markers;
+    _pendingCircles = circles;
+    if (_overlayUpdateScheduled) return;
+    _overlayUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _overlayUpdateScheduled = false;
+      if (!mounted) return;
+      final nextMarkers = _pendingMarkers;
+      final nextCircles = _pendingCircles;
+      if (nextMarkers == null || nextCircles == null) return;
+      setState(() {
+        _markers = nextMarkers;
+        _circles = nextCircles;
+      });
     });
   }
 
@@ -985,7 +1017,7 @@ class _ProductsMapSectionState
       rotateGesturesEnabled: false,
       compassEnabled: false,
       mapType: gmap.MapType.normal,
-      minMaxZoomPreference: const gmap.MinMaxZoomPreference(10, 18),
+      minMaxZoomPreference: const gmap.MinMaxZoomPreference(6, 18),
       zoomControlsEnabled: false,
       myLocationEnabled: false,
       myLocationButtonEnabled: false,

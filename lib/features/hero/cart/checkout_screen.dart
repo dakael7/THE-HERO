@@ -14,8 +14,10 @@ import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/config/env.dart';
 import '../../../core/config/mercadopago_config.dart';
+import '../../../core/utils/validators.dart';
 import '../../../core/utils/price_formatter.dart';
 import '../../../core/utils/weight_utils.dart';
+import '../../../domain/config/pricing_config_provider.dart';
 import '../../../domain/config/transport_pricing_config.dart';
 import '../../../domain/entities/address.dart';
 import '../../../domain/entities/order_requirements.dart';
@@ -222,16 +224,28 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
+  final _unitIdentifierController = TextEditingController();
+  final _postalCodeController = TextEditingController();
   final _instructionsController = TextEditingController();
   final _customTipController = TextEditingController();
+  final _invoiceBusinessNameController = TextEditingController();
+  final _invoiceRutController = TextEditingController();
+  final _invoiceGiroController = TextEditingController();
+  final _invoiceAddressController = TextEditingController();
+  final _invoiceEmailController = TextEditingController();
+  final _invoicePhoneController = TextEditingController();
   static const _defaultCountryCode = '+56 ';
   bool _prefilled = false;
   bool _isSubmitting = false;
+  bool _isResolvingMapInitialLocation = false;
   bool _deliverToReception = false;
   bool _useAccountAddress = false;
   AddressSlot? _selectedAccountAddressSlot;
   double? _deliveryLatitude;
   double? _deliveryLongitude;
+  String? _manualUnitIdentifier;
+  String? _manualPostalCode;
+  String _selectedDocumentType = 'boleta';
 
   Timer? _routesDebounce;
   ({Map<String, firestore.GeoPoint> uniquePickups, firestore.GeoPoint delivery})?
@@ -316,6 +330,49 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         geo.longitude <= 180;
   }
 
+  String _formatRut(String input) {
+    final cleaned = input
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll('.', '')
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll(RegExp(r'[^0-9K-]'), '');
+
+    if (cleaned.isEmpty) return '';
+
+    final withDash = cleaned.contains('-')
+        ? cleaned
+        : cleaned.length >= 2
+            ? '${cleaned.substring(0, cleaned.length - 1)}-${cleaned.substring(cleaned.length - 1)}'
+            : cleaned;
+
+    final parts = withDash.split('-');
+    if (parts.isEmpty) return withDash;
+    final body = parts.first.replaceAll(RegExp(r'\D'), '');
+    final dv = parts.length > 1 ? parts[1].toUpperCase() : '';
+
+    final reversed = body.split('').reversed.join();
+    final groupedReversed = <String>[];
+    for (var i = 0; i < reversed.length; i += 3) {
+      groupedReversed.add(
+        reversed.substring(
+          i,
+          (i + 3) > reversed.length ? reversed.length : (i + 3),
+        ),
+      );
+    }
+    final grouped = groupedReversed
+        .map((e) => e.split('').reversed.join())
+        .toList()
+        .reversed
+        .join('.');
+
+    if (dv.isEmpty) return grouped;
+    return '$grouped-$dv';
+  }
+
   @override
   void dispose() {
     _routesDebounce?.cancel();
@@ -323,8 +380,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
+    _unitIdentifierController.dispose();
+    _postalCodeController.dispose();
     _instructionsController.dispose();
     _customTipController.dispose();
+    _invoiceBusinessNameController.dispose();
+    _invoiceRutController.dispose();
+    _invoiceGiroController.dispose();
+    _invoiceAddressController.dispose();
+    _invoiceEmailController.dispose();
+    _invoicePhoneController.dispose();
     super.dispose();
   }
 
@@ -344,22 +409,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   void _prefillFromProfile([User? provided]) {
     final user = provided ?? ref.read(profileProvider).value;
-    if (user == null) return;
+    void _prefillFromUser(User user) {
+      if (_nameController.text.trim().isEmpty) {
+        _nameController.text = user.fullName;
+      }
+      if (_phoneController.text.trim().isEmpty) {
+        final phone = user.phoneNumber;
+        _phoneController.text = phone.isNotEmpty ? phone : _defaultCountryCode;
+      }
+      if (_addressController.text.trim().isEmpty && user.address != null) {
+        _addressController.text = user.address!.fullAddress;
+        if (_unitIdentifierController.text.trim().isEmpty) {
+          _unitIdentifierController.text =
+              user.address!.unitIdentifier?.trim() ?? '';
+        }
+        if (_postalCodeController.text.trim().isEmpty) {
+          _postalCodeController.text = user.address!.postalCode?.trim() ?? '';
+        }
+      }
 
-    if (_nameController.text.trim().isEmpty) {
-      _nameController.text = user.fullName;
-    }
-    if (_phoneController.text.trim().isEmpty) {
-      final phone = user.phoneNumber;
-      _phoneController.text = phone.isNotEmpty ? phone : _defaultCountryCode;
-    }
-    if (_addressController.text.trim().isEmpty && user.address != null) {
-      _addressController.text = user.address!.fullAddress;
+      if (_selectedAccountAddressSlot == null && user.addressSlots.isNotEmpty) {
+        _selectedAccountAddressSlot =
+            user.primaryAddressSlot ?? user.addressSlots.keys.first;
+      }
     }
 
-    if (_selectedAccountAddressSlot == null && user.addressSlots.isNotEmpty) {
-      _selectedAccountAddressSlot =
-          user.primaryAddressSlot ?? user.addressSlots.keys.first;
+    if (user != null) {
+      _prefillFromUser(user);
     }
     _prefilled = true;
   }
@@ -377,6 +453,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
     if (user.addressSlots.isNotEmpty) return user.addressSlots.values.first;
     return user.address;
+  }
+
+  String _formatSavedAddressLabel(Address? addr, {AddressSlot? fallbackSlot}) {
+    if (addr == null) return 'No tienes una dirección guardada en tu cuenta.';
+    final name = addr.name?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    if (fallbackSlot != null) return fallbackSlot.displayName;
+    return 'Dirección guardada';
   }
 
   void _setDeliveryFromAccountAddress(User user) {
@@ -451,6 +535,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     setState(() {
       _addressController.text = addr.fullAddress;
+      _unitIdentifierController.text = addr.unitIdentifier?.trim() ?? '';
+      _postalCodeController.text = addr.postalCode?.trim() ?? '';
       _deliveryLatitude = addr.latitude;
       _deliveryLongitude = addr.longitude;
       _deliveryCountryCode = deliveryCc;
@@ -472,6 +558,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
+    if (mounted) {
+      setState(() => _isResolvingMapInitialLocation = true);
+    }
+
     final result = await Navigator.of(context).push<MapLocationResult>(
       MaterialPageRoute(
         builder: (_) => LocationPickerScreen(
@@ -479,9 +569,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           initialAddress: _addressController.text.trim().isNotEmpty
               ? _addressController.text.trim()
               : null,
+          onInitialLocationResolved: () {
+            if (mounted) {
+              setState(() => _isResolvingMapInitialLocation = false);
+            }
+          },
         ),
       ),
     );
+
+    if (mounted) {
+      setState(() => _isResolvingMapInitialLocation = false);
+    }
 
     if (result != null && mounted) {
       final cc =
@@ -501,6 +600,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       }
       setState(() {
         _addressController.text = result.address;
+        _unitIdentifierController.text = result.unitIdentifier?.trim() ?? '';
+        _postalCodeController.text = result.postalCode?.trim() ?? '';
         _deliveryLatitude = result.latitude;
         _deliveryLongitude = result.longitude;
         _deliveryCountryCode = cc;
@@ -526,12 +627,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final inPersonPickupSelected = ref.read(inPersonPickupSelectedProvider);
     final allItemsAllowInPersonPickup =
         cartItems.isNotEmpty && cartItems.every((e) => e.allowInPersonPickup);
+    final pricingConfig = ref.read(pricingConfigProvider);
     final summary = computeCartSummary(
       cartItems: cartItems,
       deliveryGeo: deliveryGeo,
       routeDistanceKm: routeDistanceKm,
       inPersonPickupSelected: inPersonPickupSelected,
       allItemsAllowInPersonPickup: allItemsAllowInPersonPickup,
+      pricingConfig: pricingConfig,
     );
     final effectiveDistanceKm = computeEffectiveDistanceKm(
       cartItems: cartItems,
@@ -683,6 +786,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           tip: 0.0,
           estimatedDistanceKm: 0.0,
           heroId: user.id,
+          documentType: _selectedDocumentType,
+          invoiceBusinessName: _selectedDocumentType == 'factura'
+              ? _invoiceBusinessNameController.text.trim()
+              : null,
+          invoiceRut: _selectedDocumentType == 'factura'
+              ? _invoiceRutController.text.trim()
+              : null,
+          invoiceGiro: _selectedDocumentType == 'factura'
+              ? _invoiceGiroController.text.trim()
+              : null,
+          invoiceAddress: _selectedDocumentType == 'factura'
+              ? _invoiceAddressController.text.trim()
+              : null,
+          invoiceEmail: _selectedDocumentType == 'factura'
+              ? _invoiceEmailController.text.trim()
+              : null,
+          invoicePhone: _selectedDocumentType == 'factura'
+              ? _invoicePhoneController.text.trim()
+              : null,
           delivery: delivery,
           status: shouldUseMercadoPago
               ? OrderStatus.pendingPayment
@@ -698,14 +820,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         );
 
         if (shouldUseMercadoPago) {
-          final paymentNotifier = ref.read(paymentNotifierProvider.notifier);
-          await paymentNotifier.createPreference(order);
+          await _createPaymentPreferenceWithBackoff(order);
           final paymentState = ref.read(paymentNotifierProvider);
+
           if (paymentState.error != null) {
-            throw Exception(
-              'Error al crear preferencia de pago: ${paymentState.error}',
-            );
+            final errorCode = (paymentState.errorCode ?? '').toLowerCase();
+            final raw = paymentState.error ?? '';
+            if (errorCode == 'resource-exhausted') {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.',
+                  ),
+                  duration: Duration(seconds: 4),
+                ),
+              );
+              return;
+            }
+            throw Exception('Error al crear preferencia de pago: $raw');
           }
+
           if (paymentState.initPoint == null) {
             throw Exception('No se pudo obtener el link de pago');
           }
@@ -728,32 +862,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         } else {
           final createOrderUseCase = ref.read(createOrderUseCaseProvider);
           final createdOrder = await createOrderUseCase.execute(order);
-
-          if (_selectedPaymentMethod == PaymentMethod.cash) {
-            final paymentRepo = ref.read(paymentRepositoryProvider);
-            final cashPayment = domain_payment.Payment(
-              id: 'cash-${createdOrder.orderId}',
-              orderId: createdOrder.orderId,
-              preferenceId: 'cash-${createdOrder.orderId}',
-              paymentId: null,
-              status: domain_payment.PaymentStatus.pending,
-              amount: createdOrder.amountTotal,
-              currency: createdOrder.currency,
-              paymentMethod: domain_payment.PaymentMethod.cash,
-              paymentMethodId: 'cash',
-              statusDetail: 'cash_on_delivery',
-              createdAt: DateTime.now(),
-              approvedAt: null,
-              updatedAt: DateTime.now(),
-              metadata: const <String, dynamic>{
-                'flow': 'cash',
-                'note':
-                    'Pago en efectivo pendiente. Se confirma en la entrega.',
-              },
-            );
-
-            await paymentRepo.savePayment(cashPayment);
-          }
+          ref.read(cartProvider.notifier).removeItem(cartItems.first);
 
           if (mounted) {
             await _showPaymentResult(
@@ -826,7 +935,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       );
       return;
     }
-
     if (_isSubmitting) return;
 
     setState(() => _isSubmitting = true);
@@ -849,8 +957,20 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         return;
       }
 
+      var deliveryAddressSnapshot = _addressController.text.trim();
+      final unit = _unitIdentifierController.text.trim();
+      final postal = _postalCodeController.text.trim();
+      final parts = <String>[
+        if (deliveryAddressSnapshot.isNotEmpty) deliveryAddressSnapshot,
+        if (unit.isNotEmpty) 'Dpto./Casa/Oficina/Condominio: $unit',
+        if (postal.isNotEmpty) 'Código Postal: $postal',
+      ];
+      if (parts.isNotEmpty) {
+        deliveryAddressSnapshot = parts.join('\n');
+      }
+
       final delivery = OrderBuilder.createDelivery(
-        address: _addressController.text.trim(),
+        address: deliveryAddressSnapshot,
         recipientName: _nameController.text.trim(),
         recipientPhone: _phoneController.text.trim(),
         instructions: _instructionsController.text.trim(),
@@ -876,10 +996,6 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         return;
       }
 
-      print(
-        '📍 [Checkout] Pickup geo from cart: ${pickup.geo?.latitude}, ${pickup.geo?.longitude}',
-      );
-
       final firstItem = cartItems.first;
       final pickupSchedule = firstItem.pickupSchedule;
       final useConcierge = firstItem.useConcierge;
@@ -900,6 +1016,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         tip: _selectedTip.toDouble(),
         estimatedDistanceKm: effectiveDistanceKm,
         heroId: user.id,
+        documentType: _selectedDocumentType,
+        invoiceBusinessName: _selectedDocumentType == 'factura'
+            ? _invoiceBusinessNameController.text.trim()
+            : null,
+        invoiceRut: _selectedDocumentType == 'factura'
+            ? _invoiceRutController.text.trim()
+            : null,
+        invoiceGiro: _selectedDocumentType == 'factura'
+            ? _invoiceGiroController.text.trim()
+            : null,
+        invoiceAddress: _selectedDocumentType == 'factura'
+            ? _invoiceAddressController.text.trim()
+            : null,
+        invoiceEmail: _selectedDocumentType == 'factura'
+            ? _invoiceEmailController.text.trim()
+            : null,
+        invoicePhone: _selectedDocumentType == 'factura'
+            ? _invoicePhoneController.text.trim()
+            : null,
         delivery: delivery,
         status: shouldUseMercadoPago
             ? OrderStatus.pendingPayment
@@ -1097,6 +1232,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final allItemsAllowInPersonPickup =
         cartItems.isNotEmpty && cartItems.every((e) => e.allowInPersonPickup);
     final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
+    final pricingConfig = ref.watch(pricingConfigProvider);
 
     final summary = computeCartSummary(
       cartItems: cartItems,
@@ -1104,6 +1240,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       routeDistanceKm: routeDistanceKm,
       inPersonPickupSelected: inPersonPickupSelected,
       allItemsAllowInPersonPickup: allItemsAllowInPersonPickup,
+      pricingConfig: pricingConfig,
     );
     final effectiveDistanceKm = computeEffectiveDistanceKm(
       cartItems: cartItems,
@@ -1372,6 +1509,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           : (val) {
                               if (val) {
                                 _manualAddress = _addressController.text;
+                                _manualUnitIdentifier =
+                                    _unitIdentifierController.text;
+                                _manualPostalCode = _postalCodeController.text;
                                 _manualDeliveryLatitude = _deliveryLatitude;
                                 _manualDeliveryLongitude = _deliveryLongitude;
                                 setState(() => _useAccountAddress = true);
@@ -1392,6 +1532,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                   _useAccountAddress = false;
                                   _addressController.text =
                                       _manualAddress ?? '';
+                                  _unitIdentifierController.text =
+                                      _manualUnitIdentifier ?? '';
+                                  _postalCodeController.text =
+                                      _manualPostalCode ?? '';
                                   _deliveryLatitude =
                                       _manualDeliveryLatitude;
                                   _deliveryLongitude =
@@ -1423,20 +1567,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         if (_useAccountAddress) {
                           final selected =
                               _resolveSelectedAccountAddress(u);
-                          if (selected != null &&
-                              selected.fullAddress.trim().isNotEmpty) {
-                            return selected.displayAddressMultiline;
-                          }
+                          return _formatSavedAddressLabel(
+                            selected,
+                            fallbackSlot: _selectedAccountAddressSlot,
+                          );
                         }
-                        if (u.address != null &&
-                            u.address!.fullAddress.trim().isNotEmpty) {
-                          return u.address!.displayAddressMultiline;
+                        if (u.address != null) {
+                          return _formatSavedAddressLabel(u.address);
                         }
                         if (u.addressSlots.isNotEmpty) {
+                          final firstSlot = u.addressSlots.keys.first;
                           final first = u.addressSlots.values.first;
-                          if (first.fullAddress.trim().isNotEmpty) {
-                            return first.displayAddressMultiline;
-                          }
+                          return _formatSavedAddressLabel(
+                            first,
+                            fallbackSlot: firstSlot,
+                          );
                         }
                         return 'No tienes una dirección guardada en tu cuenta.';
                       })(),
@@ -1541,44 +1686,107 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             builder: (context) {
                               final selectedAddr =
                                   _resolveSelectedAccountAddress(user);
-                              final preview = selectedAddr
-                                  ?.displayAddressMultiline
-                                  .trim();
-                              if (preview == null || preview.isEmpty) {
+                              final slot = _selectedAccountAddressSlot ??
+                                  user.primaryAddressSlot;
+                              final title = _formatSavedAddressLabel(
+                                selectedAddr,
+                                fallbackSlot: slot,
+                              );
+                              final fullAddress =
+                                  selectedAddr?.fullAddress.trim();
+                              final unitLine =
+                                  selectedAddr?.unitDisplayLine?.trim();
+                              if (title.trim().isEmpty &&
+                                  (fullAddress == null ||
+                                      fullAddress.isEmpty) &&
+                                  (unitLine == null || unitLine.isEmpty)) {
                                 return const SizedBox.shrink();
                               }
-                              return Row(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    width: 20,
-                                    height: 20,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF2563EB)
-                                          .withOpacity(0.1),
-                                      borderRadius:
-                                          BorderRadius.circular(6),
-                                    ),
-                                    child: const Icon(
-                                      Icons.location_on_rounded,
-                                      size: 12,
-                                      color: Color(0xFF2563EB),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      preview,
-                                      style: const TextStyle(
-                                        color: textGray700,
-                                        fontSize: 12,
-                                        height: 1.3,
-                                        fontWeight: FontWeight.w700,
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF2563EB)
+                                            .withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Icon(
+                                        Icons.location_on_rounded,
+                                        size: 16,
+                                        color: Color(0xFF2563EB),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: textGray900,
+                                              fontSize: 13,
+                                              height: 1.15,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: -0.2,
+                                            ),
+                                          ),
+                                          if (fullAddress != null &&
+                                              fullAddress.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              fullAddress,
+                                              style: const TextStyle(
+                                                color: textGray600,
+                                                fontSize: 12,
+                                                height: 1.3,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                          if (unitLine != null &&
+                                              unitLine.isNotEmpty) ...[
+                                            const SizedBox(height: 6),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 10,
+                                                vertical: 6,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: backgroundGray50,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: const Color(0xFFECECEC),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                unitLine,
+                                                style: const TextStyle(
+                                                  color: textGray900,
+                                                  fontSize: 12,
+                                                  height: 1.2,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
                             },
                           ),
@@ -1625,11 +1833,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       icon: Icons.location_on_rounded,
                       readOnly: true,
                       maxLines: 2,
-                      onTap: _useAccountAddress || _isSubmitting
+                      onTap: _useAccountAddress ||
+                              _isSubmitting ||
+                              _isResolvingMapInitialLocation
                           ? null
                           : _openMapPicker,
                       suffix: GestureDetector(
-                        onTap: _useAccountAddress || _isSubmitting
+                        onTap: _useAccountAddress ||
+                                _isSubmitting ||
+                                _isResolvingMapInitialLocation
                             ? null
                             : _openMapPicker,
                         child: Container(
@@ -1639,11 +1851,21 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             color: primaryOrange.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(
-                            Icons.map_rounded,
-                            size: 18,
-                            color: primaryOrange,
-                          ),
+                          child: _isResolvingMapInitialLocation
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor:
+                                        AlwaysStoppedAnimation(primaryOrange),
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.map_rounded,
+                                  size: 18,
+                                  color: primaryOrange,
+                                ),
                         ),
                       ),
                       validator: (v) {
@@ -1658,10 +1880,35 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         return null;
                       },
                     ),
+                    const SizedBox(height: 12),
+                    _StyledField(
+                      controller: _unitIdentifierController,
+                      label: 'Dpto./Casa/Oficina/Condominio',
+                      hint: 'Ej: Dpto 1204, Casa 3',
+                      icon: Icons.door_front_door_outlined,
+                      keyboardType: TextInputType.text,
+                      validator: (v) {
+                        if (inPersonPickupSelected) return null;
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Requerido';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _StyledField(
+                      controller: _postalCodeController,
+                      label: 'Código Postal',
+                      hint: 'Opcional',
+                      icon: Icons.local_post_office_outlined,
+                      keyboardType: TextInputType.text,
+                    ),
                     const SizedBox(height: 8),
                     // Map button
                     GestureDetector(
-                      onTap: _useAccountAddress || _isSubmitting
+                      onTap: _useAccountAddress ||
+                              _isSubmitting ||
+                              _isResolvingMapInitialLocation
                           ? null
                           : _openMapPicker,
                       child: Container(
@@ -1674,13 +1921,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             color: primaryOrange.withOpacity(0.2),
                           ),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.place_rounded,
-                                size: 16, color: primaryOrange),
-                            SizedBox(width: 8),
-                            Text(
+                            if (_isResolvingMapInitialLocation) ...[
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor:
+                                      AlwaysStoppedAnimation(primaryOrange),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ] else ...[
+                              const Icon(Icons.place_rounded,
+                                  size: 16, color: primaryOrange),
+                              const SizedBox(width: 8),
+                            ],
+                            const Text(
                               'Elegir dirección con Google Maps',
                               style: TextStyle(
                                 fontSize: 13,
@@ -1716,6 +1976,266 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       title: 'Recibir en portería',
                       subtitle:
                           'El repartidor entregará en recepción/portería.',
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // ── Document type selector ────────────────────────────────────────
+            _SectionLabel(
+              icon: Icons.description_rounded,
+              label: 'Tipo de documento',
+            ),
+            const SizedBox(height: 12),
+            _SectionCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _isSubmitting
+                              ? null
+                              : () => setState(
+                                    () => _selectedDocumentType = 'boleta',
+                                  ),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _selectedDocumentType == 'boleta'
+                                  ? const Color(0xFFFFF7ED)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: _selectedDocumentType == 'boleta'
+                                    ? primaryOrange
+                                    : const Color(0xFFE8E8E8),
+                                width: _selectedDocumentType == 'boleta'
+                                    ? 2
+                                    : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: BoxDecoration(
+                                    color: primaryOrange.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.receipt_rounded,
+                                    size: 18,
+                                    color: primaryOrange,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Boleta',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                      color: textGray900,
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                ),
+                                if (_selectedDocumentType == 'boleta')
+                                  Container(
+                                    width: 18,
+                                    height: 18,
+                                    decoration: const BoxDecoration(
+                                      color: primaryOrange,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.check_rounded,
+                                      size: 12,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: _isSubmitting
+                              ? null
+                              : () => setState(
+                                    () => _selectedDocumentType = 'factura',
+                                  ),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _selectedDocumentType == 'factura'
+                                  ? const Color(0xFFFFF7ED)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: _selectedDocumentType == 'factura'
+                                    ? primaryOrange
+                                    : const Color(0xFFE8E8E8),
+                                width: _selectedDocumentType == 'factura'
+                                    ? 2
+                                    : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: BoxDecoration(
+                                    color: primaryOrange.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.description_outlined,
+                                    size: 18,
+                                    color: primaryOrange,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Factura',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                      color: textGray900,
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                ),
+                                if (_selectedDocumentType == 'factura')
+                                  Container(
+                                    width: 18,
+                                    height: 18,
+                                    decoration: const BoxDecoration(
+                                      color: primaryOrange,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.check_rounded,
+                                      size: 12,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_selectedDocumentType == 'factura') ...[
+                    const SizedBox(height: 14),
+                    const _Hairline(),
+                    const SizedBox(height: 14),
+                    _StyledField(
+                      controller: _invoiceBusinessNameController,
+                      label: 'Razón social',
+                      icon: Icons.business_rounded,
+                      validator: (v) {
+                        if (_selectedDocumentType != 'factura') return null;
+                        return (v == null || v.trim().isEmpty)
+                            ? 'Ingresa la razón social'
+                            : null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _StyledField(
+                      controller: _invoiceRutController,
+                      label: 'RUT',
+                      hint: 'Ej: 19.123.456-K',
+                      icon: Icons.badge_rounded,
+                      keyboardType: TextInputType.text,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[0-9kK\.\-]'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (_selectedDocumentType != 'factura') return;
+                        final formatted = _formatRut(value);
+                        if (formatted == value) return;
+                        _invoiceRutController.value = TextEditingValue(
+                          text: formatted,
+                          selection: TextSelection.collapsed(
+                            offset: formatted.length,
+                          ),
+                        );
+                      },
+                      validator: (v) {
+                        if (_selectedDocumentType != 'factura') return null;
+                        return Validators.rut(v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _StyledField(
+                      controller: _invoiceGiroController,
+                      label: 'Giro',
+                      icon: Icons.work_rounded,
+                      validator: (v) {
+                        if (_selectedDocumentType != 'factura') return null;
+                        return (v == null || v.trim().isEmpty)
+                            ? 'Ingresa el giro'
+                            : null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _StyledField(
+                      controller: _invoiceAddressController,
+                      label: 'Dirección',
+                      icon: Icons.location_city_rounded,
+                      maxLines: 2,
+                      validator: (v) {
+                        if (_selectedDocumentType != 'factura') return null;
+                        return (v == null || v.trim().isEmpty)
+                            ? 'Ingresa la dirección'
+                            : null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _StyledField(
+                      controller: _invoiceEmailController,
+                      label: 'Correo',
+                      icon: Icons.email_rounded,
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) {
+                        if (_selectedDocumentType != 'factura') return null;
+                        return Validators.email(v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _StyledField(
+                      controller: _invoicePhoneController,
+                      label: 'Teléfono',
+                      icon: Icons.phone_rounded,
+                      keyboardType: TextInputType.phone,
+                      validator: (v) {
+                        if (_selectedDocumentType != 'factura') return null;
+                        return (v == null || v.trim().isEmpty)
+                            ? 'Ingresa el teléfono'
+                            : null;
+                      },
                     ),
                   ],
                 ],
@@ -1962,7 +2482,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   ),
                   const SizedBox(height: 8),
                   _SummaryRow(
-                    label: 'Impuestos (IVA 19%)',
+                    label: 'Impuestos (IVA ${(pricingConfig.taxPercentage * 100).toStringAsFixed(0)}%)',
                     value: canProceed
                         ? '\$${formatPriceCLP(summary.tax)}'
                         : '—',
@@ -2162,58 +2682,56 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     final res = await showDialog<int>(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Text(
-            'Propina personalizada',
-            style: TextStyle(fontWeight: FontWeight.w900),
-          ),
-          content: TextField(
-            controller: _customTipController,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'Monto (CLP)',
-              prefixText: '\$ ',
-              filled: true,
-              fillColor: backgroundGray50,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text(
+          'Propina personalizada',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: TextField(
+          controller: _customTipController,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'Monto (CLP)',
+            prefixText: '\$ ',
+            filled: true,
+            fillColor: backgroundGray50,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancelar',
-                  style: TextStyle(color: textGray600)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar',
+                style: TextStyle(color: textGray600)),
+          ),
+          TextButton(
+            onPressed: () {
+              final raw =
+                  _customTipController.text.trim();
+              final sanitized =
+                  raw.replaceAll('.', '').replaceAll(',', '');
+              final parsed = int.tryParse(sanitized);
+              if (parsed == null || parsed < 0) {
+                Navigator.of(ctx).pop();
+                return;
+              }
+              Navigator.of(ctx).pop(parsed);
+            },
+            child: const Text(
+              'Guardar',
+              style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: primaryOrange),
             ),
-            TextButton(
-              onPressed: () {
-                final raw =
-                    _customTipController.text.trim();
-                final sanitized =
-                    raw.replaceAll('.', '').replaceAll(',', '');
-                final parsed = int.tryParse(sanitized);
-                if (parsed == null || parsed < 0) {
-                  Navigator.of(ctx).pop();
-                  return;
-                }
-                Navigator.of(ctx).pop(parsed);
-              },
-              child: const Text(
-                'Guardar',
-                style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: primaryOrange),
-              ),
-            ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
 
     return res;
@@ -2644,6 +3162,8 @@ class _StyledField extends StatelessWidget {
   final String? Function(String?)? validator;
   final VoidCallback? onTap;
   final Widget? suffix;
+  final ValueChanged<String>? onChanged;
+  final List<TextInputFormatter>? inputFormatters;
 
   const _StyledField({
     required this.controller,
@@ -2656,6 +3176,8 @@ class _StyledField extends StatelessWidget {
     this.validator,
     this.onTap,
     this.suffix,
+    this.onChanged,
+    this.inputFormatters,
   });
 
   @override
@@ -2665,7 +3187,9 @@ class _StyledField extends StatelessWidget {
       readOnly: readOnly,
       maxLines: maxLines,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       onTap: onTap,
+      onChanged: onChanged,
       validator: validator,
       decoration: InputDecoration(
         labelText: label,

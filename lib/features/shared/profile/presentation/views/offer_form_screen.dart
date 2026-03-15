@@ -53,10 +53,21 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
   final _stockController = TextEditingController();
   final _weightController = TextEditingController();
   final _addressController = TextEditingController();
+  final _unitIdentifierController = TextEditingController();
+  final _postalCodeController = TextEditingController();
   final _latController = TextEditingController();
   final _lngController = TextEditingController();
   String? _countryCode;
   final ImagePicker _imagePicker = ImagePicker();
+
+  bool _useAccountAddress = false;
+  AddressSlot? _selectedAccountAddressSlot;
+  String? _manualAddress;
+  String? _manualUnitIdentifier;
+  String? _manualPostalCode;
+  String? _manualLat;
+  String? _manualLng;
+  String? _manualCountryCode;
 
   static const _currency = 'CLP';
   static final Uri _termsAndConditionsUri = Uri.parse(
@@ -166,6 +177,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       final snapshot = offer.itemLocationSnapshot;
       if (snapshot != null) {
         _addressController.text = snapshot.fullAddress;
+        _unitIdentifierController.text = snapshot.unitIdentifier?.trim() ?? '';
+        _postalCodeController.text = snapshot.postalCode?.trim() ?? '';
         _latController.text = snapshot.geopoint.latitude.toStringAsFixed(6);
         _lngController.text = snapshot.geopoint.longitude.toStringAsFixed(6);
         _countryCode = snapshot.countryCode;
@@ -187,6 +200,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
     _stockController.dispose();
     _weightController.dispose();
     _addressController.dispose();
+    _unitIdentifierController.dispose();
+    _postalCodeController.dispose();
     _latController.dispose();
     _lngController.dispose();
     super.dispose();
@@ -413,11 +428,59 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
     if (result != null && mounted) {
       setState(() {
         _addressController.text = result.address;
+        _unitIdentifierController.text = result.unitIdentifier?.trim() ?? '';
+        _postalCodeController.text = result.postalCode?.trim() ?? '';
         _latController.text = result.latitude.toStringAsFixed(6);
         _lngController.text = result.longitude.toStringAsFixed(6);
         _countryCode = result.countryCode;
       });
     }
+  }
+
+  Address? _resolveSelectedAccountAddress(User user) {
+    final selectedSlot = _selectedAccountAddressSlot;
+    if (selectedSlot != null) {
+      final addr = user.addressSlots[selectedSlot];
+      if (addr != null) return addr;
+    }
+    final primarySlot = user.primaryAddressSlot;
+    if (primarySlot != null) {
+      final addr = user.addressSlots[primarySlot];
+      if (addr != null) return addr;
+    }
+    if (user.addressSlots.isNotEmpty) return user.addressSlots.values.first;
+    return user.address;
+  }
+
+  String _formatSavedAddressLabel(Address? addr, {AddressSlot? fallbackSlot}) {
+    if (addr == null) return 'No tienes una dirección guardada en tu cuenta.';
+    final name = addr.name?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    if (fallbackSlot != null) return fallbackSlot.displayName;
+    return 'Dirección guardada';
+  }
+
+  void _setLocationFromAccountAddress(User user) {
+    final addr = _resolveSelectedAccountAddress(user);
+    if (addr == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No tienes una dirección guardada en tu perfil'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      setState(() => _useAccountAddress = false);
+      return;
+    }
+
+    setState(() {
+      _addressController.text = addr.fullAddress;
+      _unitIdentifierController.text = addr.unitIdentifier?.trim() ?? '';
+      _postalCodeController.text = addr.postalCode?.trim() ?? '';
+      _latController.text = addr.geopoint.latitude.toStringAsFixed(6);
+      _lngController.text = addr.geopoint.longitude.toStringAsFixed(6);
+      _countryCode = addr.countryCode;
+    });
   }
 
   // ── SAVE ───────────────────────────────────────────────────────
@@ -428,6 +491,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
   Address? _buildLocationSnapshot(User user) {
     final addressText = _addressController.text.trim();
+    final unitId = _unitIdentifierController.text.trim();
+    final postalCode = _postalCodeController.text.trim();
 
     if (addressText.isNotEmpty) {
       final lat = double.tryParse(_latController.text.trim());
@@ -436,12 +501,16 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
       if (lat == null || lng == null) return null;
       if (normalizedCountry == null || normalizedCountry.isEmpty) return null;
+      if (unitId.isEmpty) return null;
+      if (postalCode.isEmpty) return null;
 
       return Address(
         fullAddress: addressText,
         geopoint: GeoPoint(lat, lng),
         locationCheck: true,
         countryCode: normalizedCountry,
+        unitIdentifier: unitId.isNotEmpty ? unitId : null,
+        postalCode: postalCode.isNotEmpty ? postalCode : null,
       );
     }
 
@@ -1487,6 +1556,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
   Widget _buildLocationSection() {
     final hasAddress = _addressController.text.trim().isNotEmpty;
+    final user = ref.watch(profileProvider).value;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1508,144 +1578,288 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: hasAddress
-                      ? backgroundGray50
-                      : backgroundGray50,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  hasAddress
-                      ? Icons.location_on_rounded
-                      : Icons.location_off_rounded,
-                  color: hasAddress
-                      ? primaryOrange
-                      : textGray600,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hasAddress ? 'Ubicación configurada' : 'Sin ubicación',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                        color: hasAddress
-                            ? primaryOrange
-                            : textGray600,
-                      ),
-                    ),
-                    if (hasAddress)
-                      Text(
-                        _addressController.text.trim(),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: textGray600,
-                          height: 1.3,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      )
-                    else
-                      const Text(
-                        'Requerido para publicar',
-                        style: TextStyle(
-                            fontSize: 12, color: textGray600),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (_publishNow && !hasAddress) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: backgroundGray50,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: borderGray100),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    size: 16,
-                    color: textGray600,
-                  ),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Requerido para publicar: dirección + lat/lng válidas.',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: textGray600,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
+          SwitchListTile.adaptive(
+            value: _useAccountAddress,
+            onChanged: _isSaving
+                ? null
+                : (val) {
+                    if (val) {
+                      _manualAddress = _addressController.text;
+                      _manualUnitIdentifier = _unitIdentifierController.text;
+                      _manualPostalCode = _postalCodeController.text;
+                      _manualLat = _latController.text;
+                      _manualLng = _lngController.text;
+                      _manualCountryCode = _countryCode;
+
+                      setState(() => _useAccountAddress = true);
+
+                      if (user != null) {
+                        if (_selectedAccountAddressSlot == null &&
+                            user.addressSlots.isNotEmpty) {
+                          _selectedAccountAddressSlot =
+                              user.primaryAddressSlot ??
+                                  user.addressSlots.keys.first;
+                        }
+                        _setLocationFromAccountAddress(user);
+                      } else {
+                        setState(() => _useAccountAddress = false);
+                      }
+                      return;
+                    }
+
+                    setState(() {
+                      _useAccountAddress = false;
+                      _addressController.text = _manualAddress ?? '';
+                      _unitIdentifierController.text =
+                          _manualUnitIdentifier ?? '';
+                      _postalCodeController.text = _manualPostalCode ?? '';
+                      _latController.text = _manualLat ?? '';
+                      _lngController.text = _manualLng ?? '';
+                      _countryCode = _manualCountryCode;
+                    });
+                  },
+            contentPadding: EdgeInsets.zero,
+            activeColor: primaryOrange,
+            title: const Text(
+              'Usar dirección de la cuenta',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: textGray900,
+                fontSize: 14,
               ),
             ),
-          ],
-          const SizedBox(height: 14),
-          // Action buttons row
-          Row(
-            children: [
-              Expanded(
-                child: _ActionButton(
-                  label: 'Elegir en mapa',
-                  icon: Icons.map_rounded,
-                  color: primaryOrange,
-                  onTap: _isSaving ? null : _openMapPicker,
-                ),
+            subtitle: Text(
+              (() {
+                if (user == null) {
+                  return 'No tienes una dirección guardada en tu cuenta.';
+                }
+                if (_useAccountAddress) {
+                  final selected = _resolveSelectedAccountAddress(user);
+                  return _formatSavedAddressLabel(
+                    selected,
+                    fallbackSlot: _selectedAccountAddressSlot,
+                  );
+                }
+                if (user.address != null) {
+                  return _formatSavedAddressLabel(user.address);
+                }
+                if (user.addressSlots.isNotEmpty) {
+                  final firstSlot = user.addressSlots.keys.first;
+                  final first = user.addressSlots.values.first;
+                  return _formatSavedAddressLabel(
+                    first,
+                    fallbackSlot: firstSlot,
+                  );
+                }
+                return 'No tienes una dirección guardada en tu cuenta.';
+              })(),
+              style: const TextStyle(
+                fontSize: 12,
+                color: textGray600,
+                height: 1.25,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _ActionButton(
-                  label: 'Usar mi dirección',
-                  icon: Icons.home_rounded,
-                  color: primaryOrange,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+
+          if (_useAccountAddress &&
+              (user?.addressSlots.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: user!.addressSlots.keys.map((slot) {
+                final sel = _selectedAccountAddressSlot == slot;
+                return GestureDetector(
                   onTap: _isSaving
                       ? null
                       : () {
-                          final userAsync = ref.read(profileProvider);
-                          final user = userAsync.value;
-                          if (user?.address != null) {
-                            final addr = user!.address!;
-                            setState(() {
-                              _addressController.text = addr.fullAddress;
-                              _latController.text = addr.geopoint.latitude
-                                  .toStringAsFixed(6);
-                              _lngController.text = addr.geopoint.longitude
-                                  .toStringAsFixed(6);
-                              _countryCode = addr.countryCode;
-                            });
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'No tienes una dirección guardada en tu perfil'),
-                                duration: Duration(seconds: 2),
-                              ),
-                            );
-                          }
+                          setState(() => _selectedAccountAddressSlot = slot);
+                          _setLocationFromAccountAddress(user);
                         },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: sel
+                          ? primaryOrange.withOpacity(0.10)
+                          : backgroundWhite,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: sel ? primaryOrange : const Color(0xFFE0E0E0),
+                        width: sel ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Text(
+                      slot.displayName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: sel ? primaryOrange : textGray900,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+
+          if (_useAccountAddress && user != null) ...[
+            const SizedBox(height: 10),
+            Builder(
+              builder: (context) {
+                final selectedAddr = _resolveSelectedAccountAddress(user);
+                final slot = _selectedAccountAddressSlot ??
+                    user.primaryAddressSlot;
+                final title = _formatSavedAddressLabel(
+                  selectedAddr,
+                  fallbackSlot: slot,
+                );
+                final fullAddress = selectedAddr?.fullAddress.trim();
+                final unitLine = selectedAddr?.unitIdentifier?.trim();
+
+                if (title.trim().isEmpty &&
+                    (fullAddress == null || fullAddress.isEmpty) &&
+                    (unitLine == null || unitLine.isEmpty)) {
+                  return const SizedBox.shrink();
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: primaryOrange.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.location_on_rounded,
+                        size: 16,
+                        color: primaryOrange,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: textGray900,
+                              fontSize: 13,
+                              height: 1.15,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          if (fullAddress != null &&
+                              fullAddress.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              fullAddress,
+                              style: const TextStyle(
+                                color: textGray600,
+                                fontSize: 12,
+                                height: 1.3,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                          if (unitLine != null && unitLine.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: backgroundGray50,
+                                borderRadius: BorderRadius.circular(10),
+                                border:
+                                    Border.all(color: const Color(0xFFECECEC)),
+                              ),
+                              child: Text(
+                                unitLine,
+                                style: const TextStyle(
+                                  color: textGray900,
+                                  fontSize: 12,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+
+          const SizedBox(height: 8),
+
+          SizedBox(
+            width: double.infinity,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  fit: FlexFit.loose,
+                  child: _ActionButton(
+                    label: 'Elegir en mapa',
+                    icon: Icons.map_rounded,
+                    color: primaryOrange,
+                    onTap:
+                        (_isSaving || _useAccountAddress) ? null : _openMapPicker,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 10),
+                Flexible(
+                  fit: FlexFit.loose,
+                  child: _ActionButton(
+                    label: 'Usar mi dirección',
+                    icon: Icons.home_rounded,
+                    color: primaryOrange,
+                    onTap: _isSaving
+                        ? null
+                        : () {
+                            final userAsync = ref.read(profileProvider);
+                            final user = userAsync.value;
+                            if (user == null) return;
+
+                            _manualAddress = _addressController.text;
+                            _manualUnitIdentifier = _unitIdentifierController.text;
+                            _manualPostalCode = _postalCodeController.text;
+                            _manualLat = _latController.text;
+                            _manualLng = _lngController.text;
+                            _manualCountryCode = _countryCode;
+
+                            setState(() => _useAccountAddress = true);
+                            if (_selectedAccountAddressSlot == null &&
+                                user.addressSlots.isNotEmpty) {
+                              _selectedAccountAddressSlot =
+                                  user.primaryAddressSlot ??
+                                      user.addressSlots.keys.first;
+                            }
+                            _setLocationFromAccountAddress(user);
+                          },
+                  ),
+                ),
+              ],
+            ),
           ),
+
           if (hasAddress) ...[
             const SizedBox(height: 10),
             GestureDetector(
@@ -1654,6 +1868,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                   : () {
                       setState(() {
                         _addressController.clear();
+                        _unitIdentifierController.clear();
+                        _postalCodeController.clear();
                         _latController.clear();
                         _lngController.clear();
                         _countryCode = null;
@@ -1695,9 +1911,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             showCursor: false,
             enableInteractiveSelection: false,
             onTap: _isSaving ? null : _openMapPicker,
-            style: const TextStyle(
-                fontSize: 13,
-                color: textGray600),
+            style: const TextStyle(fontSize: 13, color: textGray600),
             decoration: _inputDeco(
               hint: 'Dirección de retiro/envío',
               helper: 'Elige en el mapa o usa tu dirección guardada',
@@ -1705,6 +1919,47 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             validator: (value) {
               if (_publishNow && (value == null || value.trim().isEmpty)) {
                 return 'Requerido para publicar';
+              }
+              return null;
+            },
+          ),
+
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _unitIdentifierController,
+            textInputAction: TextInputAction.next,
+            enabled: !_isSaving,
+            style: const TextStyle(fontSize: 13, color: textGray600),
+            decoration: _inputDeco(
+              hint: 'Dpto./Casa/Oficina/Condominio',
+              helper: 'Requerido',
+            ),
+            validator: (value) {
+              final needs = _addressController.text.trim().isNotEmpty;
+              if (!needs) return null;
+              if (value == null || value.trim().isEmpty) {
+                return 'Requerido';
+              }
+              return null;
+            },
+          ),
+
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _postalCodeController,
+            textInputAction: TextInputAction.done,
+            enabled: !_isSaving,
+            keyboardType: TextInputType.text,
+            style: const TextStyle(fontSize: 13, color: textGray600),
+            decoration: _inputDeco(
+              hint: 'Código Postal',
+              helper: 'Requerido',
+            ),
+            validator: (value) {
+              final needs = _addressController.text.trim().isNotEmpty;
+              if (!needs) return null;
+              if (value == null || value.trim().isEmpty) {
+                return 'Requerido';
               }
               return null;
             },
@@ -2098,7 +2353,7 @@ class _InfoCard extends StatelessWidget {
 class _ConditionQuestion extends StatelessWidget {
   final String question;
   final bool? value;
-  final void Function(bool)? onChanged;
+  final ValueChanged<bool?>? onChanged;
 
   const _ConditionQuestion({
     required this.question,
@@ -2136,18 +2391,22 @@ class _ConditionQuestion extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              _YesNoTile(
-                label: 'Sí',
-                yes: true,
-                selected: value == true,
-                onTap: onChanged == null ? null : () => onChanged!(true),
+              Expanded(
+                child: _YesNoTile(
+                  label: 'Sí',
+                  yes: true,
+                  selected: value == true,
+                  onTap: onChanged == null ? null : () => onChanged!(true),
+                ),
               ),
               const SizedBox(width: 10),
-              _YesNoTile(
-                label: 'No',
-                yes: false,
-                selected: value == false,
-                onTap: onChanged == null ? null : () => onChanged!(false),
+              Expanded(
+                child: _YesNoTile(
+                  label: 'No',
+                  yes: false,
+                  selected: value == false,
+                  onTap: onChanged == null ? null : () => onChanged!(false),
+                ),
               ),
             ],
           ),
@@ -2174,43 +2433,39 @@ class _YesNoTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final accentColor =
         yes ? const Color(0xFF10B981) : const Color(0xFFDC2626);
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: selected
-                ? accentColor.withOpacity(0.08)
-                : const Color(0xFFFAFAFA),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? accentColor : const Color(0xFFE0E0E0),
-              width: selected ? 2 : 1,
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: selected
+              ? accentColor.withOpacity(0.08)
+              : const Color(0xFFFAFAFA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? accentColor : const Color(0xFFE0E0E0),
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              yes ? Icons.check_circle_rounded : Icons.cancel_rounded,
+              size: 30,
+              color: selected ? accentColor : const Color(0xFFCCCCCC),
             ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                yes
-                    ? Icons.check_circle_rounded
-                    : Icons.cancel_rounded,
-                size: 30,
-                color: selected ? accentColor : const Color(0xFFCCCCCC),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 15,
+                color: selected ? accentColor : const Color(0xFF999999),
               ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                  color: selected ? accentColor : const Color(0xFF999999),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

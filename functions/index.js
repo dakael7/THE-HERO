@@ -42,24 +42,46 @@ function isSupportUser(auth) {
   return false;
 }
 
-function _requireAdminApiKey(req) {
-  const expected = process.env.ADMIN_API_KEY;
-  if (!expected) {
-    logger.error('[adminPayoutRider] Missing ADMIN_API_KEY env var');
-    return {ok: false, status: 500, message: 'Server not configured'};
-  }
-
+function _getBearerToken(req) {
   const authHeader = req.get('authorization') || req.get('Authorization') || '';
   const prefix = 'bearer ';
-  const token = authHeader.toLowerCase().startsWith(prefix)
-    ? authHeader.slice(prefix.length).trim()
-    : '';
+  const raw = String(authHeader || '');
+  if (!raw.toLowerCase().startsWith(prefix)) return null;
+  const token = raw.slice(prefix.length).trim();
+  return token || null;
+}
 
-  if (!token || token !== expected) {
-    return {ok: false, status: 401, message: 'Unauthorized'};
+async function _requireWebAdmin(req) {
+  const idToken = _getBearerToken(req);
+  if (!idToken) {
+    return {ok: false, status: 401, message: 'Missing Authorization Bearer token'};
   }
 
-  return {ok: true};
+  let decoded;
+  try {
+    decoded = await admin.auth().verifyIdToken(idToken);
+  } catch (e) {
+    logger.warn('[auth] invalid token', e);
+    return {ok: false, status: 401, message: 'Invalid token'};
+  }
+
+  const uid = decoded?.uid ? String(decoded.uid) : null;
+  if (!uid) {
+    return {ok: false, status: 401, message: 'Invalid token'};
+  }
+
+  const firestore = admin.firestore();
+  const adminSnap = await firestore.collection('web_admins').doc(uid).get();
+  if (!adminSnap.exists) {
+    return {ok: false, status: 403, message: 'Forbidden'};
+  }
+
+  const adminData = adminSnap.data() || {};
+  if (adminData.enabled === false) {
+    return {ok: false, status: 403, message: 'Forbidden'};
+  }
+
+  return {ok: true, uid, email: decoded.email || null};
 }
 
 function _toCents(value) {
@@ -74,9 +96,117 @@ function _round2(value) {
   return Math.round(num * 100) / 100;
 }
 
-// Admin payout endpoint (called from your admin web/backend)
-// Security: Bearer token via ADMIN_API_KEY env var.
-// Body: { riderId, amount?, idempotencyKey, reference?, note? }
+function _normalizeNonNegativeNumber(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || Number.isNaN(num) || num < 0) return null;
+  return num;
+}
+
+function _pickVehicleMap(input) {
+  if (input == null) return null;
+  if (typeof input !== 'object') return null;
+
+  const allowed = new Set(['bicycle', 'motorcycle', 'car', 'truck']);
+  const out = {};
+  for (const [k, v] of Object.entries(input)) {
+    const key = String(k || '').trim();
+    if (!allowed.has(key)) continue;
+    const num = _normalizeNonNegativeNumber(v);
+    if (num == null) continue;
+    out[key] = num;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+exports.adminUpdatePricing = onRequest(
+  {
+    region: 'southamerica-west1',
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({error: 'Method not allowed'});
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({error: authCheck.message});
+      }
+
+      const pricePerKm = _pickVehicleMap(req.body?.pricePerKm);
+      const minimumCharge = _pickVehicleMap(req.body?.minimumCharge);
+
+      const taxBasisPoints = req.body?.taxBasisPoints;
+      const taxPercent = req.body?.taxPercent;
+      const taxPercentage = req.body?.taxPercentage;
+
+      const update = {};
+      if (pricePerKm != null) update.pricePerKm = pricePerKm;
+      if (minimumCharge != null) update.minimumCharge = minimumCharge;
+
+      const taxBpsNum = _normalizeNonNegativeNumber(taxBasisPoints);
+      const taxPercentNum = _normalizeNonNegativeNumber(taxPercent);
+      const taxPercentageNum = _normalizeNonNegativeNumber(taxPercentage);
+
+      if (taxBpsNum != null) update.taxBasisPoints = taxBpsNum;
+      if (taxPercentNum != null) update.taxPercent = taxPercentNum;
+      if (taxPercentageNum != null) update.taxPercentage = taxPercentageNum;
+
+      if (!Object.keys(update).length) {
+        return res.status(400).json({error: 'No valid fields to update'});
+      }
+
+      update.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+      update.updatedByUid = authCheck.uid;
+      if (authCheck.email) update.updatedByEmail = authCheck.email;
+
+      const firestore = admin.firestore();
+      await firestore
+        .collection('settings')
+        .doc('pricing')
+        .set(update, {merge: true});
+
+      return res.status(200).json({ok: true});
+    } catch (e) {
+      logger.error('[adminUpdatePricing] error', e);
+      return res.status(500).json({error: 'Internal error'});
+    }
+  },
+);
+
+exports.adminGetPricing = onRequest(
+  {
+    region: 'southamerica-west1',
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== 'GET') {
+        return res.status(405).json({error: 'Method not allowed'});
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({error: authCheck.message});
+      }
+
+      const firestore = admin.firestore();
+      const snap = await firestore.collection('settings').doc('pricing').get();
+      const data = snap.exists ? snap.data() : null;
+
+      return res.status(200).json({
+        ok: true,
+        exists: snap.exists,
+        pricing: data || {},
+      });
+    } catch (e) {
+      logger.error('[adminGetPricing] error', e);
+      return res.status(500).json({error: 'Internal error'});
+    }
+  },
+);
+
 exports.adminPayoutRider = onRequest(
   {
     region: 'southamerica-west1',
@@ -88,7 +218,7 @@ exports.adminPayoutRider = onRequest(
         return res.status(405).json({error: 'Method not allowed'});
       }
 
-      const authCheck = _requireAdminApiKey(req);
+      const authCheck = await _requireWebAdmin(req);
       if (!authCheck.ok) {
         return res.status(authCheck.status).json({error: authCheck.message});
       }

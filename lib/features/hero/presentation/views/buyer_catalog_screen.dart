@@ -10,6 +10,7 @@ import '../../../../domain/entities/offer_condition.dart';
 import '../../../../domain/entities/user.dart';
 import '../../../offers/presentation/providers/offer_comments_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../cart/checkout_screen.dart';
 import '../../cart/cart_provider.dart';
 import '../../../offers/presentation/providers/offers_provider.dart';
 import '../providers/catalog_filters_provider.dart';
@@ -174,7 +175,7 @@ class BuyerCatalogScreen extends ConsumerWidget {
                 ),
               ),
 
-              // ── RESULTS COUNT ──
+              // ── RESULTS COUNT / EMPTY STATE ──
               if (offers.isEmpty)
                 const SliverFillRemaining(child: _EmptyState())
               else ...[
@@ -231,13 +232,15 @@ class BuyerCatalogScreen extends ConsumerWidget {
                               name: offer.title,
                               sellerHeroId: offer.heroId,
                               condition: offer.condition.displayName,
-                              colorCondition: _conditionColor(offer.condition),
+                              colorCondition:
+                                  _conditionColor(offer.condition),
                               category: offer.category,
                               availableQty: offer.availableQty,
                               viewCount: offer.viewCount,
                               orderCount: offer.orderCount,
                               weight: offer.weight,
-                              pickupGeo: offer.itemLocationSnapshot?.geopoint,
+                              pickupGeo:
+                                  offer.itemLocationSnapshot?.geopoint,
                               pickupAddressSnapshot:
                                   offer.itemLocationSnapshot?.fullAddress,
                               pickupCountryCode:
@@ -249,7 +252,8 @@ class BuyerCatalogScreen extends ConsumerWidget {
                               ratingCount: offer.ratingCount,
                               sellerName: sellerName,
                               sellerHeroRating: sellerAsync.maybeWhen(
-                                data: (u) => (u?.heroProfile?.rating) ?? 0.0,
+                                data: (u) =>
+                                    (u?.heroProfile?.rating) ?? 0.0,
                                 orElse: () => null,
                               ),
                               sellerHeroRatingCount: sellerAsync.maybeWhen(
@@ -304,8 +308,7 @@ class _Pill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15,
-              color: accent ? primaryOrange : textGray600),
+          Icon(icon, size: 15, color: accent ? primaryOrange : textGray600),
           const SizedBox(width: 6),
           Text(
             label,
@@ -375,10 +378,7 @@ class _EmptyState extends StatelessWidget {
               decoration: BoxDecoration(
                 color: borderGray100,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: primaryOrange,
-                  width: 2,
-                ),
+                border: Border.all(color: primaryOrange, width: 2),
               ),
               child: const Icon(
                 Icons.search_off_rounded,
@@ -436,12 +436,13 @@ class _ErrorState extends StatelessWidget {
               decoration: BoxDecoration(
                 color: borderGray100,
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFFFFCCCC), width: 2),
+                border: Border.all(
+                    color: const Color(0xFFFFCCCC), width: 2),
               ),
               child: const Icon(
                 Icons.warning_amber_rounded,
                 size: 42,
-                color: const Color(0xFFDC2626),
+                color: Color(0xFFDC2626),
               ),
             ),
             const SizedBox(height: 20),
@@ -474,7 +475,8 @@ class _ErrorState extends StatelessWidget {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.refresh_rounded, color: Colors.white, size: 18),
+                    Icon(Icons.refresh_rounded,
+                        color: Colors.white, size: 18),
                     SizedBox(width: 8),
                     Text(
                       'Reintentar',
@@ -496,7 +498,7 @@ class _ErrorState extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  GRID PATTERN PAINTER (decorative background)
+//  GRID PATTERN PAINTER
 // ─────────────────────────────────────────────
 class _GridPatternPainter extends CustomPainter {
   @override
@@ -532,18 +534,11 @@ class OfferDetailScreen extends ConsumerStatefulWidget {
 class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   bool _incremented = false;
   int _optimisticViewsDelta = 0;
-  bool _addedToCartFeedback = false;
   PageController? _galleryController;
   int _galleryIndex = 0;
 
-  Future<void> _triggerAddedToCartFeedback() async {
-    if (!mounted) return;
-    if (_addedToCartFeedback) return;
-    setState(() => _addedToCartFeedback = true);
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
-    if (!mounted) return;
-    setState(() => _addedToCartFeedback = false);
-  }
+  // ── Cart button state ──
+  int _cartQuantity = 0;
 
   @override
   void initState() {
@@ -563,9 +558,10 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     if (!mounted || _incremented) return;
     final userAsync = ref.read(profileProvider);
     final userId = userAsync.maybeWhen(
-      data: (user) => user?.id,
-      orElse: () => null,
-    );
+          data: (user) => user?.id,
+          orElse: () => null,
+        );
+
     if (userId != null && userId == widget.offer.heroId) {
       _incremented = true;
       return;
@@ -662,6 +658,89 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     }
   }
 
+  // ── Cart helpers ──────────────────────────────────────────────
+  void _addToCart() {
+    final offer = widget.offer;
+    final currentUserId = ref.read(profileProvider).maybeWhen(
+          data: (user) => user?.id,
+          orElse: () => null,
+        );
+
+    final maxQty = offer.availableQty;
+    if (maxQty <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No hay unidades disponibles para esta donación.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    if (_cartQuantity >= maxQty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Solo hay $maxQty unidad${maxQty == 1 ? '' : 'es'} disponible${maxQty == 1 ? '' : 's'}.'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    if (currentUserId != null && offer.heroId == currentUserId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No puedes agregar al carrito tus propias donaciones. Puedes gestionarlas desde "Mis donaciones".',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    final pickupCc = offer.itemLocationSnapshot?.countryCode?.trim();
+    if (pickupCc == null || pickupCc.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Este producto no tiene país de retiro configurado.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+
+    ref.read(cartProvider.notifier).addItem(
+          offerId: offer.offerId,
+          name: offer.title,
+          condition: offer.condition.displayName,
+          price: 0.0,
+          weight: offer.weight,
+          imageUrl: offer.coverImageUrl,
+          availableQty: offer.availableQty,
+          pickupGeo: offer.itemLocationSnapshot?.geopoint,
+          pickupAddressSnapshot:
+              offer.itemLocationSnapshot?.displayAddressMultiline,
+          pickupCountryCode: offer.itemLocationSnapshot?.countryCode,
+          sellerHeroId: offer.heroId,
+          allowInPersonPickup: offer.allowInPersonPickup,
+        );
+
+    setState(() => _cartQuantity++);
+  }
+
+  void _incrementCart() {
+    _addToCart();
+  }
+
+  void _decrementCart() {
+    if (_cartQuantity <= 0) return;
+    ref.read(cartProvider.notifier).removeOneItem(widget.offer.offerId);
+    setState(() => _cartQuantity--);
+  }
+
   @override
   Widget build(BuildContext context) {
     final offer = widget.offer;
@@ -710,7 +789,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     final viewsCount = offer.viewCount + _optimisticViewsDelta;
     final location = offer.itemLocationSnapshot;
 
-    final sellerProfileAsync = ref.watch(userByIdStreamProvider(offer.heroId));
+    final sellerProfileAsync =
+        ref.watch(userByIdStreamProvider(offer.heroId));
     final sellerName = sellerProfileAsync.maybeWhen(
       data: (user) => user?.fullName ?? 'Vendedor',
       orElse: () => 'Vendedor',
@@ -776,9 +856,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                           isFavorite
                               ? Icons.favorite_rounded
                               : Icons.favorite_border_rounded,
-                          color: isFavorite
-                              ? primaryOrange
-                              : textGray900,
+                          color: isFavorite ? primaryOrange : textGray900,
                         ),
                       ),
                     ),
@@ -873,7 +951,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                           final active = i == _galleryIndex;
                           return AnimatedContainer(
                             duration: const Duration(milliseconds: 180),
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            margin:
+                                const EdgeInsets.symmetric(horizontal: 3),
                             height: 6,
                             width: active ? 20 : 6,
                             decoration: BoxDecoration(
@@ -944,7 +1023,6 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Title row
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -961,7 +1039,6 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          // Price tag
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 6),
@@ -983,7 +1060,6 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
 
                       const SizedBox(height: 12),
 
-                      // Seller row
                       Row(
                         children: [
                           Container(
@@ -1018,7 +1094,6 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       const Divider(color: borderGray100, height: 1),
                       const SizedBox(height: 14),
 
-                      // Stats row
                       Row(
                         children: [
                           if (offer.ratingCount > 0) ...[
@@ -1060,7 +1135,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: thumbnailImages.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(width: 10),
                       itemBuilder: (context, index) {
                         final imageUrl = thumbnailImages[index];
                         final targetIndex = hasCover ? (index + 1) : index;
@@ -1089,7 +1165,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                               boxShadow: selected
                                   ? [
                                       BoxShadow(
-                                        color: primaryOrange.withValues(alpha: 0.25),
+                                        color: primaryOrange
+                                            .withValues(alpha: 0.25),
                                         blurRadius: 8,
                                         offset: const Offset(0, 3),
                                       ),
@@ -1097,8 +1174,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                   : [],
                             ),
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                  selected ? 12 : 14),
+                              borderRadius:
+                                  BorderRadius.circular(selected ? 12 : 14),
                               child: _buildOfferImage(imageUrl),
                             ),
                           ),
@@ -1134,6 +1211,12 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       _Pill(
                         icon: Icons.scale_outlined,
                         label: 'Peso: ${formatWeightKg(offer.weight)}',
+                      ),
+                      _Pill(
+                        icon: Icons.person_pin_circle_outlined,
+                        label: offer.allowInPersonPickup
+                            ? 'Retiro en persona: Sí'
+                            : 'Retiro en persona: No',
                       ),
                     ],
                   ),
@@ -1316,7 +1399,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                   ),
                                 ),
                                 Text(
-                                  offer.pickupSchedule!.getScheduleDescription(),
+                                  offer.pickupSchedule!
+                                      .getScheduleDescription(),
                                   style: const TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
@@ -1332,8 +1416,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   ),
                 ],
 
+                // ── Q&A SECTION ──
                 if (offer.price > 0) ...[
-                  // ── Q&A SECTION ──
                   _SectionHeader(
                     label: 'Preguntas y respuestas',
                     icon: Icons.forum_outlined,
@@ -1344,26 +1428,29 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       final commentsAsync = ref.watch(
                         offerCommentsProvider(offer.offerId),
                       );
-                      final currentUser = ref.watch(profileProvider).value;
+                      final currentUser =
+                          ref.watch(profileProvider).value;
                       final isOwner = currentUser?.id == offer.heroId;
 
                       return commentsAsync.when(
                         data: (comments) {
                           if (comments.isEmpty) {
                             return Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16),
                               child: Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(24),
                                 decoration: BoxDecoration(
                                   color: backgroundWhite,
                                   borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: borderGray100),
+                                  border:
+                                      Border.all(color: borderGray100),
                                 ),
                                 child: const Column(
                                   children: [
-                                    Icon(Icons.chat_bubble_outline_rounded,
+                                    Icon(
+                                        Icons.chat_bubble_outline_rounded,
                                         size: 36,
                                         color: textGray600),
                                     SizedBox(height: 10),
@@ -1389,23 +1476,25 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                           }
 
                           return Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16),
                             child: Column(
                               children: comments.map((comment) {
                                 final hasReply = comment.reply != null &&
                                     comment.reply!.isNotEmpty;
 
                                 return Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
+                                  margin:
+                                      const EdgeInsets.only(bottom: 12),
                                   decoration: BoxDecoration(
                                     color: backgroundWhite,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: borderGray100),
+                                    borderRadius:
+                                        BorderRadius.circular(16),
+                                    border:
+                                        Border.all(color: borderGray100),
                                   ),
                                   child: Column(
                                     children: [
-                                      // Question
                                       Padding(
                                         padding: const EdgeInsets.all(16),
                                         child: Row(
@@ -1415,7 +1504,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                             Container(
                                               width: 36,
                                               height: 36,
-                                              decoration: const BoxDecoration(
+                                              decoration:
+                                                  const BoxDecoration(
                                                 color: borderGray100,
                                                 shape: BoxShape.circle,
                                               ),
@@ -1429,7 +1519,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                             Expanded(
                                               child: Column(
                                                 crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
+                                                    CrossAxisAlignment
+                                                        .start,
                                                 children: [
                                                   Row(
                                                     children: [
@@ -1444,8 +1535,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                                       ),
                                                       const Spacer(),
                                                       Text(
-                                                        _formatDate(comment
-                                                            .createdAt),
+                                                        _formatDate(
+                                                            comment.createdAt),
                                                         style: const TextStyle(
                                                           fontSize: 11,
                                                           color: textGray600,
@@ -1469,7 +1560,6 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                         ),
                                       ),
 
-                                      // Reply
                                       if (hasReply)
                                         Container(
                                           margin: const EdgeInsets.fromLTRB(
@@ -1505,7 +1595,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                               Expanded(
                                                 child: Column(
                                                   crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
+                                                      CrossAxisAlignment
+                                                          .start,
                                                   children: [
                                                     Text(
                                                       comment.replyBy ??
@@ -1533,7 +1624,6 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                           ),
                                         ),
 
-                                      // Reply button
                                       if (isOwner && !hasReply)
                                         Padding(
                                           padding: const EdgeInsets.fromLTRB(
@@ -1611,8 +1701,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                     child: GestureDetector(
-                      onTap: () => _showAddQuestionDialog(
-                          context, ref, offer.offerId),
+                      onTap: () =>
+                          _showAddQuestionDialog(context, ref, offer.offerId),
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1645,137 +1735,21 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   ),
                 ],
 
-                // ── ADD TO CART ──
+                // ── ADD TO CART BUTTON ──
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-                  child: GestureDetector(
-                    onTap: () {
-                      final currentUserId =
-                          ref.read(profileProvider).maybeWhen(
-                                data: (user) => user?.id,
-                                orElse: () => null,
-                              );
-
-                      if (currentUserId != null &&
-                          offer.heroId == currentUserId) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'No puedes agregar al carrito tus propias donaciones. Puedes gestionarlas desde "Mis donaciones".',
-                            ),
-                            duration: Duration(seconds: 4),
-                          ),
-                        );
-                        return;
-                      }
-
-                      final pickupCc = offer
-                          .itemLocationSnapshot?.countryCode
-                          ?.trim();
-                      if (pickupCc == null || pickupCc.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Este producto no tiene país de retiro configurado.',
-                            ),
-                            duration: Duration(seconds: 5),
-                          ),
-                        );
-                      }
-
-                      ref.read(cartProvider.notifier).addItem(
-                            offerId: offer.offerId,
-                            name: offer.title,
-                            condition: offer.condition.displayName,
-                            price: 0.0,
-                            weight: offer.weight,
-                            imageUrl: offer.coverImageUrl,
-                            availableQty: offer.availableQty,
-                            pickupGeo:
-                                offer.itemLocationSnapshot?.geopoint,
-                            pickupAddressSnapshot:
-                                offer.itemLocationSnapshot?.fullAddress,
-                            pickupCountryCode:
-                                offer.itemLocationSnapshot?.countryCode,
-                            sellerHeroId: offer.heroId,
-                            allowInPersonPickup: offer.allowInPersonPickup,
-                          );
-                      _triggerAddedToCartFeedback();
+                  child: _AddToCartButton(
+                    quantity: _cartQuantity,
+                    onAdd: _addToCart,
+                    onIncrement: _incrementCart,
+                    onDecrement: _decrementCart,
+                    onCheckout: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CheckoutScreen(),
+                        ),
+                      );
                     },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      decoration: BoxDecoration(
-                        color: _addedToCartFeedback
-                            ? const Color(0xFF16A34A)
-                            : primaryOrange,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: (_addedToCartFeedback
-                                    ? const Color(0xFF16A34A)
-                                    : primaryOrange)
-                                .withValues(alpha: 0.35),
-                            blurRadius: 16,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        switchInCurve: Curves.easeOutBack,
-                        switchOutCurve: Curves.easeIn,
-                        transitionBuilder: (child, anim) {
-                          return FadeTransition(
-                            opacity: anim,
-                            child: ScaleTransition(
-                                scale: anim, child: child),
-                          );
-                        },
-                        child: _addedToCartFeedback
-                            ? const Row(
-                                key: ValueKey('added'),
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.check_circle_outline_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 10),
-                                  Text(
-                                    '¡Agregado al carrito!',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : const Row(
-                                key: ValueKey('add'),
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.shopping_cart_outlined,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 10),
-                                  Text(
-                                    'Agregar al carrito',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ),
                   ),
                 ),
               ],
@@ -1808,8 +1782,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Hacer una pregunta',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -1875,8 +1849,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Responder pregunta',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -1907,9 +1881,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
               if (text.isEmpty) return;
               final user = ref.read(profileProvider).value;
               if (user == null) return;
-              await ref
-                  .read(addCommentProvider.notifier)
-                  .replyToComment(
+              await ref.read(addCommentProvider.notifier).replyToComment(
                     offerId: offerId,
                     commentId: commentId,
                     reply: text,
@@ -1932,6 +1904,212 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                 style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  ADD TO CART BUTTON
+// ─────────────────────────────────────────────
+class _AddToCartButton extends StatelessWidget {
+  const _AddToCartButton({
+    required this.quantity,
+    required this.onAdd,
+    required this.onIncrement,
+    required this.onDecrement,
+    required this.onCheckout,
+  });
+
+  final int quantity;
+  final VoidCallback onAdd;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+  final VoidCallback onCheckout;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: AnimatedCrossFade(
+        duration: const Duration(milliseconds: 250),
+        crossFadeState: quantity == 0
+            ? CrossFadeState.showFirst
+            : CrossFadeState.showSecond,
+        firstCurve: Curves.easeInOut,
+        secondCurve: Curves.easeInOut,
+        sizeCurve: Curves.easeInOut,
+        firstChild: _buildAddButton(),
+        secondChild: quantity > 0 ? _buildCartControl() : const SizedBox(),
+      ),
+    );
+  }
+
+  Widget _buildAddButton() {
+    return GestureDetector(
+      onTap: onAdd,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          color: primaryOrange,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: primaryOrange.withValues(alpha: 0.35),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 20),
+            SizedBox(width: 10),
+            Text(
+              'Agregar al carrito',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCartControl() {
+    return Row(
+      children: [
+        // ── Counter ──
+        Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: backgroundWhite,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderGray100),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CounterBtn(icon: Icons.remove_rounded, onTap: onDecrement),
+              Container(width: 1, height: 24, color: borderGray100),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                transitionBuilder: (child, anim) =>
+                    ScaleTransition(scale: anim, child: child),
+                child: SizedBox(
+                  key: ValueKey(quantity),
+                  width: 40,
+                  child: Text(
+                    '$quantity',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      color: textGray900,
+                    ),
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 24, color: borderGray100),
+              _CounterBtn(icon: Icons.add_rounded, onTap: onIncrement),
+            ],
+          ),
+        ),
+
+        const SizedBox(width: 10),
+
+        // ── Checkout button ──
+        Expanded(
+          child: GestureDetector(
+            onTap: onCheckout,
+            child: Container(
+              height: 52,
+              decoration: BoxDecoration(
+                color: primaryOrange,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: primaryOrange.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.arrow_forward_rounded,
+                      color: Colors.white, size: 16),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Procesar pago',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      transitionBuilder: (child, anim) =>
+                          ScaleTransition(scale: anim, child: child),
+                      child: Text(
+                        '$quantity',
+                        key: ValueKey(quantity),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: primaryOrange,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  COUNTER BUTTON HELPER
+// ─────────────────────────────────────────────
+class _CounterBtn extends StatelessWidget {
+  const _CounterBtn({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 44,
+        height: 52,
+        child: Icon(icon, size: 18, color: primaryOrange),
       ),
     );
   }

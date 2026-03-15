@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/utils/price_parser.dart';
 import '../providers/catalog_filters_provider.dart';
 
 /// Search bar widget for catalog
@@ -189,100 +188,6 @@ class SortOptionsButton extends ConsumerWidget {
             }),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Price range filter
-class PriceRangeFilter extends ConsumerStatefulWidget {
-  const PriceRangeFilter({super.key});
-
-  @override
-  ConsumerState<PriceRangeFilter> createState() => _PriceRangeFilterState();
-}
-
-class _PriceRangeFilterState extends ConsumerState<PriceRangeFilter> {
-  final _minController = TextEditingController();
-  final _maxController = TextEditingController();
-
-  @override
-  void dispose() {
-    _minController.dispose();
-    _maxController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: () => _showPriceRangeDialog(context),
-      icon: const Icon(Icons.attach_money, size: 18),
-      label: const Text('Precio', style: TextStyle(fontSize: 13)),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: textGray900,
-        side: const BorderSide(color: borderGray100),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      ),
-    );
-  }
-
-  void _showPriceRangeDialog(BuildContext context) {
-    final currentFilters = ref.read(catalogFiltersProvider);
-    _minController.text = currentFilters.minPrice?.toStringAsFixed(0) ?? '';
-    _maxController.text = currentFilters.maxPrice?.toStringAsFixed(0) ?? '';
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filtrar por precio'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _minController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Precio mínimo',
-                prefixText: '\$',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _maxController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Precio máximo',
-                prefixText: '\$',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              ref.read(catalogFiltersProvider.notifier).setPriceRange();
-              Navigator.pop(context);
-            },
-            child: const Text('Limpiar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final min = parseLocalizedPrice(_minController.text);
-              final max = parseLocalizedPrice(_maxController.text);
-
-              ref
-                  .read(catalogFiltersProvider.notifier)
-                  .setPriceRange(min: min, max: max);
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: primaryOrange),
-            child: const Text('Aplicar'),
-          ),
-        ],
       ),
     );
   }

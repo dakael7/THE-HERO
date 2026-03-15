@@ -21,6 +21,13 @@ class Order {
   final double tip;
   final double amountTotal;
   final String currency;
+  final String documentType;
+  final String? invoiceBusinessName;
+  final String? invoiceRut;
+  final String? invoiceGiro;
+  final String? invoiceAddress;
+  final String? invoiceEmail;
+  final String? invoicePhone;
   final OrderPickup pickup;
   final List<OrderPickupStop>? pickupStops;
   final int? pickupProgressCurrentStopIndex;
@@ -53,6 +60,13 @@ class Order {
     this.tip = 0.0,
     required this.amountTotal,
     required this.currency,
+    this.documentType = 'boleta',
+    this.invoiceBusinessName,
+    this.invoiceRut,
+    this.invoiceGiro,
+    this.invoiceAddress,
+    this.invoiceEmail,
+    this.invoicePhone,
     required this.pickup,
     this.pickupStops,
     this.pickupProgressCurrentStopIndex,
@@ -93,6 +107,13 @@ class Order {
     double? tip,
     double? amountTotal,
     String? currency,
+    String? documentType,
+    String? invoiceBusinessName,
+    String? invoiceRut,
+    String? invoiceGiro,
+    String? invoiceAddress,
+    String? invoiceEmail,
+    String? invoicePhone,
     OrderPickup? pickup,
     List<OrderPickupStop>? pickupStops,
     OrderDelivery? delivery,
@@ -124,6 +145,13 @@ class Order {
       tip: tip ?? this.tip,
       amountTotal: amountTotal ?? this.amountTotal,
       currency: currency ?? this.currency,
+      documentType: documentType ?? this.documentType,
+      invoiceBusinessName: invoiceBusinessName ?? this.invoiceBusinessName,
+      invoiceRut: invoiceRut ?? this.invoiceRut,
+      invoiceGiro: invoiceGiro ?? this.invoiceGiro,
+      invoiceAddress: invoiceAddress ?? this.invoiceAddress,
+      invoiceEmail: invoiceEmail ?? this.invoiceEmail,
+      invoicePhone: invoicePhone ?? this.invoicePhone,
       pickup: pickup ?? this.pickup,
       pickupStops: pickupStops ?? this.pickupStops,
       delivery: delivery ?? this.delivery,

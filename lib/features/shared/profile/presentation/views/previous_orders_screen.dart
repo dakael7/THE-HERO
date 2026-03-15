@@ -60,7 +60,7 @@ class PreviousOrdersScreen extends ConsumerWidget {
             data: (orders) {
               final completed = [...orders]
                 ..removeWhere((o) => !o.status.isCompleted)
-                ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                ..sort((a, b) => b.timestamps.createdAt.compareTo(a.timestamps.createdAt));
 
               if (completed.isEmpty) {
                 return const _EmptyState(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/common/hero_header_app_bar.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/weight_utils.dart';
 import 'cart_provider.dart';
@@ -20,36 +21,27 @@ class HeroCartScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: AppBar(
-        backgroundColor: primaryYellow,
-        foregroundColor: textGray900,
-        elevation: 0,
-        title: Row(
-          children: [
-            const Icon(Icons.shopping_bag_outlined, color: textGray900),
-            const SizedBox(width: 8),
-            const Text(
-              'Mi carrito',
-              style: TextStyle(fontWeight: FontWeight.w800),
+      appBar: HeroHeaderAppBar(
+        title: 'Mi carrito',
+        icon: Icons.shopping_bag_outlined,
+        actions: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: backgroundWhite,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: backgroundWhite,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '$totalItems artículo${totalItems == 1 ? '' : 's'}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: textGray900,
-                ),
+            child: Text(
+              '$totalItems artículo${totalItems == 1 ? '' : 's'}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: textGray900,
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: cartItems.isEmpty
           ? _buildEmptyState(context)

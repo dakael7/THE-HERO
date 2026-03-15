@@ -7,6 +7,7 @@ class AddressModel {
   final bool locationCheck;
   final String? countryCode;
   final String? unitIdentifier;
+  final String? postalCode;
   final String? name;
   final String? description;
 
@@ -16,6 +17,7 @@ class AddressModel {
     this.locationCheck = false,
     this.countryCode,
     this.unitIdentifier,
+    this.postalCode,
     this.name,
     this.description,
   });
@@ -47,6 +49,7 @@ class AddressModel {
       locationCheck: json['locationCheck'] as bool? ?? false,
       countryCode: json['countryCode'] as String?,
       unitIdentifier: json['unitIdentifier'] as String?,
+      postalCode: json['postalCode'] as String?,
       name: json['name'] as String?,
       description: json['description'] as String?,
     );
@@ -61,6 +64,7 @@ class AddressModel {
       'locationCheck': locationCheck,
       'countryCode': countryCode,
       'unitIdentifier': unitIdentifier,
+      'postalCode': postalCode,
       'name': name,
       'description': description,
     };
@@ -73,6 +77,7 @@ class AddressModel {
       locationCheck: locationCheck,
       countryCode: countryCode,
       unitIdentifier: unitIdentifier,
+      postalCode: postalCode,
       name: name,
       description: description,
     );
@@ -85,6 +90,7 @@ class AddressModel {
       locationCheck: entity.locationCheck,
       countryCode: entity.countryCode,
       unitIdentifier: entity.unitIdentifier,
+      postalCode: entity.postalCode,
       name: entity.name,
       description: entity.description,
     );

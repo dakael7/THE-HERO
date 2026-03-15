@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
 import 'package:latlong2/latlong.dart' as ll;
@@ -1200,17 +1201,84 @@ class _BottomPanel extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          deliveryAddressSnapshot.trim().isNotEmpty
-                              ? deliveryAddressSnapshot.trim()
-                              : order.delivery.addressSnapshot,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: textGray700,
-                            fontSize: 12,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                deliveryAddressSnapshot.trim().isNotEmpty
+                                    ? deliveryAddressSnapshot.trim()
+                                    : order.delivery.addressSnapshot,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: textGray700,
+                                  fontSize: 12,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              tooltip: 'Ver dirección',
+                              onPressed: () async {
+                                final address = (deliveryAddressSnapshot.trim().isNotEmpty
+                                        ? deliveryAddressSnapshot.trim()
+                                        : order.delivery.addressSnapshot)
+                                    .trim();
+                                if (address.isEmpty) return;
+
+                                final instructions =
+                                    order.delivery.instructions.trim();
+                                final full = instructions.isNotEmpty
+                                    ? '$address\n\nInstrucciones: $instructions'
+                                    : address;
+
+                                await showDialog<void>(
+                                  context: context,
+                                  builder: (ctx) {
+                                    return AlertDialog(
+                                      title: const Text('Dirección de entrega'),
+                                      content: Text(full),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () async {
+                                            await Clipboard.setData(
+                                              ClipboardData(text: full),
+                                            );
+                                            if (!ctx.mounted) return;
+                                            Navigator.of(ctx).pop();
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                content: Text('Dirección copiada al portapapeles'),
+                                                behavior: SnackBarBehavior.floating,
+                                              ),
+                                            );
+                                          },
+                                          child: const Text('Copiar'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => Navigator.of(ctx).pop(),
+                                          child: const Text('Cerrar'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                              },
+                              icon: const Icon(
+                                Icons.article_outlined,
+                                size: 18,
+                                color: Color(0xFF3B82F6),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

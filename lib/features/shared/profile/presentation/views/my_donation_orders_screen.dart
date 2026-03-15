@@ -71,12 +71,13 @@ class MyDonationOrdersScreen extends ConsumerWidget {
               }
 
               final sorted = [...filtered]
-                ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                ..sort((a, b) => b.timestamps.createdAt.compareTo(a.timestamps.createdAt));
 
               final active =
                   sorted.where((o) => !o.status.isCompleted).toList();
-              final completed =
-                  sorted.where((o) => o.status.isCompleted).toList();
+              final completed = [...orders]
+                ..removeWhere((o) => !o.status.isCompleted)
+                ..sort((a, b) => b.timestamps.createdAt.compareTo(a.timestamps.createdAt));
 
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -652,6 +653,7 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 22,
@@ -663,7 +665,8 @@ class _InfoRow extends StatelessWidget {
           child: Icon(icon, size: 12, color: iconColor),
         ),
         const SizedBox(width: 6),
-        Expanded(
+        Flexible(
+          fit: FlexFit.loose,
           child: Text(
             text,
             maxLines: 1,

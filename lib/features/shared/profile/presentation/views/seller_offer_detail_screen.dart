@@ -657,6 +657,14 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                               : categoryTextRed,
                         ),
                         _DetailTile(
+                          icon: Icons.person_pin_circle_outlined,
+                          label: 'Retiro en persona',
+                          value: offer.allowInPersonPickup ? 'Sí' : 'No',
+                          valueColor: offer.allowInPersonPickup
+                              ? categoryTextGreen
+                              : categoryTextRed,
+                        ),
+                        _DetailTile(
                           icon: Icons.check_circle_outline_rounded,
                           label: 'Buen estado',
                           value: _formatBool(offer.isInGoodState),

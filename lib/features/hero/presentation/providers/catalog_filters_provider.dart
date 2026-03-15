@@ -1,12 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 import '../../../../domain/entities/offer.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../offers/presentation/providers/offers_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
 /// Enum for sort options
-enum SortOption { newest, priceAsc, priceDesc, popular, topRated }
+enum SortOption { newest, popular, topRated }
+
+class CatalogPaginationNotifier extends Notifier<int> {
+  static const int _pageSize = 15;
+
+  @override
+  int build() => _pageSize;
+
+  void reset() => state = _pageSize;
+
+  void loadMore() => state = state + _pageSize;
+}
+
+// ✅ No autoDispose — matches the lifecycle of activeOffersProvider.
+final catalogPaginationProvider =
+    NotifierProvider<CatalogPaginationNotifier, int>(
+  CatalogPaginationNotifier.new,
+);
 
 /// Class to hold all catalog filter state
 class CatalogFilters {
@@ -35,20 +53,18 @@ class CatalogFilters {
   }) {
     return CatalogFilters(
       searchQuery: searchQuery ?? this.searchQuery,
-      selectedCategory: clearCategory
-          ? null
-          : (selectedCategory ?? this.selectedCategory),
+      selectedCategory:
+          clearCategory ? null : (selectedCategory ?? this.selectedCategory),
       minPrice: clearPriceRange ? null : (minPrice ?? this.minPrice),
       maxPrice: clearPriceRange ? null : (maxPrice ?? this.maxPrice),
       sortBy: sortBy ?? this.sortBy,
     );
   }
 
-  bool get hasActiveFilters {
-    return searchQuery.isNotEmpty ||
-        selectedCategory != null ||
-        sortBy != SortOption.newest;
-  }
+  bool get hasActiveFilters =>
+      searchQuery.isNotEmpty ||
+      selectedCategory != null ||
+      sortBy != SortOption.newest;
 
   int get activeFilterCount {
     int count = 0;
@@ -65,10 +81,12 @@ class CatalogFiltersNotifier extends Notifier<CatalogFilters> {
   CatalogFilters build() => const CatalogFilters();
 
   void setSearchQuery(String query) {
+    ref.read(catalogPaginationProvider.notifier).reset();
     state = state.copyWith(searchQuery: query);
   }
 
   void setCategory(String? category) {
+    ref.read(catalogPaginationProvider.notifier).reset();
     state = state.copyWith(
       selectedCategory: category,
       clearCategory: category == null,
@@ -76,6 +94,7 @@ class CatalogFiltersNotifier extends Notifier<CatalogFilters> {
   }
 
   void setPriceRange({double? min, double? max}) {
+    ref.read(catalogPaginationProvider.notifier).reset();
     state = state.copyWith(
       minPrice: min,
       maxPrice: max,
@@ -84,14 +103,17 @@ class CatalogFiltersNotifier extends Notifier<CatalogFilters> {
   }
 
   void setSortBy(SortOption sortBy) {
+    ref.read(catalogPaginationProvider.notifier).reset();
     state = state.copyWith(sortBy: sortBy);
   }
 
   void clearAllFilters() {
+    ref.read(catalogPaginationProvider.notifier).reset();
     state = const CatalogFilters();
   }
 
   void clearSearch() {
+    ref.read(catalogPaginationProvider.notifier).reset();
     state = state.copyWith(searchQuery: '');
   }
 }
@@ -99,12 +121,16 @@ class CatalogFiltersNotifier extends Notifier<CatalogFilters> {
 /// Provider for catalog filters
 final catalogFiltersProvider =
     NotifierProvider<CatalogFiltersNotifier, CatalogFilters>(
-      CatalogFiltersNotifier.new,
-    );
+  CatalogFiltersNotifier.new,
+);
+
+final _filteredOffersCacheProvider = StateProvider<List<Offer>?>((ref) => null);
 
 /// Provider that applies filters to offers
 final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
-  final offersAsync = ref.watch(activeOffersProvider(OffersFilter()));
+  final limit = ref.watch(catalogPaginationProvider);
+  final offersAsync =
+      ref.watch(activeOffersProvider(OffersFilter(limit: limit)));
   final filters = ref.watch(catalogFiltersProvider);
 
   final authUid = ref.watch(firebaseAuthUserProvider).value?.uid;
@@ -115,62 +141,40 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
 
   final currentUserId = authUid ?? profileUserId;
 
-  return offersAsync.whenData((offers) {
+  List<Offer> applyFilters(List<Offer> offers) {
     var filtered = offers.where((offer) {
       if (currentUserId != null && offer.heroId == currentUserId) {
         return false;
       }
 
-      // Text search - require at least 2 characters
       if (filters.searchQuery.isNotEmpty) {
         final query = filters.searchQuery.toLowerCase().trim();
-
-        // Ignore searches with less than 2 characters
-        if (query.length < 2) {
-          return true; // Show all if query is too short
-        }
+        if (query.length < 2) return true;
 
         final title = offer.title.toLowerCase();
         final description = offer.description.toLowerCase();
         final category = offer.category.toLowerCase();
-
-        // Check if query matches as a word or substring
-        final matchesTitle = title.contains(query);
-        final matchesDescription = description.contains(query);
-        final matchesCategory = category.contains(query);
-
-        // Also check searchKeywords if available
         final matchesKeywords = offer.searchKeywords.any(
           (keyword) => keyword.toLowerCase().contains(query),
         );
 
-        if (!matchesTitle &&
-            !matchesDescription &&
-            !matchesCategory &&
+        if (!title.contains(query) &&
+            !description.contains(query) &&
+            !category.contains(query) &&
             !matchesKeywords) {
           return false;
         }
       }
 
-      // Category filter
       if (filters.selectedCategory != null) {
-        if (offer.category != filters.selectedCategory) {
-          return false;
-        }
+        if (offer.category != filters.selectedCategory) return false;
       }
 
       return true;
     }).toList();
 
-    // Apply sorting
     switch (filters.sortBy) {
       case SortOption.newest:
-        filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        break;
-      case SortOption.priceAsc:
-        filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        break;
-      case SortOption.priceDesc:
         filtered.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         break;
       case SortOption.popular:
@@ -178,7 +182,6 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
         break;
       case SortOption.topRated:
         filtered.sort((a, b) {
-          // Sort by rating, then by rating count
           if (a.avgRating != b.avgRating) {
             return b.avgRating.compareTo(a.avgRating);
           }
@@ -188,7 +191,27 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
     }
 
     return filtered;
-  });
+  }
+
+  final cached = ref.watch(_filteredOffersCacheProvider);
+
+  return offersAsync.when(
+    data: (offers) {
+      final result = applyFilters(offers);
+      Future.microtask(() {
+        ref.read(_filteredOffersCacheProvider.notifier).state = result;
+      });
+      return AsyncData(result);
+    },
+    loading: () {
+      if (cached != null) return AsyncData(cached);
+      return const AsyncLoading();
+    },
+    error: (error, stack) {
+      if (cached != null) return AsyncData(cached);
+      return AsyncError(error, stack);
+    },
+  );
 });
 
 /// Helper extension for sort option display names
@@ -197,10 +220,6 @@ extension SortOptionExtension on SortOption {
     switch (this) {
       case SortOption.newest:
         return 'Más recientes';
-      case SortOption.priceAsc:
-        return 'Precio: menor a mayor';
-      case SortOption.priceDesc:
-        return 'Precio: mayor a menor';
       case SortOption.popular:
         return 'Más populares';
       case SortOption.topRated:
@@ -212,10 +231,6 @@ extension SortOptionExtension on SortOption {
     switch (this) {
       case SortOption.newest:
         return Icons.access_time;
-      case SortOption.priceAsc:
-        return Icons.arrow_upward;
-      case SortOption.priceDesc:
-        return Icons.arrow_downward;
       case SortOption.popular:
         return Icons.trending_up;
       case SortOption.topRated:

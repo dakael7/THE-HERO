@@ -37,13 +37,11 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
   };
 
   final Map<AddressSlot, TextEditingController> _nameControllers = {};
-  final Map<AddressSlot, TextEditingController> _descriptionControllers = {};
   final Map<AddressSlot, TextEditingController> _unitControllers = {};
+  final Map<AddressSlot, TextEditingController> _postalCodeControllers = {};
 
-  late final AnimationController _fadeController;
   late final AnimationController _saveButtonController;
-  late final Animation<double> _fadeAnimation;
-  late final Animation<double> _saveButtonScale;
+  AnimationController? _fadeInController;
 
   AddressSlot _primarySlot = AddressSlot.one;
   bool _isSaving = false;
@@ -53,15 +51,6 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
   void initState() {
     super.initState();
 
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeOut,
-    );
-
     _saveButtonController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 120),
@@ -69,12 +58,16 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
       upperBound: 1.0,
       value: 1.0,
     );
-    _saveButtonScale = _saveButtonController;
+
+    _fadeInController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..value = 1.0;
 
     for (final s in AddressSlot.values) {
       _nameControllers[s] = TextEditingController();
-      _descriptionControllers[s] = TextEditingController();
       _unitControllers[s] = TextEditingController();
+      _postalCodeControllers[s] = TextEditingController();
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -84,15 +77,15 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
 
   @override
   void dispose() {
-    _fadeController.dispose();
     _saveButtonController.dispose();
+    _fadeInController?.dispose();
     for (final c in _nameControllers.values) {
       c.dispose();
     }
-    for (final c in _descriptionControllers.values) {
+    for (final c in _unitControllers.values) {
       c.dispose();
     }
-    for (final c in _unitControllers.values) {
+    for (final c in _postalCodeControllers.values) {
       c.dispose();
     }
     super.dispose();
@@ -133,10 +126,10 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
             countryCode: cc,
           );
           _nameControllers[s]?.text = (m['name']?.toString() ?? '').trim();
-          _descriptionControllers[s]?.text =
-              (m['description']?.toString() ?? '').trim();
           _unitControllers[s]?.text =
               (m['unitIdentifier']?.toString() ?? '').trim();
+          _postalCodeControllers[s]?.text =
+              (m['postalCode']?.toString() ?? '').trim();
           updated = true;
         }
 
@@ -148,7 +141,6 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
         }
 
         if (updated && mounted) setState(() {});
-        _fadeController.forward();
         return;
       }
 
@@ -172,15 +164,14 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
             countryCode: cc,
           );
           _nameControllers[s]?.text = (m['name']?.toString() ?? '').trim();
-          _descriptionControllers[s]?.text =
-              (m['description']?.toString() ?? '').trim();
           _unitControllers[s]?.text =
               (m['unitIdentifier']?.toString() ?? '').trim();
+          _postalCodeControllers[s]?.text =
+              (m['postalCode']?.toString() ?? '').trim();
           updated = true;
         }
 
         if (updated && mounted) setState(() {});
-        _fadeController.forward();
         return;
       }
 
@@ -202,17 +193,18 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
         );
         _nameControllers[AddressSlot.one]?.text =
             (m['name']?.toString() ?? '').trim();
-        _descriptionControllers[AddressSlot.one]?.text =
-            (m['description']?.toString() ?? '').trim();
         _unitControllers[AddressSlot.one]?.text =
             (m['unitIdentifier']?.toString() ?? '').trim();
+        _postalCodeControllers[AddressSlot.one]?.text =
+            (m['postalCode']?.toString() ?? '').trim();
 
         if (mounted) setState(() {});
       }
-
-      _fadeController.forward();
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _fadeInController?.forward(from: 0.0);
+      }
     }
   }
 
@@ -253,17 +245,27 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
     }
   }
 
+  bool _isSlotEmpty(AddressSlot s) {
+    final loc = _slotLocations[s];
+    final name = (_nameControllers[s]?.text ?? '').trim();
+    final unit = (_unitControllers[s]?.text ?? '').trim();
+    final postal = (_postalCodeControllers[s]?.text ?? '').trim();
+    final hasAddress = (loc?.address ?? '').trim().isNotEmpty;
+    final hasCoords = loc?.lat != null && loc?.lng != null;
+    return !hasAddress && !hasCoords && name.isEmpty && unit.isEmpty && postal.isEmpty;
+  }
+
   bool _isComplete(AddressSlot s) {
     final loc = _slotLocations[s];
     final name = (_nameControllers[s]?.text ?? '').trim();
-    final desc = (_descriptionControllers[s]?.text ?? '').trim();
     final unit = (_unitControllers[s]?.text ?? '').trim();
+    final postal = (_postalCodeControllers[s]?.text ?? '').trim();
     return (loc?.address ?? '').trim().isNotEmpty &&
         loc?.lat != null &&
         loc?.lng != null &&
         name.isNotEmpty &&
-        desc.isNotEmpty &&
-        unit.isNotEmpty;
+        unit.isNotEmpty &&
+        postal.isNotEmpty;
   }
 
   void _showSnackBar({
@@ -275,14 +277,22 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
       SnackBar(
         content: Row(
           children: [
-            Icon(icon, color: Colors.white, size: 18),
-            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(icon, color: Colors.white, size: 16),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 message,
                 style: const TextStyle(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                   fontSize: 13,
+                  letterSpacing: 0.1,
                 ),
               ),
             ),
@@ -290,8 +300,9 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
         ),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+        elevation: 8,
       ),
     );
   }
@@ -299,10 +310,23 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
   Future<void> _saveAddress() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final allComplete = AddressSlot.values.every(_isComplete);
-    if (!allComplete) {
+    final startedSlots = AddressSlot.values.where((s) => !_isSlotEmpty(s));
+    if (startedSlots.isEmpty) {
       _showSnackBar(
-        message: 'Completa las 3 direcciones para continuar',
+        message: 'No hay direcciones para guardar',
+        icon: Icons.warning_amber_rounded,
+        color: categoryTextYellow,
+      );
+      return;
+    }
+
+    final firstIncomplete = startedSlots.cast<AddressSlot?>().firstWhere(
+          (s) => s != null && !_isComplete(s),
+          orElse: () => null,
+        );
+    if (firstIncomplete != null) {
+      _showSnackBar(
+        message: 'Completa ${firstIncomplete.displayName} para guardar',
         icon: Icons.warning_amber_rounded,
         color: categoryTextYellow,
       );
@@ -326,32 +350,38 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
           'longitude': loc.lng,
           'countryCode': loc.countryCode,
           'unitIdentifier': (_unitControllers[s]?.text ?? '').trim(),
+          'postalCode': (_postalCodeControllers[s]?.text ?? '').trim(),
           'name': (_nameControllers[s]?.text ?? '').trim(),
-          'description': (_descriptionControllers[s]?.text ?? '').trim(),
         };
       }
 
+      final completeSlots = startedSlots.toList();
+      AddressSlot primarySlot = _primarySlot;
+      if (!completeSlots.contains(primarySlot)) {
+        primarySlot = completeSlots.first;
+      }
+
       final addressSlots = <String, dynamic>{
-        for (final s in AddressSlot.values) s.jsonValue: slotToJson(s),
+        for (final s in completeSlots) s.jsonValue: slotToJson(s),
       };
 
-      final primaryLoc = _slotLocations[_primarySlot]!;
-      final primaryUnit = (_unitControllers[_primarySlot]?.text ?? '').trim();
-      final primaryName = (_nameControllers[_primarySlot]?.text ?? '').trim();
-      final primaryDesc =
-          (_descriptionControllers[_primarySlot]?.text ?? '').trim();
+      final primaryLoc = _slotLocations[primarySlot]!;
+      final primaryUnit = (_unitControllers[primarySlot]?.text ?? '').trim();
+      final primaryPostal =
+          (_postalCodeControllers[primarySlot]?.text ?? '').trim();
+      final primaryName = (_nameControllers[primarySlot]?.text ?? '').trim();
 
       await FirebaseFirestore.instance.collection('users').doc(user.id).set({
         'addressSlots': addressSlots,
-        'primaryAddressSlot': _primarySlot.jsonValue,
+        'primaryAddressSlot': primarySlot.jsonValue,
         'address': {
           'fullAddress': primaryLoc.address,
           'latitude': primaryLoc.lat,
           'longitude': primaryLoc.lng,
           'countryCode': primaryLoc.countryCode,
           'unitIdentifier': primaryUnit,
+          'postalCode': primaryPostal,
           'name': primaryName,
-          'description': primaryDesc,
         },
       }, SetOptions(merge: true));
 
@@ -359,7 +389,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
 
       if (mounted) {
         _showSnackBar(
-          message: 'Direcciones guardadas exitosamente',
+          message: 'Dirección guardada exitosamente',
           icon: Icons.check_circle_rounded,
           color: categoryTextGreen,
         );
@@ -373,15 +403,13 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
 
   @override
   Widget build(BuildContext context) {
-    final primaryEntry = _slotLocations[_primarySlot];
-    final hasPrimary = (primaryEntry?.address ?? '').trim().isNotEmpty;
     final completedCount = AddressSlot.values.where(_isComplete).length;
-    final progress = completedCount / AddressSlot.values.length;
+    final totalSlots = AddressSlot.values.length;
 
     return Scaffold(
       backgroundColor: backgroundGray50,
       appBar: HeroHeaderAppBar(
-        title: 'Mi Dirección',
+        title: 'Mis Direcciones',
         icon: Icons.location_on_rounded,
         onBack: () {
           if (Navigator.of(context).canPop()) {
@@ -390,20 +418,32 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
         },
         actions: [
           if (completedCount > 0)
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: textGray900,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Text(
-                '$completedCount/3',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: primaryYellow,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    size: 11,
+                    color: primaryYellow,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$completedCount/$totalSlots',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: primaryYellow,
+                    ),
+                  ),
+                ],
               ),
             ),
           const SizedBox(width: 8),
@@ -412,471 +452,248 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
       body: SafeArea(
         child: Form(
           key: _formKey,
-          child: ListView(
-            padding: EdgeInsets.zero,
+          child: Column(
             children: [
-              // ── Banner informativo ──────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: _InfoBanner(
-                  completedCount: completedCount,
-                  progress: progress,
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // ── Sección header ──────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 4,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: primaryOrange,
-                        borderRadius: BorderRadius.circular(2),
+              if (!_isLoading) _ProgressHeader(completedCount: completedCount),
+              Expanded(
+                child: _isLoading
+                    ? const _LoadingState()
+                    : FadeTransition(
+                        opacity: _fadeInController ?? const AlwaysStoppedAnimation(1.0),
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                          children: [
+                            for (final slot in AddressSlot.values) ...[
+                              _SlotAddressCard(
+                                slot: slot,
+                                slotIndex: AddressSlot.values.indexOf(slot),
+                                location: _slotLocations[slot],
+                                nameController: _nameControllers[slot]!,
+                                unitController: _unitControllers[slot]!,
+                                postalCodeController: _postalCodeControllers[slot]!,
+                                isPrimary: _primarySlot == slot,
+                                isLoading: _isLoading,
+                                isComplete: _isComplete(slot),
+                                onTapMap: () => _openMapPickerForSlot(slot),
+                                onSelectPrimary: () =>
+                                    setState(() => _primarySlot = slot),
+                              ),
+                              if (slot != AddressSlot.values.last)
+                                const SizedBox(height: 12),
+                            ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Icon(
-                      Icons.location_on_rounded,
-                      size: 18,
-                      color: primaryOrange,
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Mis Direcciones',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        color: textGray900,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '$completedCount de 3 completadas',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: textGray600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // ── Cards de dirección ──────────────────────────────────────
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40),
-                  child: Center(
-                    child: _LoadingIndicator(),
-                  ),
-                )
-              else
-                FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      children: [
-                        for (final slot in AddressSlot.values) ...[
-                          _SlotAddressCard(
-                            slot: slot,
-                            location: _slotLocations[slot],
-                            nameController: _nameControllers[slot]!,
-                            descriptionController:
-                                _descriptionControllers[slot]!,
-                            unitController: _unitControllers[slot]!,
-                            isPrimary: _primarySlot == slot,
-                            isLoading: _isLoading,
-                            onTapMap: () => _openMapPickerForSlot(slot),
-                            onSelectPrimary: () =>
-                                setState(() => _primarySlot = slot),
-                          ),
-                          if (slot != AddressSlot.values.last)
-                            const SizedBox(height: 12),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-
-              // ── Dirección principal ─────────────────────────────────────
-              if (hasPrimary && !_isLoading) ...[
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _PrimaryAddressCard(
-                    primarySlot: _primarySlot,
-                    address: primaryEntry?.address ?? '',
-                  ),
-                ),
-              ],
-
-              // ── Botón guardar ───────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
-                child: ScaleTransition(
-                  scale: _saveButtonScale,
-                  child: _SaveButton(
-                    isSaving: _isSaving,
-                    isLoading: _isLoading,
-                    onTap: (_isSaving || _isLoading) ? null : _saveAddress,
-                  ),
-                ),
               ),
             ],
           ),
         ),
       ),
+      bottomNavigationBar: _isLoading
+          ? null
+          : _SaveButton(
+              isSaving: _isSaving,
+              onPressed:
+                  (_isSaving || _isLoading) ? null : () => _saveAddress(),
+            ),
     );
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Widgets auxiliares privados
-// ────────────────────────────────────────────────────────────────────────────
+// ─── Progress Header ──────────────────────────────────────────────────────────
 
-class _LoadingIndicator extends StatelessWidget {
-  const _LoadingIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const SizedBox(
-          width: 32,
-          height: 32,
-          child: CircularProgressIndicator(
-            color: primaryOrange,
-            strokeWidth: 2.5,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Cargando tus direcciones...',
-          style: TextStyle(
-            fontSize: 13,
-            color: textGray600,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _InfoBanner extends StatelessWidget {
-  const _InfoBanner({
-    required this.completedCount,
-    required this.progress,
-  });
+class _ProgressHeader extends StatelessWidget {
+  const _ProgressHeader({required this.completedCount});
 
   final int completedCount;
-  final double progress;
 
   @override
   Widget build(BuildContext context) {
+    final progress = completedCount / 3.0;
+    final labels = ['Sin guardar', '1 guardada', '2 guardadas', 'Completo'];
+
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: backgroundWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderGray100),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      color: backgroundWhite,
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: primaryYellow,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.star_rounded,
-                  color: textGray900,
-                  size: 20,
+              Text(
+                labels[completedCount.clamp(0, 3)],
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: completedCount == 3 ? categoryTextGreen : textGray600,
+                  letterSpacing: 0.2,
                 ),
               ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Configura tu dirección',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                        color: textGray900,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Completa las 3 direcciones. Marca una como principal para usarla por defecto.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: textGray600,
-                        height: 1.4,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+              Text(
+                '$completedCount de 3 direcciones',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: textGray600,
                 ),
               ),
             ],
           ),
-          if (completedCount > 0) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: completedCount / 3,
-                      minHeight: 6,
-                      backgroundColor: borderGray100,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        completedCount == 3
-                            ? categoryTextGreen
-                            : primaryOrange,
-                      ),
-                    ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: progress),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, _) {
+                return LinearProgressIndicator(
+                  value: value,
+                  minHeight: 6,
+                  backgroundColor: borderGray100,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    completedCount == 3 ? categoryTextGreen : primaryOrange,
                   ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  '$completedCount/3',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: completedCount == 3
-                        ? categoryTextGreen
-                        : primaryOrange,
-                  ),
-                ),
-              ],
+                );
+              },
             ),
-          ],
+          ),
         ],
       ),
     );
   }
 }
 
-class _PrimaryAddressCard extends StatelessWidget {
-  const _PrimaryAddressCard({
-    required this.primarySlot,
-    required this.address,
-  });
+// ─── Loading State ────────────────────────────────────────────────────────────
 
-  final AddressSlot primarySlot;
-  final String address;
+class _LoadingState extends StatelessWidget {
+  const _LoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: primaryOrange.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
+                color: primaryOrange,
+                strokeWidth: 2.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Cargando tus direcciones...',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: textGray600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Save Button ──────────────────────────────────────────────────────────────
+
+class _SaveButton extends StatelessWidget {
+  const _SaveButton({required this.isSaving, required this.onPressed});
+
+  final bool isSaving;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            primaryOrange.withValues(alpha: 0.08),
-            categoryBgYellow,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: primaryOrange.withValues(alpha: 0.3),
-        ),
+        color: backgroundWhite,
         boxShadow: [
           BoxShadow(
-            color: primaryOrange.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: primaryOrange,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.star_rounded,
-              color: Colors.white,
-              size: 20,
-            ),
+      padding: EdgeInsets.fromLTRB(
+          16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primaryOrange,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: primaryOrange.withValues(alpha: 0.5),
+          minimumSize: const Size.fromHeight(56),
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      'Dirección principal',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: textGray600,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: primaryOrange,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        primarySlot.displayName,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  address,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: textGray900,
-                    height: 1.4,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SaveButton extends StatelessWidget {
-  const _SaveButton({
-    required this.isSaving,
-    required this.isLoading,
-    required this.onTap,
-  });
-
-  final bool isSaving;
-  final bool isLoading;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final disabled = isSaving || isLoading;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: double.infinity,
-        height: 56,
-        decoration: BoxDecoration(
-          color: disabled
-              ? primaryOrange.withValues(alpha: 0.55)
-              : primaryOrange,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: disabled
-              ? []
-              : [
-                  BoxShadow(
-                    color: primaryOrange.withValues(alpha: 0.38),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                    spreadRadius: -2,
-                  ),
-                ],
         ),
-        child: isSaving
-            ? const Center(
-                child: SizedBox(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: isSaving
+              ? const SizedBox(
+                  key: ValueKey('loading'),
                   width: 22,
                   height: 22,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
                     color: Colors.white,
                   ),
-                ),
-              )
-            : const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.save_rounded, color: Colors.white, size: 20),
-                  SizedBox(width: 10),
-                  Text(
-                    'Guardar Direcciones',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      letterSpacing: 0.2,
+                )
+              : const Row(
+                  key: ValueKey('idle'),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.save_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'Guardar Direcciones',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.3,
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+        ),
       ),
     );
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// _SlotAddressCard
-// ────────────────────────────────────────────────────────────────────────────
+// ─── Slot Address Card ────────────────────────────────────────────────────────
 
 class _SlotAddressCard extends StatelessWidget {
   const _SlotAddressCard({
     required this.slot,
+    required this.slotIndex,
     required this.location,
     required this.nameController,
-    required this.descriptionController,
     required this.unitController,
+    required this.postalCodeController,
     required this.isPrimary,
     required this.isLoading,
+    required this.isComplete,
     required this.onTapMap,
     required this.onSelectPrimary,
   });
 
   final AddressSlot slot;
+  final int slotIndex;
   final ({
     String? address,
     double? lat,
@@ -884,294 +701,346 @@ class _SlotAddressCard extends StatelessWidget {
     String? countryCode,
   })? location;
   final TextEditingController nameController;
-  final TextEditingController descriptionController;
   final TextEditingController unitController;
+  final TextEditingController postalCodeController;
   final bool isPrimary;
   final bool isLoading;
+  final bool isComplete;
   final VoidCallback onTapMap;
   final VoidCallback onSelectPrimary;
 
   bool get _hasAddress => (location?.address ?? '').trim().isNotEmpty;
-  bool get _hasCoords =>
-      location?.lat != null && location?.lng != null;
+  bool get _hasCoords => location?.lat != null && location?.lng != null;
+
+  bool get _isStarted =>
+      nameController.text.trim().isNotEmpty ||
+      unitController.text.trim().isNotEmpty ||
+      postalCodeController.text.trim().isNotEmpty ||
+      _hasAddress ||
+      _hasCoords;
 
   @override
   Widget build(BuildContext context) {
+    const accentColor = primaryOrange;
+    const slotIcon = Icons.location_on_rounded;
+
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
       decoration: BoxDecoration(
-        color: isPrimary ? categoryBgYellow : backgroundWhite,
-        borderRadius: BorderRadius.circular(18),
+        color: backgroundWhite,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isPrimary ? primaryOrange : borderGray100,
+          color: isPrimary
+              ? primaryOrange
+              : isComplete
+                  ? categoryTextGreen.withValues(alpha: 0.4)
+                  : borderGray100,
           width: isPrimary ? 2 : 1,
         ),
-        boxShadow: isPrimary
-            ? [
-                BoxShadow(
-                  color: primaryOrange.withValues(alpha: 0.14),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
+        boxShadow: [
+          BoxShadow(
+            color: isPrimary
+                ? primaryOrange.withValues(alpha: 0.10)
+                : Colors.black.withValues(alpha: 0.04),
+            blurRadius: isPrimary ? 16 : 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Header de la card ────────────────────────────────────────
-            Row(
+      child: Column(
+        children: [
+          _CardHeader(
+            slot: slot,
+            slotIcon: slotIcon,
+            accentColor: accentColor,
+            isPrimary: isPrimary,
+            isComplete: isComplete,
+            hasAddress: _hasAddress,
+            onSelectPrimary: onSelectPrimary,
+            isLoading: isLoading,
+          ),
+          Container(
+            height: 1,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            color: borderGray100,
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: isPrimary
-                        ? primaryOrange
-                        : primaryOrange.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.location_on_rounded,
-                    color: isPrimary ? Colors.white : primaryOrange,
-                    size: 20,
-                  ),
+                _FormField(
+                  controller: nameController,
+                  label: 'Nombre de la dirección',
+                  icon: Icons.label_outline_rounded,
+                  enabled: !isLoading,
+                  validator: (v) {
+                    if (!_isStarted) return null;
+                    if (v == null || v.trim().isEmpty)
+                      return 'Ingresa un nombre';
+                    return null;
+                  },
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        slot.displayName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                          color: textGray900,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      if (_hasAddress)
-                        Text(
-                          location!.address!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: textGray600,
-                          ),
-                        ),
-                    ],
-                  ),
+                const SizedBox(height: 10),
+                _FormField(
+                  controller: unitController,
+                  label: 'Dpto. / Casa / Oficina / Condominio',
+                  hint: 'Ejm. Casa 3, Dpto 101',
+                  icon: Icons.door_front_door_outlined,
+                  enabled: !isLoading,
+                  validator: (v) {
+                    if (!_isStarted) return null;
+                    if (v == null || v.trim().isEmpty)
+                      return 'Completa este campo';
+                    return null;
+                  },
                 ),
-                const SizedBox(width: 8),
-                // Badge de estado
-                _StatusBadge(
-                  isPrimary: isPrimary,
+                const SizedBox(height: 10),
+                _FormField(
+                  controller: postalCodeController,
+                  label: 'Código Postal',
+                  hint: 'Ej: 7500000',
+                  icon: Icons.local_post_office_outlined,
+                  enabled: !isLoading,
+                  validator: (v) {
+                    if (!_isStarted) return null;
+                    if (v == null || v.trim().isEmpty)
+                      return 'Completa este campo';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                _MapPickerButton(
                   hasAddress: _hasAddress,
+                  address: location?.address,
+                  hasCoords: _hasCoords,
+                  isStarted: _isStarted,
+                  isLoading: isLoading,
+                  onTap: onTapMap,
                 ),
               ],
             ),
-
-            const SizedBox(height: 14),
-            const Divider(height: 1, color: borderGray100),
-            const SizedBox(height: 14),
-
-            // ── Campos del formulario ────────────────────────────────────
-            _FormField(
-              controller: nameController,
-              label: 'Nombre',
-              icon: Icons.label_outline_rounded,
-              enabled: !isLoading,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Ingresa un nombre' : null,
-            ),
-            const SizedBox(height: 10),
-            _FormField(
-              controller: descriptionController,
-              label: 'Descripción',
-              icon: Icons.notes_rounded,
-              enabled: !isLoading,
-              validator: (v) => (v == null || v.trim().isEmpty)
-                  ? 'Ingresa una descripción'
-                  : null,
-            ),
-            const SizedBox(height: 10),
-            _FormField(
-              controller: unitController,
-              label: 'Dpto. / Casa / Oficina / Condominio',
-              hint: 'Ejm. Casa 3, Dpto 101',
-              icon: Icons.door_front_door_outlined,
-              enabled: !isLoading,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Completa este campo' : null,
-            ),
-
-            const SizedBox(height: 12),
-
-            // ── Selector de mapa ─────────────────────────────────────────
-            GestureDetector(
-              onTap: isLoading ? null : onTapMap,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: _hasAddress
-                      ? backgroundGray50
-                      : primaryOrange.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _hasAddress ? borderGray100 : primaryOrange,
-                    width: _hasAddress ? 1 : 1.5,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: _hasAddress
-                            ? borderGray100
-                            : primaryOrange.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        _hasAddress
-                            ? Icons.edit_location_alt_rounded
-                            : Icons.map_rounded,
-                        size: 16,
-                        color: primaryOrange,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _hasAddress
-                            ? (location!.address ?? '')
-                            : 'Seleccionar ubicación en el mapa',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: _hasAddress ? textGray900 : primaryOrange,
-                          height: 1.3,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      size: 18,
-                      color: _hasAddress ? textGray600 : primaryOrange,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // ── Aviso si falta ubicación ─────────────────────────────────
-            if (!_hasAddress || !_hasCoords)
-              const Padding(
-                padding: EdgeInsets.only(top: 7),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline_rounded,
-                      size: 13,
-                      color: categoryTextRed,
-                    ),
-                    SizedBox(width: 5),
-                    Text(
-                      'Selecciona la ubicación en el mapa',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: categoryTextRed,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 14),
-            const Divider(height: 1, color: borderGray100),
-            const SizedBox(height: 12),
-
-            // ── Selector de principal ────────────────────────────────────
-            GestureDetector(
-              onTap: isLoading ? null : onSelectPrimary,
-              behavior: HitTestBehavior.opaque,
-              child: Row(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isPrimary ? primaryOrange : textGray600,
-                        width: 2,
-                      ),
-                      color: isPrimary
-                          ? primaryOrange.withValues(alpha: 0.08)
-                          : Colors.transparent,
-                    ),
-                    child: isPrimary
-                        ? const Center(
-                            child: CircleAvatar(
-                              radius: 5,
-                              backgroundColor: primaryOrange,
-                            ),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 10),
-                  AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 200),
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight:
-                          isPrimary ? FontWeight.w800 : FontWeight.w600,
-                      color: isPrimary ? primaryOrange : textGray600,
-                    ),
-                    child: const Text('Usar como dirección principal'),
-                  ),
-                  if (isPrimary) ...[
-                    const SizedBox(width: 6),
-                    const Icon(
-                      Icons.star_rounded,
-                      size: 15,
-                      color: primaryOrange,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Micro-widgets reutilizables
-// ────────────────────────────────────────────────────────────────────────────
+// ─── Card Header ──────────────────────────────────────────────────────────────
+
+class _CardHeader extends StatelessWidget {
+  const _CardHeader({
+    required this.slot,
+    required this.slotIcon,
+    required this.accentColor,
+    required this.isPrimary,
+    required this.isComplete,
+    required this.hasAddress,
+    required this.onSelectPrimary,
+    required this.isLoading,
+  });
+
+  final AddressSlot slot;
+  final IconData slotIcon;
+  final Color accentColor;
+  final bool isPrimary;
+  final bool isComplete;
+  final bool hasAddress;
+  final VoidCallback onSelectPrimary;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isPrimary
+                  ? primaryOrange.withValues(alpha: 0.12)
+                  : accentColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              slotIcon,
+              size: 20,
+              color: isPrimary ? primaryOrange : accentColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  slot.displayName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    color: textGray900,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                if (isPrimary)
+                  const Text(
+                    'Dirección principal activa',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: primaryOrange,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              _StatusBadge(isPrimary: isPrimary, hasAddress: hasAddress),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: isLoading ? null : onSelectPrimary,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      isPrimary
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      key: ValueKey(isPrimary),
+                      color: isPrimary ? primaryOrange : textGray600,
+                      size: 22,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Map Picker Button ────────────────────────────────────────────────────────
+
+class _MapPickerButton extends StatelessWidget {
+  const _MapPickerButton({
+    required this.hasAddress,
+    required this.address,
+    required this.hasCoords,
+    required this.isStarted,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  final bool hasAddress;
+  final String? address;
+  final bool hasCoords;
+  final bool isStarted;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: isLoading ? null : onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: hasAddress
+                  ? backgroundGray50
+                  : primaryOrange.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: hasAddress ? borderGray100 : primaryOrange,
+                width: hasAddress ? 1 : 1.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: hasAddress
+                        ? borderGray100
+                        : primaryOrange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    hasAddress
+                        ? Icons.place_rounded
+                        : Icons.add_location_alt_rounded,
+                    size: 16,
+                    color: hasAddress ? textGray600 : primaryOrange,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    hasAddress
+                        ? (address ?? '')
+                        : 'Seleccionar ubicación en el mapa',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: hasAddress ? textGray900 : primaryOrange,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: hasAddress ? textGray600 : primaryOrange,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (isStarted && (!hasAddress || !hasCoords))
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 4),
+            child: Row(
+              children: const [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 12,
+                  color: categoryTextRed,
+                ),
+                SizedBox(width: 4),
+                Text(
+                  'Selecciona la ubicación en el mapa',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: categoryTextRed,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ─── Status Badge ─────────────────────────────────────────────────────────────
 
 class _StatusBadge extends StatelessWidget {
   const _StatusBadge({
@@ -1186,25 +1055,34 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     if (isPrimary) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: primaryOrange,
+          gradient: const LinearGradient(
+            colors: [primaryOrange, Color(0xFFFF8C42)],
+          ),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Text(
-          'Principal',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.star_rounded, size: 11, color: Colors.white),
+            SizedBox(width: 3),
+            Text(
+              'Principal',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+          ],
         ),
       );
     }
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: hasAddress ? categoryBgGreen : backgroundGray50,
         borderRadius: BorderRadius.circular(8),
@@ -1221,7 +1099,7 @@ class _StatusBadge extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Text(
-            hasAddress ? 'Ubicación OK' : 'Sin ubicación',
+            hasAddress ? 'OK' : 'Vacío',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -1233,6 +1111,8 @@ class _StatusBadge extends StatelessWidget {
     );
   }
 }
+
+// ─── Form Field ───────────────────────────────────────────────────────────────
 
 class _FormField extends StatelessWidget {
   const _FormField({
@@ -1264,16 +1144,25 @@ class _FormField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        prefixIcon: Icon(icon, size: 18, color: textGray600),
+        prefixIcon: Padding(
+          padding: const EdgeInsets.only(left: 12, right: 8),
+          child: Icon(icon, size: 18, color: textGray600),
+        ),
+        prefixIconConstraints: const BoxConstraints(minWidth: 44),
         labelStyle: const TextStyle(
           fontSize: 13,
           color: textGray600,
           fontWeight: FontWeight.w500,
         ),
+        hintStyle: TextStyle(
+          fontSize: 12,
+          color: textGray600.withValues(alpha: 0.6),
+          fontWeight: FontWeight.w400,
+        ),
         filled: true,
         fillColor: backgroundGray50,
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: borderGray100),

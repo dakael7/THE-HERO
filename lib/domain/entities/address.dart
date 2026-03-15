@@ -56,6 +56,7 @@ class Address {
   final bool locationCheck; 
   final String? countryCode;
   final String? unitIdentifier;
+  final String? postalCode;
   final String? name;
   final String? description;
 
@@ -65,6 +66,7 @@ class Address {
     this.locationCheck = false,
     this.countryCode,
     this.unitIdentifier,
+    this.postalCode,
     this.name,
     this.description,
   });
@@ -90,6 +92,7 @@ class Address {
     bool? locationCheck,
     String? countryCode,
     String? unitIdentifier,
+    String? postalCode,
     String? name,
     String? description,
   }) {
@@ -99,6 +102,7 @@ class Address {
       locationCheck: locationCheck ?? this.locationCheck,
       countryCode: countryCode ?? this.countryCode,
       unitIdentifier: unitIdentifier ?? this.unitIdentifier,
+      postalCode: postalCode ?? this.postalCode,
       name: name ?? this.name,
       description: description ?? this.description,
     );
@@ -113,6 +117,7 @@ class Address {
         other.locationCheck == locationCheck &&
         other.countryCode == countryCode &&
         other.unitIdentifier == unitIdentifier &&
+        other.postalCode == postalCode &&
         other.name == name &&
         other.description == description;
   }
@@ -124,6 +129,7 @@ class Address {
         locationCheck,
         countryCode,
         unitIdentifier,
+        postalCode,
         name,
         description,
       );

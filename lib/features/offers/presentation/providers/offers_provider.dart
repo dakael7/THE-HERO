@@ -7,8 +7,9 @@ final myOffersProvider = StreamProvider.family<List<Offer>, String>((ref, heroId
   return useCase.execute(heroId);
 });
 
-final activeOffersProvider = StreamProvider.autoDispose
-    .family<List<Offer>, OffersFilter>((ref, filter) {
+
+final activeOffersProvider =
+    StreamProvider.family<List<Offer>, OffersFilter>((ref, filter) {
   final useCase = ref.read(getActiveOffersUseCaseProvider);
   return useCase.execute(
     category: filter.category,

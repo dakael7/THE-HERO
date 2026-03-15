@@ -6,14 +6,12 @@ import 'package:the_hero/data/models/user_model.dart';
 import 'package:the_hero/data/mappers/user_mapper.dart';
 import 'package:the_hero/features/auth/domain/providers/get_user_profile_usecase_provider.dart';
 
-// Provider que depende de la autenticación y recarga el perfil cuando cambia
 final profileProvider = FutureProvider<User?>((ref) async {
   final authUser = await ref.watch(firebaseAuthUserProvider.future);
   final uid = authUser?.uid;
   if (uid == null) return null;
-  
+
   try {
-    // Si está autenticado, cargar el perfil
     final getUserProfileUseCase = ref.read(getUserProfileUseCaseProvider);
     final user = await getUserProfileUseCase.execute();
     return user;
@@ -38,7 +36,8 @@ final profileStreamProvider = StreamProvider<User?>((ref) {
   });
 });
 
-final userByIdStreamProvider = StreamProvider.family<User?, String>((ref, userId) {
+final userByIdStreamProvider =
+    StreamProvider.family<User?, String>((ref, userId) {
   if (userId.trim().isEmpty) return const Stream<User?>.empty();
 
   final firestore = ref.watch(firebaseFirestoreProvider);
@@ -51,7 +50,8 @@ final userByIdStreamProvider = StreamProvider.family<User?, String>((ref, userId
   });
 });
 
-final userByIdProvider = FutureProvider.family<User?, String>((ref, userId) async {
+final userByIdProvider =
+    FutureProvider.family<User?, String>((ref, userId) async {
   try {
     final authRepository = ref.read(authRepositoryProvider);
     return await authRepository.getUserById(userId);

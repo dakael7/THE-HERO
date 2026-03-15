@@ -711,8 +711,6 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                   Row(
                     children: [
                       SortOptionsButton(),
-                      SizedBox(width: 8),
-                      PriceRangeFilter(),
                     ],
                   ),
                   const ActiveFiltersIndicator(),

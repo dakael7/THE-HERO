@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 
 import '../../../core/config/donation_pricing_config.dart';
+import '../../../domain/config/pricing_config_provider.dart';
 import '../../../domain/config/transport_pricing_config.dart';
 import '../../../domain/entities/order_requirements.dart';
 import 'cart_provider.dart';
@@ -142,13 +143,14 @@ double _haversineKm(
 double _calculateTransportFee({
   required double distanceKm,
   required double totalWeightKg,
+  required PricingConfig pricingConfig,
 }) {
   final vehicle = OrderRequirements.calculateRequiredVehicleFor(
     weightKg: totalWeightKg,
     distanceKm: distanceKm,
   );
-  final minimum = TransportPricingConfig.getMinimumCharge(vehicle);
-  final basePerKm = TransportPricingConfig.getPricePerKm(vehicle);
+  final minimum = pricingConfig.getMinimumCharge(vehicle);
+  final basePerKm = pricingConfig.getPricePerKm(vehicle);
 
   var kmFee = 0.0;
   if (TransportPricingConfig.hasDistanceDiscount(vehicle)) {
@@ -170,6 +172,7 @@ CartSummary computeCartSummary({
   required double? routeDistanceKm,
   required bool inPersonPickupSelected,
   required bool allItemsAllowInPersonPickup,
+  required PricingConfig pricingConfig,
 }) {
   double subtotal = 0.0;
   double totalWeight = 0.0;
@@ -180,7 +183,7 @@ CartSummary computeCartSummary({
   }
 
   final serviceFeeFixed = DonationPricingConfig.buyerServiceFee;
-  final taxPercentage = DonationPricingConfig.taxPercentage;
+  final taxPercentage = pricingConfig.taxPercentage;
 
   final hasItems = cartItems.isNotEmpty;
 
@@ -212,6 +215,7 @@ CartSummary computeCartSummary({
           shippingCost = _calculateTransportFee(
             distanceKm: totalKm,
             totalWeightKg: totalWeight,
+            pricingConfig: pricingConfig,
           );
 
           final requiredVehicle =
@@ -262,6 +266,7 @@ CartSummary computeCartSummary({
             shippingCost = _calculateTransportFee(
               distanceKm: totalKm,
               totalWeightKg: totalWeight,
+              pricingConfig: pricingConfig,
             );
 
             final requiredVehicle =
@@ -320,6 +325,7 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
   final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
   final allItemsAllowInPersonPickup =
       ref.watch(allItemsAllowInPersonPickupProvider);
+  final pricingConfig = ref.watch(pricingConfigProvider);
 
   return computeCartSummary(
     cartItems: cartItems,
@@ -327,5 +333,6 @@ final cartSummaryProvider = Provider<CartSummary>((ref) {
     routeDistanceKm: routeDistanceKm,
     inPersonPickupSelected: inPersonPickupSelected,
     allItemsAllowInPersonPickup: allItemsAllowInPersonPickup,
+    pricingConfig: pricingConfig,
   );
 });

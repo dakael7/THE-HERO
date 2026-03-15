@@ -1,6 +1,5 @@
 import '../entities/vehicle.dart';
 
-/// Configuración de precios de transporte por tipo de vehículo
 class TransportPricingConfig {
   /// Precio por kilómetro para cada tipo de vehículo
   static const Map<VehicleType, double> pricePerKm = {

@@ -850,7 +850,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                                 fontWeight: FontWeight.w700,
                                 color: textGray900,
                               ),
-                              maxLines: 1,
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
                             if (order.timestamps.deliveredAt != null)
@@ -1607,16 +1607,16 @@ class _OrderListSliver extends ConsumerWidget {
                               snapshot: n.order.delivery.addressSnapshot,
                               geo: n.order.delivery.geo,
                               style: const TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 color: textGray900,
                               ),
-                              maxLines: 1,
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '15:00 - 16:00',
+                              n.order.delivery.recipientName,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: textGray600,

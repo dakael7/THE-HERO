@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
@@ -14,30 +13,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  static const _languageCodeKey = 'settings_language_code';
-
   bool _notificationsEnabled = true;
-  String _languageCode = 'es';
-
-  @override
-  void initState() {
-    super.initState();
-    _loadLanguage();
-  }
-
-  Future<void> _loadLanguage() async {
-    final prefs = await SharedPreferences.getInstance();
-    final code = prefs.getString(_languageCodeKey);
-    if (!mounted) return;
-    setState(() {
-      _languageCode = code ?? 'es';
-    });
-  }
-
-  Future<void> _saveLanguage(String code) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_languageCodeKey, code);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,50 +69,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
                 Container(height: 1, color: borderGray100),
-                ListTile(
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: primaryOrange.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(Icons.language, color: primaryOrange),
-                  ),
-                  title: const Text(
-                    'Idioma',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: textGray900,
-                    ),
-                  ),
-                  subtitle: const Text(
-                    'Elige el idioma de la app.',
-                    style: TextStyle(color: textGray600),
-                  ),
-                  trailing: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _languageCode,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'es',
-                          child: Text('Español'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'en',
-                          child: Text('English'),
-                        ),
-                      ],
-                      onChanged: (value) async {
-                        if (value == null) return;
-                        setState(() {
-                          _languageCode = value;
-                        });
-                        await _saveLanguage(value);
-                      },
-                    ),
-                  ),
-                ),
               ],
             ),
           ),

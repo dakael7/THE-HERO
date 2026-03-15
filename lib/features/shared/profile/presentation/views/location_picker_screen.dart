@@ -12,12 +12,16 @@ class MapLocationResult {
   final double longitude;
   final String address;
   final String? countryCode;
+  final String? unitIdentifier;
+  final String? postalCode;
 
   const MapLocationResult({
     required this.latitude,
     required this.longitude,
     required this.address,
     this.countryCode,
+    this.unitIdentifier,
+    this.postalCode,
   });
 }
 
@@ -26,6 +30,7 @@ class LocationPickerScreen extends StatefulWidget {
   final double? initialLatitude;
   final double? initialLongitude;
   final String? initialAddress;
+  final VoidCallback? onInitialLocationResolved;
 
   const LocationPickerScreen({
     super.key,
@@ -33,6 +38,7 @@ class LocationPickerScreen extends StatefulWidget {
     this.initialLatitude,
     this.initialLongitude,
     this.initialAddress,
+    this.onInitialLocationResolved,
   });
 
   @override
@@ -47,8 +53,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   late final TextEditingController _addressController;
   late final TextEditingController _searchController;
   GoogleMapController? _controller;
+  LatLng? _pendingCameraTarget;
   bool _isLocating = false;
+  bool _didNotifyInitialLocationResolved = false;
   bool _isResolvingAddress = false;
+  Future<void>? _initialLocateFuture;
   String? _selectedCountryCode;
   Timer? _resolveDebounce;
   int _resolveSeq = 0;
@@ -65,7 +74,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     _searchController = TextEditingController();
 
     // Intentar centrar en ubicación del usuario al abrir
-    _ensureUserLocation();
+    _initialLocateFuture = _ensureUserLocation();
   }
 
   @override
@@ -91,6 +100,20 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     _resolveDebounce = Timer(const Duration(milliseconds: 350), () {
       _resolveAddressFromLatLng(pos);
     });
+  }
+
+  Future<void> _moveCameraTo(LatLng target, {double zoom = 15}) async {
+    final c = _controller;
+    if (c == null) {
+      _pendingCameraTarget = target;
+      return;
+    }
+    _pendingCameraTarget = null;
+    await c.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: target, zoom: zoom),
+      ),
+    );
   }
 
   Future<void> _resolveAddressFromLatLng(LatLng pos) async {
@@ -213,11 +236,17 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         longitude: _selected.longitude,
         address: _sanitizeAddress(resolvedAddress),
         countryCode: _selectedCountryCode,
+        unitIdentifier: null,
+        postalCode: null,
       ),
     );
   }
 
   Future<void> _onConfirmAsync() async {
+    final initial = _initialLocateFuture;
+    if (_isLocating && initial != null) {
+      await initial;
+    }
     if (_isResolvingAddress) return;
 
     // If user tapped the map and the placeholder is still shown, try to resolve
@@ -265,14 +294,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           _addressController.text = _formatLatLng(userLatLng);
         }
       });
-      await _controller?.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: userLatLng, zoom: 15),
-        ),
-      );
+      await _moveCameraTo(userLatLng, zoom: 15);
     } catch (_) {
       // Silenciar errores; fallback al default
     } finally {
+      if (!_didNotifyInitialLocationResolved) {
+        _didNotifyInitialLocationResolved = true;
+        widget.onInitialLocationResolved?.call();
+      }
       if (mounted) setState(() => _isLocating = false);
     }
   }
@@ -333,7 +362,13 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                 target: _selected,
                 zoom: 14,
               ),
-              onMapCreated: (c) => _controller = c,
+              onMapCreated: (c) async {
+                _controller = c;
+                final pending = _pendingCameraTarget;
+                if (pending != null) {
+                  await _moveCameraTo(pending, zoom: 15);
+                }
+              },
               markers: {
                 Marker(
                   markerId: const MarkerId('selected'),
@@ -361,8 +396,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    onPressed: _isResolvingAddress ? null : _onConfirmAsync,
-                    child: _isResolvingAddress
+                    onPressed:
+                        (_isResolvingAddress || _isLocating) ? null : _onConfirmAsync,
+                    child: (_isResolvingAddress || _isLocating)
                         ? const SizedBox(
                             height: 22,
                             width: 22,

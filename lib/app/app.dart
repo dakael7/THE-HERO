@@ -21,6 +21,7 @@ class App extends ConsumerWidget {
     return MaterialApp(
       title: 'THE HERO',
       navigatorKey: NotificationHandler().navigatorKey, 
+      scrollBehavior: const _NoStretchScrollBehavior(),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: primaryOrange),
         useMaterial3: true,
@@ -38,7 +39,6 @@ class App extends ConsumerWidget {
             return const LoginPage();
           }
 
-          
           return FutureBuilder(
             future: Future.delayed(const Duration(milliseconds: 100)),
             builder: (context, snapshot) {
@@ -127,5 +127,18 @@ class App extends ConsumerWidget {
         return const LoginPage();
       },
     );
+  }
+}
+
+class _NoStretchScrollBehavior extends ScrollBehavior {
+  const _NoStretchScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
   }
 }

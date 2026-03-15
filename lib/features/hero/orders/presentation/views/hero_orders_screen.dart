@@ -65,7 +65,7 @@ class HeroOrdersScreen extends ConsumerWidget {
               }
 
               final sorted = [...orders]
-                ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+                ..sort((a, b) => b.timestamps.createdAt.compareTo(a.timestamps.createdAt));
 
               final active = sorted
                   .where((o) => !o.status.isCompleted)
@@ -779,6 +779,7 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 22,
@@ -790,7 +791,8 @@ class _InfoRow extends StatelessWidget {
           child: Icon(icon, size: 12, color: iconColor),
         ),
         const SizedBox(width: 6),
-        Expanded(
+        Flexible(
+          fit: FlexFit.loose,
           child: Text(
             text,
             maxLines: 1,
