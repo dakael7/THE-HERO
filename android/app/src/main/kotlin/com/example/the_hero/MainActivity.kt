@@ -1,4 +1,4 @@
-package com.example.the_hero
+package com.theheroprojects.thehero
 
 import android.view.LayoutInflater
 import android.view.View
