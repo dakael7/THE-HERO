@@ -3,6 +3,7 @@ import UIKit
 import FirebaseCore
 import GoogleMaps
 import google_mobile_ads
+import GoogleMobileAds
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -28,12 +29,13 @@ import google_mobile_ads
   }
 }
 
+@MainActor
 class HeroNativeAdFactory: NSObject, FLTNativeAdFactory {
-  func createNativeAd(
-    _ nativeAd: GADNativeAd,
+  @objc func createNativeAd(
+    _ nativeAd: NativeAd, 
     customOptions: [AnyHashable : Any]?
-  ) -> GADNativeAdView {
-    let adView = GADNativeAdView(frame: .zero)
+  ) -> NativeAdView? {
+    let adView = NativeAdView(frame: .zero)
 
     let headline = UILabel()
     headline.numberOfLines = 1
