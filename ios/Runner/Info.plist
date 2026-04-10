@@ -49,7 +49,5 @@
 	<string>Necesitamos tu ubicación para mostrar productos cercanos en el mapa</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Necesitamos tu ubicación para mostrar productos cercanos</string>
-	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
 </dict>
 </plist>

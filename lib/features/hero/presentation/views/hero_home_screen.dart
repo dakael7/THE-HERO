@@ -5,7 +5,6 @@ import '../../../../core/constants/app_colors.dart';
 import '../widgets/hero_header.dart';
 import '../widgets/hero_bottom_nav.dart';
 import '../widgets/hero_fab.dart';
-import '../widgets/hero_admob_native.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
 import 'buyer_catalog_screen.dart';
 import '../../../shared/profile/presentation/views/profile_screen.dart'
@@ -150,21 +149,6 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                     // ── Spacing ────────────────────────────────────────────────
                     const SliverToBoxAdapter(
                       child: SizedBox(height: paddingNormal),
-                    ),
-
-                    // ── AdMob banner ───────────────────────────────────────────
-                    // Isolated in its own sliver so scroll never causes it to
-                    // rebuild together with the cards below.
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: paddingNormal),
-                        child: Column(
-                          children: [
-                            HeroAdMobNative(height: 160),
-                            SizedBox(height: paddingNormal),
-                          ],
-                        ),
-                      ),
                     ),
 
                     // ── Action cards row (Dona / Mis Donaciones) ───────────────

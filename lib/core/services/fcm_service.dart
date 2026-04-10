@@ -155,7 +155,7 @@ class FCMService {
     );
 
     await _localNotifications.initialize(
-      initSettings,
+      settings: initSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
@@ -370,10 +370,10 @@ class FCMService {
     );
 
     await _localNotifications.show(
-      notificationId,
-      title,
-      body,
-      details,
+      id: notificationId,
+      title: title,
+      body: body,
+      notificationDetails: details,
       payload: data != null ? _encodePayload(data) : null,
     );
   }

@@ -19,10 +19,11 @@ class FirebaseConfig {
       );
 
       await FirebaseAppCheck.instance.activate(
-        androidProvider: kDebugMode
-            ? AndroidProvider.debug
-            : AndroidProvider.playIntegrity,
-        appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
+        providerAndroid: kDebugMode
+            ? AndroidDebugProvider()
+            : AndroidPlayIntegrityProvider(),
+        providerApple:
+            kDebugMode ? AppleDebugProvider() : AppleAppAttestProvider(),
       );
 
       await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
