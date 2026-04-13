@@ -658,10 +658,16 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
                               accent: accent,
                               status: status,
                             ),
-                            if ((user?.documentId ?? '').isNotEmpty) ...[
+                            if ((((user?.riderProfile?.rut ?? '').trim().isNotEmpty)
+                                        ? user!.riderProfile!.rut!
+                                        : (user?.documentId ?? ''))
+                                    .trim()
+                                    .isNotEmpty) ...[
                               const SizedBox(height: 10),
                               Text(
-                                user!.documentId,
+                                ((user?.riderProfile?.rut ?? '').trim().isNotEmpty)
+                                    ? user!.riderProfile!.rut!
+                                    : user!.documentId,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w800,
                                   color: textGray900,

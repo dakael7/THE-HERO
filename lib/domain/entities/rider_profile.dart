@@ -4,6 +4,7 @@ import 'limits.dart';
 import 'verification.dart';
 
 class RiderProfile {
+  final String? rut;
   final bool isActive;
   final bool isVerified;
   final String? activeVehicleType;
@@ -17,6 +18,7 @@ class RiderProfile {
   final int totalRatings;
 
   RiderProfile({
+    this.rut,
     this.isActive = false,
     this.isVerified = false,
     this.activeVehicleType,
@@ -123,6 +125,7 @@ class RiderProfile {
   }
 
   RiderProfile copyWith({
+    String? rut,
     bool? isActive,
     bool? isVerified,
     String? activeVehicleType,
@@ -136,6 +139,7 @@ class RiderProfile {
     int? totalRatings,
   }) {
     return RiderProfile(
+      rut: rut ?? this.rut,
       isActive: isActive ?? this.isActive,
       isVerified: isVerified ?? this.isVerified,
       activeVehicleType: activeVehicleType ?? this.activeVehicleType,

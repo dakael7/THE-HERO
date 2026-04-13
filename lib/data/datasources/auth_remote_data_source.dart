@@ -459,6 +459,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'roles': ['rider'],
         'status': {'termsAccepted': true, 'createdAt': now, 'lastUpdated': now},
         'riderProfile': {
+          'rut': normalizedRut,
           'isActive': false,
           'isVerified': false,
           'vehicle': {
@@ -840,6 +841,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       );
 
       final riderProfileData = {
+        'rut': normalizedRut,
         'isActive': false,
         'isVerified': false,
         'vehicle': {

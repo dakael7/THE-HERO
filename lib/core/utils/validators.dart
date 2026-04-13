@@ -18,7 +18,7 @@ class Validators {
       r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,}$',
     );
     if (!passwordRegex.hasMatch(value)) {
-      return 'Contraseña débil. Debe cumplir con el formato.';
+      return 'La contraseña no cumple los requisitos (mín. 8 caracteres, 1 mayúscula, 1 minúscula, 1 número y solo usa caracteres permitidos como @\$!%*?&).';
     }
     return null;
   }

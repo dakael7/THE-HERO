@@ -52,6 +52,10 @@ class User {
   bool get hasMultipleRoles => roles.length > 1;
 
   bool get isRutVerified {
+    if (isRider) {
+      final v = (rutVerificationStatus ?? verificationStatus)?.trim().toLowerCase();
+      return v == 'verified' || v == 'aprobado' || v == 'approved';
+    }
     if (identity.documentType.trim().toLowerCase() != 'rut') return true;
     final v = (rutVerificationStatus ?? verificationStatus)?.trim().toLowerCase();
     return v == 'verified' || v == 'aprobado' || v == 'approved';

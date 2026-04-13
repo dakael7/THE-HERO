@@ -52,6 +52,16 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
+  bool _pwHasMinLength = false;
+  bool _pwHasUpper = false;
+  bool _pwHasLower = false;
+  bool _pwHasDigit = false;
+  bool _pwHasOnlyAllowedChars = false;
+  bool _pwConfirmMatches = false;
+
+  VoidCallback? _passwordListener;
+  VoidCallback? _confirmPasswordListener;
+
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
   late Animation<double> _opacityAnimation;
@@ -132,10 +142,22 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     ).animate(_controller);
 
     _controller.forward();
+
+    _passwordListener = _recomputePasswordChecklist;
+    _confirmPasswordListener = _recomputePasswordChecklist;
+    _passwordController.addListener(_passwordListener!);
+    _confirmPasswordController.addListener(_confirmPasswordListener!);
+    _recomputePasswordChecklist();
   }
 
   @override
   void dispose() {
+    if (_passwordListener != null) {
+      _passwordController.removeListener(_passwordListener!);
+    }
+    if (_confirmPasswordListener != null) {
+      _confirmPasswordController.removeListener(_confirmPasswordListener!);
+    }
     _controller.dispose();
     _emailController.dispose();
     _firstNameController.dispose();
@@ -145,6 +167,66 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     _confirmPasswordController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+
+  void _recomputePasswordChecklist() {
+    final password = _passwordController.text;
+    final confirm = _confirmPasswordController.text;
+
+    final nextMinLength = password.length >= 8;
+    final nextUpper = RegExp(r'[A-Z]').hasMatch(password);
+    final nextLower = RegExp(r'[a-z]').hasMatch(password);
+    final nextDigit = RegExp(r'\d').hasMatch(password);
+    final nextAllowedChars = RegExp(r'^[A-Za-z\d@$!%*?&]*$').hasMatch(password);
+    final nextConfirmMatches =
+        confirm.isNotEmpty && password.trim() == confirm.trim();
+
+    if (nextMinLength == _pwHasMinLength &&
+        nextUpper == _pwHasUpper &&
+        nextLower == _pwHasLower &&
+        nextDigit == _pwHasDigit &&
+        nextAllowedChars == _pwHasOnlyAllowedChars &&
+        nextConfirmMatches == _pwConfirmMatches) {
+      return;
+    }
+
+    setState(() {
+      _pwHasMinLength = nextMinLength;
+      _pwHasUpper = nextUpper;
+      _pwHasLower = nextLower;
+      _pwHasDigit = nextDigit;
+      _pwHasOnlyAllowedChars = nextAllowedChars;
+      _pwConfirmMatches = nextConfirmMatches;
+    });
+  }
+
+  Widget _passwordChecklistItem({required bool ok, required String text}) {
+    final color = ok ? const Color(0xFF10B981) : textGray600;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                color: color,
+                fontWeight: ok ? FontWeight.w700 : FontWeight.w500,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   InputDecoration _inputDecoration({
@@ -414,6 +496,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                           TextFormField(
                             controller: _passwordController,
                             obscureText: _obscurePassword,
+                            onChanged: (_) => _recomputePasswordChecklist(),
                             keyboardType: TextInputType.visiblePassword,
                             style: const TextStyle(
                                 color: textGray900, fontSize: 14),
@@ -439,7 +522,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                             validator: (value) {
                               if (value == null ||
                                   !passwordRegex.hasMatch(value)) {
-                                return 'Contraseña débil. Debe cumplir el formato.';
+                                return 'Revisa los requisitos de contraseña.';
                               }
                               return null;
                             },
@@ -448,6 +531,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                           TextFormField(
                             controller: _confirmPasswordController,
                             obscureText: _obscureConfirmPassword,
+                            onChanged: (_) => _recomputePasswordChecklist(),
                             keyboardType: TextInputType.visiblePassword,
                             style: const TextStyle(
                                 color: textGray900, fontSize: 14),
@@ -479,6 +563,39 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                               }
                               return null;
                             },
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _passwordChecklistItem(
+                                  ok: _pwHasMinLength,
+                                  text: 'Mínimo 8 caracteres',
+                                ),
+                                _passwordChecklistItem(
+                                  ok: _pwHasUpper,
+                                  text: 'Al menos 1 mayúscula (A-Z)',
+                                ),
+                                _passwordChecklistItem(
+                                  ok: _pwHasLower,
+                                  text: 'Al menos 1 minúscula (a-z)',
+                                ),
+                                _passwordChecklistItem(
+                                  ok: _pwHasDigit,
+                                  text: 'Al menos 1 número (0-9)',
+                                ),
+                                _passwordChecklistItem(
+                                  ok: _pwHasOnlyAllowedChars,
+                                  text:
+                                      'Solo caracteres permitidos: letras, números y @\$!%*?&',
+                                ),
+                                _passwordChecklistItem(
+                                  ok: _pwConfirmMatches,
+                                  text: 'La confirmación coincide',
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),

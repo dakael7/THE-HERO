@@ -5,6 +5,7 @@ import 'limits_model.dart';
 import 'verification_model.dart';
 
 class RiderProfileModel {
+  final String? rut;
   final bool isActive;
   final bool isVerified;
   final String? activeVehicleType;
@@ -18,6 +19,7 @@ class RiderProfileModel {
   final int totalRatings;
 
   RiderProfileModel({
+    this.rut,
     this.isActive = false,
     this.isVerified = false,
     this.activeVehicleType,
@@ -33,6 +35,7 @@ class RiderProfileModel {
 
   factory RiderProfileModel.fromJson(Map<String, dynamic> json) {
     return RiderProfileModel(
+      rut: json['rut']?.toString(),
       isActive: json['isActive'] as bool? ?? false,
       isVerified: json['isVerified'] as bool? ?? false,
       activeVehicleType: json['activeVehicleType'] as String?,
@@ -59,6 +62,7 @@ class RiderProfileModel {
 
   Map<String, dynamic> toJson() {
     return {
+      'rut': rut,
       'isActive': isActive,
       'isVerified': isVerified,
       'activeVehicleType': activeVehicleType,
@@ -75,6 +79,7 @@ class RiderProfileModel {
 
   RiderProfile toEntity() {
     return RiderProfile(
+      rut: rut,
       isActive: isActive,
       isVerified: isVerified,
       activeVehicleType: activeVehicleType,
@@ -91,6 +96,7 @@ class RiderProfileModel {
 
   factory RiderProfileModel.fromEntity(RiderProfile entity) {
     return RiderProfileModel(
+      rut: entity.rut,
       isActive: entity.isActive,
       isVerified: entity.isVerified,
       activeVehicleType: entity.activeVehicleType,
