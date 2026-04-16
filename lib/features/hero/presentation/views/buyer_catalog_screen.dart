@@ -10,6 +10,8 @@ import '../../../../domain/entities/offer_condition.dart';
 import '../../../../domain/entities/user.dart';
 import '../../../offers/presentation/providers/offer_comments_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../moderation/presentation/widgets/report_offer_bottom_sheet.dart';
+import '../../../moderation/presentation/widgets/report_user_bottom_sheet.dart';
 import '../../cart/checkout_screen.dart';
 import '../../cart/cart_provider.dart';
 import '../../../offers/presentation/providers/offers_provider.dart';
@@ -231,6 +233,7 @@ class BuyerCatalogScreen extends ConsumerWidget {
                               offerId: offer.offerId,
                               name: offer.title,
                               sellerHeroId: offer.heroId,
+                              moderationStatus: offer.moderationStatus,
                               condition: offer.condition.displayName,
                               colorCondition:
                                   _conditionColor(offer.condition),
@@ -661,28 +664,24 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   // ── Cart helpers ──────────────────────────────────────────────
   void _addToCart() {
     final offer = widget.offer;
+
+    final maxQty = offer.availableQty;
     final currentUserId = ref.read(profileProvider).maybeWhen(
           data: (user) => user?.id,
           orElse: () => null,
         );
 
-    final maxQty = offer.availableQty;
-    if (maxQty <= 0) {
+    final currentUser = ref.read(profileProvider).maybeWhen(
+          data: (user) => user,
+          orElse: () => null,
+        );
+    if (currentUser != null && currentUser.isSuspended) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No hay unidades disponibles para esta donación.'),
-          duration: Duration(seconds: 4),
-        ),
-      );
-      return;
-    }
-
-    if (_cartQuantity >= maxQty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
           content: Text(
-              'Solo hay $maxQty unidad${maxQty == 1 ? '' : 'es'} disponible${maxQty == 1 ? '' : 's'}.'),
-          duration: const Duration(seconds: 4),
+            'Tu cuenta está suspendida. No puedes agregar productos al carrito en este momento.',
+          ),
+          duration: Duration(seconds: 4),
         ),
       );
       return;
@@ -748,6 +747,11 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     const priceText = 'Donación';
     final coverUrl = offer.coverImageUrl.trim();
     final hasCover = coverUrl.isNotEmpty;
+
+    final currentUserId = ref.watch(profileProvider).maybeWhen(
+          data: (user) => user?.id,
+          orElse: () => null,
+        );
 
     String normalizeImageKey(String raw) {
       final trimmed = raw.trim();
@@ -816,6 +820,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                     data: (user) => user?.id,
                     orElse: () => null,
                   );
+
+                  final canReport = userId != null && userId != widget.offer.heroId;
                   final favoriteIdsAsync = userId == null
                       ? const AsyncValue<List<String>>.data(<String>[])
                       : ref.watch(favoriteOfferIdsProvider(userId));
@@ -824,42 +830,68 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                     orElse: () => false,
                   );
 
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: backgroundWhite.withValues(alpha: 0.85),
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        tooltip: isFavorite
-                            ? 'Quitar de favoritos'
-                            : 'Agregar a favoritos',
-                        onPressed: userId == null
-                            ? null
-                            : () async {
-                                try {
-                                  await ref
-                                      .read(favoritesNotifierProvider.notifier)
-                                      .toggleFavorite(userId, offer.offerId);
-                                } catch (_) {
-                                  if (!context.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          'No se pudo actualizar favoritos'),
-                                    ),
-                                  );
-                                }
-                              },
-                        icon: Icon(
-                          isFavorite
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          color: isFavorite ? primaryOrange : textGray900,
+                  return Row(
+                    children: [
+                      if (canReport)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: backgroundWhite.withValues(alpha: 0.85),
+                              shape: BoxShape.circle,
+                            ),
+                            child: IconButton(
+                              tooltip: 'Reportar publicación',
+                              onPressed: () => showReportOfferSheet(
+                                context,
+                                offerId: widget.offer.offerId,
+                                offerTitle: widget.offer.title,
+                              ),
+                              icon: const Icon(
+                                Icons.flag_outlined,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: backgroundWhite.withValues(alpha: 0.85),
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            tooltip: isFavorite
+                                ? 'Quitar de favoritos'
+                                : 'Agregar a favoritos',
+                            onPressed: userId == null
+                                ? null
+                                : () async {
+                                    try {
+                                      await ref
+                                          .read(favoritesNotifierProvider.notifier)
+                                          .toggleFavorite(userId, offer.offerId);
+                                    } catch (_) {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                              'No se pudo actualizar favoritos'),
+                                        ),
+                                      );
+                                    }
+                                  },
+                            icon: Icon(
+                              isFavorite
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              color: isFavorite ? primaryOrange : textGray900,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   );
                 },
               ),
@@ -1087,6 +1119,22 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (currentUserId != null &&
+                              currentUserId != offer.heroId)
+                            IconButton(
+                              tooltip: 'Reportar usuario',
+                              onPressed: () => showReportUserSheet(
+                                context,
+                                reportedUserId: offer.heroId,
+                                reportedRole: 'hero',
+                                relatedOfferId: offer.offerId,
+                              ),
+                              icon: const Icon(
+                                Icons.flag_outlined,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                            ),
                         ],
                       ),
 

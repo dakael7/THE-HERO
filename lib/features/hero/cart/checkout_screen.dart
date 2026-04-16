@@ -668,6 +668,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
+    if (user.isSuspended) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Tu cuenta está suspendida. No puedes proceder al pago en este momento.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     if (!inPersonPickupSelected) {
       final deliveryCc = _deliveryCountryCode?.trim().toUpperCase();
       final pickupCcs = cartItems
@@ -845,7 +857,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           }
 
           final createOrderUseCase = ref.read(createOrderUseCaseProvider);
-          final createdOrder = await createOrderUseCase.execute(order);
+          final createdOrder = await createOrderUseCase.execute(
+            order,
+            currentUser: user,
+          );
           ref.read(cartProvider.notifier).removeItem(cartItems.first);
 
           if (mounted) {
@@ -861,7 +876,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           }
         } else {
           final createOrderUseCase = ref.read(createOrderUseCaseProvider);
-          final createdOrder = await createOrderUseCase.execute(order);
+          final createdOrder = await createOrderUseCase.execute(
+            order,
+            currentUser: user,
+          );
           ref.read(cartProvider.notifier).removeItem(cartItems.first);
 
           if (mounted) {
@@ -1106,7 +1124,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         }
 
         final createOrderUseCase = ref.read(createOrderUseCaseProvider);
-        final createdOrder = await createOrderUseCase.execute(order);
+        final createdOrder = await createOrderUseCase.execute(
+          order,
+          currentUser: user,
+        );
 
         ref.read(cartProvider.notifier).removeItem(cartItems.first);
 
@@ -1145,7 +1166,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         );
 
         final createOrderUseCase = ref.read(createOrderUseCaseProvider);
-        final createdOrder = await createOrderUseCase.execute(order);
+        final createdOrder = await createOrderUseCase.execute(
+          order,
+          currentUser: user,
+        );
 
         if (_selectedPaymentMethod == PaymentMethod.cash) {
           final paymentRepo = ref.read(paymentRepositoryProvider);
@@ -1325,6 +1349,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             hasCalculatedShipping &&
             withinDistanceLimit &&
             sameCountry);
+
+    final canProceedWithAccount = user != null && !user.isSuspended;
 
     final effectiveTip = inPersonPickupSelected ? 0 : _selectedTip;
     final totalWithTip = summary.total + effectiveTip.toDouble();
@@ -2589,7 +2615,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 height: 56,
                 child: ElevatedButton(
                   onPressed:
-                      _isSubmitting || !canProceed
+                      _isSubmitting || !canProceed || !canProceedWithAccount
                           ? null
                           : _proceedToPayment,
                   style: ElevatedButton.styleFrom(

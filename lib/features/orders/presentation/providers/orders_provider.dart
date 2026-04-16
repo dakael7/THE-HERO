@@ -116,8 +116,12 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
   Future<void> createOrder(Order order) async {
     state = const AsyncValue.loading();
     try {
+      final user = await ref.read(profileProvider.future);
+      if (user == null) {
+        throw Exception('Debes iniciar sesión para crear una orden.');
+      }
       final useCase = ref.read(createOrderUseCaseProvider);
-      final createdOrder = await useCase.execute(order);
+      final createdOrder = await useCase.execute(order, currentUser: user);
       state = AsyncValue.data(createdOrder);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);

@@ -554,6 +554,19 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
         return;
       }
 
+      if (user.isSuspended) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Tu cuenta está suspendida. No puedes crear o publicar ofertas en este momento.',
+            ),
+            backgroundColor: Color(0xFFDC2626),
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
       if (_publishNow) {
         final authUser = fb_auth.FirebaseAuth.instance.currentUser;
         final isEmailVerified = authUser?.emailVerified ?? false;

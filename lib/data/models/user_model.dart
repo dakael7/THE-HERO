@@ -4,6 +4,8 @@ import 'address_model.dart';
 import 'hero_profile_model.dart';
 import 'rider_profile_model.dart';
 import 'user_status_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../domain/entities/user.dart';
 
 class UserModel {
   final String id;
@@ -21,6 +23,12 @@ class UserModel {
   final String? rutVerificationStatus;
   final String? licenseVerificationStatus;
 
+  final AccountStatus accountStatus;
+  final DateTime? suspendedUntil;
+  final String? suspensionReason;
+  final int reportCount;
+  final DateTime? lastReportedAt;
+
   UserModel({
     required this.id,
     required this.identity,
@@ -36,10 +44,29 @@ class UserModel {
     this.verificationStatus,
     this.rutVerificationStatus,
     this.licenseVerificationStatus,
+    this.accountStatus = AccountStatus.active,
+    this.suspendedUntil,
+    this.suspensionReason,
+    this.reportCount = 0,
+    this.lastReportedAt,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     Set<String> rolesSet = {};
+
+    DateTime? parseDate(dynamic value) {
+      if (value == null) return null;
+      if (value is Timestamp) return value.toDate();
+      if (value is DateTime) return value;
+      if (value is String) {
+        try {
+          return DateTime.parse(value);
+        } catch (_) {
+          return null;
+        }
+      }
+      return null;
+    }
 
     // 1. Cargar roles existentes si los hay
     if (json['roles'] != null) {
@@ -115,6 +142,14 @@ class UserModel {
       licenseVerificationStatus: (json['licenseVerification'] is Map)
           ? (json['licenseVerification'] as Map)['status']?.toString()
           : null,
+      accountStatus: AccountStatus.values.firstWhere(
+        (e) => e.name == (json['accountStatus'] as String? ?? 'active'),
+        orElse: () => AccountStatus.active,
+      ),
+      suspendedUntil: parseDate(json['suspendedUntil']),
+      suspensionReason: json['suspensionReason'] as String?,
+      reportCount: (json['reportCount'] as num?)?.toInt() ?? 0,
+      lastReportedAt: parseDate(json['lastReportedAt']),
     );
   }
 
@@ -134,6 +169,13 @@ class UserModel {
       'riderProfile': riderProfile?.toJson(),
       'profilePhotoUrl': profilePhotoUrl,
       'verificationStatus': verificationStatus,
+      'accountStatus': accountStatus.name,
+      if (suspendedUntil != null)
+        'suspendedUntil': Timestamp.fromDate(suspendedUntil!),
+      if (suspensionReason != null) 'suspensionReason': suspensionReason,
+      'reportCount': reportCount,
+      if (lastReportedAt != null)
+        'lastReportedAt': Timestamp.fromDate(lastReportedAt!),
       if (rutVerificationStatus != null)
         'rutVerification': {
           'status': rutVerificationStatus,

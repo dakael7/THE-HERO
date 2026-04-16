@@ -33,10 +33,30 @@ class CartNotifier extends Notifier<List<CartItem>> {
     String? sellerHeroId,
     bool allowInPersonPickup = false,
   }) {
-    final currentUserId = ref.read(profileProvider).maybeWhen(
-          data: (user) => user?.id,
+    final currentUser = ref.read(profileProvider).maybeWhen(
+          data: (user) => user,
           orElse: () => null,
         );
+    final currentUserId = currentUser?.id;
+
+    if (currentUser == null) {
+      assert(() {
+        debugPrint('🛒 [Cart] Blocked addItem (no session) offerId=$offerId');
+        return true;
+      }());
+      return;
+    }
+
+    if (currentUser.isBanned || currentUser.isSuspended) {
+      assert(() {
+        debugPrint(
+          '🛒 [Cart] Blocked addItem (account restricted) offerId=$offerId status=${currentUser.accountStatus.name}',
+        );
+        return true;
+      }());
+      return;
+    }
+
     final sellerId = sellerHeroId?.trim();
     if (currentUserId != null &&
         sellerId != null &&

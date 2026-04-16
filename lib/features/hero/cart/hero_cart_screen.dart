@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/common/hero_header_app_bar.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/weight_utils.dart';
+import '../../shared/profile/presentation/providers/profile_provider.dart';
 import 'cart_provider.dart';
 import 'cart_item.dart';
 import 'checkout_screen.dart';
@@ -209,6 +210,21 @@ class _CartItemTile extends ConsumerWidget {
                       ),
                     ),
                     onPressed: () {
+                      final user = ref.read(profileProvider).maybeWhen(
+                            data: (u) => u,
+                            orElse: () => null,
+                          );
+                      if (user != null && user.isSuspended) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Tu cuenta está suspendida. No puedes proceder al pago en este momento.',
+                            ),
+                            duration: Duration(seconds: 4),
+                          ),
+                        );
+                        return;
+                      }
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => CheckoutScreen(item: item),

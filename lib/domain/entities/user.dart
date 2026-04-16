@@ -5,6 +5,8 @@ import 'hero_profile.dart';
 import 'rider_profile.dart';
 import 'user_status.dart';
 
+enum AccountStatus { active, suspended, banned }
+
 class User {
   final String id;
   final Identity identity;
@@ -21,6 +23,12 @@ class User {
   final String? rutVerificationStatus;
   final String? licenseVerificationStatus;
 
+  final AccountStatus accountStatus;
+  final DateTime? suspendedUntil;
+  final String? suspensionReason;
+  final int reportCount;
+  final DateTime? lastReportedAt;
+
   User({
     required this.id,
     required this.identity,
@@ -36,6 +44,11 @@ class User {
     this.verificationStatus,
     this.rutVerificationStatus,
     this.licenseVerificationStatus,
+    this.accountStatus = AccountStatus.active,
+    this.suspendedUntil,
+    this.suspensionReason,
+    this.reportCount = 0,
+    this.lastReportedAt,
   });
 
   String get fullName => identity.fullName;
@@ -70,6 +83,14 @@ class User {
 
   bool get canActAsRider => isRider && riderProfile != null && riderProfile!.canAcceptDeliveries;
 
+  bool get isSuspended =>
+      accountStatus == AccountStatus.suspended &&
+      (suspendedUntil == null || suspendedUntil!.isAfter(DateTime.now()));
+
+  bool get isBanned => accountStatus == AccountStatus.banned;
+
+  bool get canOperate => accountStatus == AccountStatus.active || !isSuspended;
+
   User copyWith({
     String? id,
     Identity? identity,
@@ -85,6 +106,11 @@ class User {
     String? verificationStatus,
     String? rutVerificationStatus,
     String? licenseVerificationStatus,
+    AccountStatus? accountStatus,
+    DateTime? suspendedUntil,
+    String? suspensionReason,
+    int? reportCount,
+    DateTime? lastReportedAt,
   }) {
     return User(
       id: id ?? this.id,
@@ -102,6 +128,11 @@ class User {
       rutVerificationStatus: rutVerificationStatus ?? this.rutVerificationStatus,
       licenseVerificationStatus:
           licenseVerificationStatus ?? this.licenseVerificationStatus,
+      accountStatus: accountStatus ?? this.accountStatus,
+      suspendedUntil: suspendedUntil ?? this.suspendedUntil,
+      suspensionReason: suspensionReason ?? this.suspensionReason,
+      reportCount: reportCount ?? this.reportCount,
+      lastReportedAt: lastReportedAt ?? this.lastReportedAt,
     );
   }
 }

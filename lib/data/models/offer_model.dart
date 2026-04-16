@@ -33,6 +33,9 @@ class OfferModel {
   final int orderCount;
   final double avgRating;
   final int ratingCount;
+  final ModerationStatus moderationStatus;
+  final int reportCount;
+  final Timestamp? lastReportedAt;
   final String? itemLocationId;
   final AddressModel? itemLocationSnapshot;
   final PickupScheduleModel? pickupSchedule;
@@ -65,6 +68,9 @@ class OfferModel {
     this.orderCount = 0,
     this.avgRating = 0.0,
     this.ratingCount = 0,
+    this.moderationStatus = ModerationStatus.visible,
+    this.reportCount = 0,
+    this.lastReportedAt,
     this.itemLocationId,
     this.itemLocationSnapshot,
     this.pickupSchedule,
@@ -111,6 +117,12 @@ class OfferModel {
       orderCount: json['orderCount'] as int? ?? 0,
       avgRating: (json['avgRating'] as num?)?.toDouble() ?? 0.0,
       ratingCount: json['ratingCount'] as int? ?? 0,
+      moderationStatus: ModerationStatus.values.firstWhere(
+        (e) => e.name == (json['moderationStatus'] as String? ?? 'visible'),
+        orElse: () => ModerationStatus.visible,
+      ),
+      reportCount: (json['reportCount'] as num?)?.toInt() ?? 0,
+      lastReportedAt: json['lastReportedAt'] as Timestamp?,
       itemLocationId: json['itemLocationId'] as String?,
       itemLocationSnapshot: json['itemLocationSnapshot'] != null
           ? AddressModel.fromJson(
@@ -158,6 +170,9 @@ class OfferModel {
       'orderCount': orderCount,
       'avgRating': avgRating,
       'ratingCount': ratingCount,
+      'moderationStatus': moderationStatus.name,
+      'reportCount': reportCount,
+      if (lastReportedAt != null) 'lastReportedAt': lastReportedAt,
       'itemLocationId': itemLocationId,
       'itemLocationSnapshot': itemLocationSnapshot?.toJson(),
       'pickupSchedule': pickupSchedule?.toJson(),
@@ -193,6 +208,9 @@ class OfferModel {
       orderCount: orderCount,
       avgRating: avgRating,
       ratingCount: ratingCount,
+      moderationStatus: moderationStatus,
+      reportCount: reportCount,
+      lastReportedAt: lastReportedAt?.toDate(),
       itemLocationId: itemLocationId,
       itemLocationSnapshot: itemLocationSnapshot?.toEntity(),
       pickupSchedule: pickupSchedule?.toEntity(),
@@ -230,6 +248,11 @@ class OfferModel {
       orderCount: entity.orderCount,
       avgRating: entity.avgRating,
       ratingCount: entity.ratingCount,
+      moderationStatus: entity.moderationStatus,
+      reportCount: entity.reportCount,
+      lastReportedAt: entity.lastReportedAt != null
+          ? Timestamp.fromDate(entity.lastReportedAt!)
+          : null,
       itemLocationId: entity.itemLocationId,
       itemLocationSnapshot: entity.itemLocationSnapshot != null
           ? AddressModel.fromEntity(entity.itemLocationSnapshot!)

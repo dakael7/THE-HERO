@@ -744,6 +744,7 @@ class _OfferListItem extends ConsumerWidget {
                 offerId: offer.offerId,
                 name: offer.title,
                 sellerHeroId: offer.heroId,
+                moderationStatus: offer.moderationStatus,
                 condition: offer.condition.displayName,
                 colorCondition: _conditionColor(offer.condition),
                 category: offer.category,

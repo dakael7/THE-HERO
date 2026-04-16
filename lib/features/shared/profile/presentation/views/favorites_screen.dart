@@ -77,6 +77,7 @@ class FavoritesScreen extends ConsumerWidget {
                             offerId: offer.offerId,
                             name: offer.title,
                             sellerHeroId: offer.heroId,
+                            moderationStatus: offer.moderationStatus,
                             condition: offer.condition.name,
                             colorCondition:
                                 offer.condition == OfferCondition.newProduct

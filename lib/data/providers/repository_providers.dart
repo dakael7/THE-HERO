@@ -6,12 +6,14 @@ import '../../domain/repositories/notification_repository.dart';
 import '../../domain/repositories/offers_repository.dart';
 import '../../domain/repositories/orders_repository.dart';
 import '../../domain/repositories/invoices_repository.dart';
+import '../../domain/repositories/moderation_repository.dart';
 import '../repositories/auth_repository_impl.dart';
 import '../repositories/chat_repository_impl.dart';
 import '../repositories/notification_repository_impl.dart';
 import '../repositories/offers_repository_impl.dart';
 import '../repositories/orders_repository_impl.dart';
 import '../repositories/invoices_repository_impl.dart';
+import '../repositories/moderation_repository_impl.dart';
 import 'datasource_providers.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
@@ -32,6 +34,11 @@ final notificationRepositoryProvider =
 final offersRepositoryProvider = Provider<OffersRepository>((ref) {
   final remote = ref.read(offersRemoteDataSourceProvider);
   return OffersRepositoryImpl(remoteDataSource: remote);
+});
+
+final moderationRepositoryProvider = Provider<ModerationRepository>((ref) {
+  final remote = ref.read(moderationRemoteDataSourceProvider);
+  return ModerationRepositoryImpl(remote: remote);
 });
 
 final ordersRepositoryProvider = Provider<OrdersRepository>((ref) {

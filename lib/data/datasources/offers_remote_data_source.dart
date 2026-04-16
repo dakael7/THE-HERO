@@ -171,7 +171,8 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
     try {
       Query query = _firestore
           .collection('offers')
-          .where('status', isEqualTo: 'active');
+          .where('status', isEqualTo: 'active')
+          .where('moderationStatus', whereIn: ['visible', null]);
 
       if (category != null && category.isNotEmpty) {
         query = query.where('category', isEqualTo: category);

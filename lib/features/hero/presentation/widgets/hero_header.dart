@@ -776,6 +776,7 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                                   offerId: offer.offerId,
                                   name: offer.title,
                                   sellerHeroId: offer.heroId,
+                                  moderationStatus: offer.moderationStatus,
                                   condition: offer.condition.displayName,
                                   colorCondition: _conditionColor(
                                     offer.condition,

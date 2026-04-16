@@ -1,12 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/entities/offer.dart';
 import '../../../../domain/providers/offers_usecase_providers.dart';
+import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
 final myOffersProvider = StreamProvider.family<List<Offer>, String>((ref, heroId) {
   final useCase = ref.read(getOffersByHeroUseCaseProvider);
   return useCase.execute(heroId);
 });
-
 
 final activeOffersProvider =
     StreamProvider.family<List<Offer>, OffersFilter>((ref, filter) {
@@ -44,8 +44,13 @@ class OfferNotifier extends Notifier<AsyncValue<Offer?>> {
   Future<Offer> createOffer(Offer offer) async {
     state = const AsyncValue.loading();
     try {
+      final user = ref.read(profileStreamProvider).value ??
+          await ref.read(profileProvider.future);
+      if (user == null) {
+        throw Exception('Debes iniciar sesión para crear una oferta.');
+      }
       final useCase = ref.read(createOfferUseCaseProvider);
-      final createdOffer = await useCase.execute(offer);
+      final createdOffer = await useCase.execute(offer, currentUser: user);
       state = AsyncValue.data(createdOffer);
       return createdOffer;
     } catch (e, stack) {
@@ -70,8 +75,13 @@ class OfferNotifier extends Notifier<AsyncValue<Offer?>> {
   Future<void> publishOffer(String offerId) async {
     state = const AsyncValue.loading();
     try {
+      final user = ref.read(profileStreamProvider).value ??
+          await ref.read(profileProvider.future);
+      if (user == null) {
+        throw Exception('Debes iniciar sesión para publicar una oferta.');
+      }
       final useCase = ref.read(publishOfferUseCaseProvider);
-      await useCase.execute(offerId);
+      await useCase.execute(offerId, currentUser: user);
       state = const AsyncValue.data(null);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);

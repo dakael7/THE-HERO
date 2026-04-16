@@ -4,6 +4,8 @@ import 'address.dart';
 import 'pickup_schedule.dart';
 import 'concierge_info.dart';
 
+enum ModerationStatus { visible, hidden, blocked }
+
 class Offer {
   final String offerId;
   final String heroId;
@@ -29,6 +31,10 @@ class Offer {
   final int orderCount;
   final double avgRating;
   final int ratingCount;
+
+  final ModerationStatus moderationStatus;
+  final int reportCount;
+  final DateTime? lastReportedAt;
 
   /// Location from which the item will be picked up/shipped.
   /// Optional id to a stored location (e.g., user address), plus a snapshot for history.
@@ -66,6 +72,9 @@ class Offer {
     this.orderCount = 0,
     this.avgRating = 0.0,
     this.ratingCount = 0,
+    this.moderationStatus = ModerationStatus.visible,
+    this.reportCount = 0,
+    this.lastReportedAt,
     this.itemLocationId,
     this.itemLocationSnapshot,
     this.pickupSchedule,
@@ -105,6 +114,9 @@ class Offer {
     int? orderCount,
     double? avgRating,
     int? ratingCount,
+    ModerationStatus? moderationStatus,
+    int? reportCount,
+    DateTime? lastReportedAt,
     String? itemLocationId,
     Address? itemLocationSnapshot,
     PickupSchedule? pickupSchedule,
@@ -137,6 +149,9 @@ class Offer {
       orderCount: orderCount ?? this.orderCount,
       avgRating: avgRating ?? this.avgRating,
       ratingCount: ratingCount ?? this.ratingCount,
+      moderationStatus: moderationStatus ?? this.moderationStatus,
+      reportCount: reportCount ?? this.reportCount,
+      lastReportedAt: lastReportedAt ?? this.lastReportedAt,
       itemLocationId: itemLocationId ?? this.itemLocationId,
       itemLocationSnapshot: itemLocationSnapshot ?? this.itemLocationSnapshot,
       pickupSchedule: pickupSchedule ?? this.pickupSchedule,

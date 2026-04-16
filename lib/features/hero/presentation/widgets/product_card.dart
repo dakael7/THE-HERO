@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import '../../../../core/constants/app_colors.dart';
+import '../../../../domain/entities/offer.dart';
 import '../../../../domain/providers/favorites_providers.dart';
+import '../../../moderation/presentation/widgets/report_offer_bottom_sheet.dart';
 import '../../../offers/presentation/widgets/star_rating_widget.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../cart/cart_provider.dart';
@@ -29,6 +31,7 @@ class ProductCard extends ConsumerWidget {
   final String? imageUrl;
   final double avgRating;
   final int ratingCount;
+  final ModerationStatus moderationStatus;
 
   const ProductCard({
     super.key,
@@ -53,6 +56,7 @@ class ProductCard extends ConsumerWidget {
     this.imageUrl,
     this.avgRating = 0.0,
     this.ratingCount = 0,
+    this.moderationStatus = ModerationStatus.visible,
   });
 
   @override
@@ -103,13 +107,70 @@ class ProductCard extends ConsumerWidget {
                           targetCacheSize: targetCacheSize,
                         ),
                       ),
+                      if (moderationStatus != ModerationStatus.visible)
+                        Positioned.fill(
+                          child: Container(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            alignment: Alignment.center,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.45),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    moderationStatus ==
+                                            ModerationStatus.blocked
+                                        ? Icons.gpp_bad_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    moderationStatus == ModerationStatus.blocked
+                                        ? 'Bloqueada'
+                                        : 'Oculta',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       Positioned(
                         top: 8,
                         right: 8,
-                        child: _FavoriteButton(
-                          offerId: offerId,
-                          userId: userId,
-                          ref: ref,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _OverflowMenu(
+                              offerId: offerId,
+                              offerTitle: name,
+                              sellerHeroId: sellerHeroId,
+                              userId: userId,
+                            ),
+                            const SizedBox(width: 6),
+                            _FavoriteButton(
+                              offerId: offerId,
+                              userId: userId,
+                              ref: ref,
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -282,6 +343,23 @@ class ProductCard extends ConsumerWidget {
     WidgetRef ref,
     String? userId,
   ) {
+    final currentUser = ref.read(profileProvider).maybeWhen(
+          data: (user) => user,
+          orElse: () => null,
+        );
+
+    if (currentUser != null && currentUser.isSuspended) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Tu cuenta está suspendida. No puedes agregar productos al carrito en este momento.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     final sellerId = sellerHeroId?.trim();
     if (userId != null &&
         sellerId != null &&
@@ -370,6 +448,77 @@ class _ProductImage extends StatelessWidget {
     return Container(
       color: borderGray100,
       child: child,
+    );
+  }
+}
+
+class _OverflowMenu extends StatelessWidget {
+  final String offerId;
+  final String offerTitle;
+  final String? sellerHeroId;
+  final String? userId;
+
+  const _OverflowMenu({
+    required this.offerId,
+    required this.offerTitle,
+    required this.sellerHeroId,
+    required this.userId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.92),
+      shape: const CircleBorder(),
+      elevation: 1,
+      shadowColor: Colors.black12,
+      child: PopupMenuButton<String>(
+        tooltip: 'Opciones',
+        onSelected: (value) {
+          if (value != 'report') return;
+
+          if (userId == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Debes iniciar sesión para reportar'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+            return;
+          }
+
+          final sellerId = sellerHeroId?.trim();
+          if (sellerId != null && sellerId.isNotEmpty && sellerId == userId) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No puedes reportar tu propia publicación'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+            return;
+          }
+
+          showReportOfferSheet(
+            context,
+            offerId: offerId,
+            offerTitle: offerTitle,
+          );
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem<String>(
+            value: 'report',
+            child: Text('Denunciar'),
+          ),
+        ],
+        child: const Padding(
+          padding: EdgeInsets.all(7),
+          child: Icon(
+            Icons.more_horiz,
+            color: textGray600,
+            size: 18,
+          ),
+        ),
+      ),
     );
   }
 }

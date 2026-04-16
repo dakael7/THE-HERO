@@ -46,6 +46,11 @@ class UserMapper {
       verificationStatus: model.verificationStatus,
       rutVerificationStatus: model.rutVerificationStatus,
       licenseVerificationStatus: model.licenseVerificationStatus,
+      accountStatus: model.accountStatus,
+      suspendedUntil: model.suspendedUntil,
+      suspensionReason: model.suspensionReason,
+      reportCount: model.reportCount,
+      lastReportedAt: model.lastReportedAt,
     );
   }
 
@@ -69,6 +74,11 @@ class UserMapper {
       verificationStatus: entity.verificationStatus,
       rutVerificationStatus: entity.rutVerificationStatus,
       licenseVerificationStatus: entity.licenseVerificationStatus,
+      accountStatus: entity.accountStatus,
+      suspendedUntil: entity.suspendedUntil,
+      suspensionReason: entity.suspensionReason,
+      reportCount: entity.reportCount,
+      lastReportedAt: entity.lastReportedAt,
     );
   }
 }
