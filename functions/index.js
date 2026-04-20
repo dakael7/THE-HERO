@@ -98,6 +98,33 @@ async function _requireWebAdmin(req) {
   return { ok: true, uid, email: decoded.email || null };
 }
 
+async function _logModerationEvent({
+  actorUid,
+  actorEmail,
+  targetType,
+  targetId,
+  action,
+  payload,
+}) {
+  const firestore = admin.firestore();
+  const event = {
+    actorUid: actorUid || null,
+    actorEmail: actorEmail || null,
+    targetType: String(targetType || '').trim(),
+    targetId: String(targetId || '').trim(),
+    action: String(action || '').trim(),
+    payload: payload != null && typeof payload === 'object' ? payload : null,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  // Best-effort: do not throw if logging fails.
+  try {
+    await firestore.collection('moderation_events').add(event);
+  } catch (e) {
+    logger.warn('[moderation_events] failed to log event', e);
+  }
+}
+
 function _toCents(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return null;
@@ -130,6 +157,64 @@ function _pickVehicleMap(input) {
     out[key] = num;
   }
   return Object.keys(out).length ? out : null;
+}
+
+function _normalizePositiveInt(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || Number.isNaN(n) || n <= 0) return fallback;
+  return Math.floor(n);
+}
+
+function _parseMillisToTimestamp(value) {
+  if (value == null) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || Number.isNaN(n)) return null;
+  return admin.firestore.Timestamp.fromMillis(n);
+}
+
+function _docIdOrderBy(query, direction) {
+  return query.orderBy(admin.firestore.FieldPath.documentId(), direction);
+}
+
+async function _getInboxPage(collectionName, req, filter) {
+  const firestore = admin.firestore();
+
+  const limit = _normalizePositiveInt(req.query?.limit, 25);
+  const startAfterLastReportedAtMs = req.query?.startAfterLastReportedAtMs;
+  const startAfterId = req.query?.startAfterId;
+
+  let q = firestore
+    .collection(collectionName)
+    .where(filter.field, "==", filter.value)
+    .orderBy(filter.orderByField, "desc");
+
+  q = _docIdOrderBy(q, "desc");
+
+  if (startAfterLastReportedAtMs != null && startAfterId != null) {
+    const ts = _parseMillisToTimestamp(startAfterLastReportedAtMs);
+    if (ts) {
+      q = q.startAfter(ts, String(startAfterId));
+    }
+  }
+
+  q = q.limit(limit);
+  const snap = await q.get();
+
+  const items = snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
+  const last = snap.docs.length ? snap.docs[snap.docs.length - 1] : null;
+  const lastData = last ? last.data() || {} : null;
+
+  return {
+    items,
+    nextPage: last
+      ? {
+          startAfterLastReportedAtMs: lastData?.[filter.orderByField]?.toMillis
+            ? lastData[filter.orderByField].toMillis()
+            : null,
+          startAfterId: last.id,
+        }
+      : null,
+  };
 }
 
 exports.adminUpdatePricing = onRequest(
@@ -288,6 +373,492 @@ exports.adminGetPricing = onRequest(
       });
     } catch (e) {
       logger.error("[adminGetPricing] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportInboxOffers = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "GET") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const page = await _getInboxPage("offers", req, {
+        field: "supportReviewStatus",
+        value: "pending",
+        orderByField: "lastReportedAt",
+      });
+
+      return res.status(200).json({ ok: true, ...page });
+    } catch (e) {
+      logger.error("[adminSupportInboxOffers] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportInboxUsers = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "GET") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const page = await _getInboxPage("users", req, {
+        field: "supportReviewStatus",
+        value: "pending",
+        orderByField: "lastReportedAt",
+      });
+
+      return res.status(200).json({ ok: true, ...page });
+    } catch (e) {
+      logger.error("[adminSupportInboxUsers] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportGetOffer = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "GET") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const offerId = String(req.query?.offerId || "").trim();
+      if (!offerId) {
+        return res.status(400).json({ error: "Missing offerId" });
+      }
+
+      const firestore = admin.firestore();
+      const snap = await firestore.collection("offers").doc(offerId).get();
+      if (!snap.exists) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      return res
+        .status(200)
+        .json({ ok: true, offer: { id: snap.id, data: snap.data() || {} } });
+    } catch (e) {
+      logger.error("[adminSupportGetOffer] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportGetUser = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "GET") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const userId = String(req.query?.userId || "").trim();
+      if (!userId) {
+        return res.status(400).json({ error: "Missing userId" });
+      }
+
+      const firestore = admin.firestore();
+      const snap = await firestore.collection("users").doc(userId).get();
+      if (!snap.exists) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      return res
+        .status(200)
+        .json({ ok: true, user: { id: snap.id, data: snap.data() || {} } });
+    } catch (e) {
+      logger.error("[adminSupportGetUser] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportListOfferReports = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "GET") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const offerId = String(req.query?.offerId || "").trim();
+      if (!offerId) {
+        return res.status(400).json({ error: "Missing offerId" });
+      }
+
+      const limit = _normalizePositiveInt(req.query?.limit, 200);
+      const firestore = admin.firestore();
+      const snap = await firestore
+        .collection("offers")
+        .doc(offerId)
+        .collection("reports")
+        .orderBy("createdAt", "desc")
+        .limit(limit)
+        .get();
+
+      const reports = snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
+      return res.status(200).json({ ok: true, reports });
+    } catch (e) {
+      logger.error("[adminSupportListOfferReports] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportListUserReports = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "GET") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const userId = String(req.query?.userId || "").trim();
+      if (!userId) {
+        return res.status(400).json({ error: "Missing userId" });
+      }
+
+      const limit = _normalizePositiveInt(req.query?.limit, 200);
+      const firestore = admin.firestore();
+      const snap = await firestore
+        .collection("users")
+        .doc(userId)
+        .collection("reports")
+        .orderBy("createdAt", "desc")
+        .limit(limit)
+        .get();
+
+      const reports = snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
+      return res.status(200).json({ ok: true, reports });
+    } catch (e) {
+      logger.error("[adminSupportListUserReports] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportSetOfferReviewStatus = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const offerId = String(req.body?.offerId || "").trim();
+      const status = String(req.body?.status || "").trim();
+      const notes = req.body?.notes != null ? String(req.body.notes) : null;
+
+      if (!offerId) return res.status(400).json({ error: "Missing offerId" });
+      if (!new Set(["reviewed", "dismissed"]).has(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+
+      const firestore = admin.firestore();
+      await firestore.collection("offers").doc(offerId).set(
+        {
+          supportReviewStatus: status,
+          lastModeratedAt: admin.firestore.FieldValue.serverTimestamp(),
+          ...(notes != null ? { moderationNotes: notes } : {}),
+          moderatedByUid: authCheck.uid,
+          ...(authCheck.email ? { moderatedByEmail: authCheck.email } : {}),
+        },
+        { merge: true },
+      );
+
+      await _logModerationEvent({
+        actorUid: authCheck.uid,
+        actorEmail: authCheck.email,
+        targetType: 'offer',
+        targetId: offerId,
+        action: 'set_review_status',
+        payload: { status, notes },
+      });
+
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      logger.error("[adminSupportSetOfferReviewStatus] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportSetUserReviewStatus = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const userId = String(req.body?.userId || "").trim();
+      const status = String(req.body?.status || "").trim();
+      const notes = req.body?.notes != null ? String(req.body.notes) : null;
+
+      if (!userId) return res.status(400).json({ error: "Missing userId" });
+      if (!new Set(["reviewed", "dismissed"]).has(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+
+      const firestore = admin.firestore();
+      await firestore.collection("users").doc(userId).set(
+        {
+          supportReviewStatus: status,
+          lastModeratedAt: admin.firestore.FieldValue.serverTimestamp(),
+          ...(notes != null ? { moderationNotes: notes } : {}),
+          moderatedByUid: authCheck.uid,
+          ...(authCheck.email ? { moderatedByEmail: authCheck.email } : {}),
+        },
+        { merge: true },
+      );
+
+      await _logModerationEvent({
+        actorUid: authCheck.uid,
+        actorEmail: authCheck.email,
+        targetType: 'user',
+        targetId: userId,
+        action: 'set_review_status',
+        payload: { status, notes },
+      });
+
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      logger.error("[adminSupportSetUserReviewStatus] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportModerateOffer = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const offerId = String(req.body?.offerId || "").trim();
+      const moderationStatus = String(req.body?.moderationStatus || "").trim();
+      const notes = req.body?.notes != null ? String(req.body.notes) : null;
+
+      if (!offerId) return res.status(400).json({ error: "Missing offerId" });
+      if (!new Set(["visible", "hidden", "blocked"]).has(moderationStatus)) {
+        return res.status(400).json({ error: "Invalid moderationStatus" });
+      }
+
+      const firestore = admin.firestore();
+      await firestore.collection("offers").doc(offerId).set(
+        {
+          moderationStatus,
+          supportReviewStatus: "reviewed",
+          lastModeratedAt: admin.firestore.FieldValue.serverTimestamp(),
+          ...(notes != null ? { moderationNotes: notes } : {}),
+          moderatedByUid: authCheck.uid,
+          ...(authCheck.email ? { moderatedByEmail: authCheck.email } : {}),
+        },
+        { merge: true },
+      );
+
+      await _logModerationEvent({
+        actorUid: authCheck.uid,
+        actorEmail: authCheck.email,
+        targetType: 'offer',
+        targetId: offerId,
+        action: 'set_moderation_status',
+        payload: { moderationStatus, notes },
+      });
+
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      logger.error("[adminSupportModerateOffer] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportModerateUser = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const userId = String(req.body?.userId || "").trim();
+      const accountStatus = String(req.body?.accountStatus || "").trim();
+      const suspendedUntilMs = req.body?.suspendedUntilMs;
+      const notes = req.body?.notes != null ? String(req.body.notes) : null;
+
+      if (!userId) return res.status(400).json({ error: "Missing userId" });
+      if (!new Set(["active", "suspended", "banned"]).has(accountStatus)) {
+        return res.status(400).json({ error: "Invalid accountStatus" });
+      }
+
+      let suspendedUntil = null;
+      if (accountStatus === "suspended") {
+        suspendedUntil = _parseMillisToTimestamp(suspendedUntilMs);
+        if (!suspendedUntil) {
+          return res.status(400).json({ error: "Missing/invalid suspendedUntilMs" });
+        }
+      }
+
+      const firestore = admin.firestore();
+      await firestore.collection("users").doc(userId).set(
+        {
+          accountStatus,
+          suspendedUntil: accountStatus === "suspended" ? suspendedUntil : null,
+          supportReviewStatus: "reviewed",
+          lastModeratedAt: admin.firestore.FieldValue.serverTimestamp(),
+          ...(notes != null ? { moderationNotes: notes } : {}),
+          moderatedByUid: authCheck.uid,
+          ...(authCheck.email ? { moderatedByEmail: authCheck.email } : {}),
+        },
+        { merge: true },
+      );
+
+      await _logModerationEvent({
+        actorUid: authCheck.uid,
+        actorEmail: authCheck.email,
+        targetType: 'user',
+        targetId: userId,
+        action: 'set_account_status',
+        payload: {
+          accountStatus,
+          suspendedUntilMs: suspendedUntil ? suspendedUntil.toMillis() : null,
+          notes,
+        },
+      });
+
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      logger.error("[adminSupportModerateUser] error", e);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminSupportDeleteOffer = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({ error: "Method not allowed" });
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({ error: authCheck.message });
+      }
+
+      const offerId = String(req.body?.offerId || "").trim();
+      if (!offerId) return res.status(400).json({ error: "Missing offerId" });
+
+      const firestore = admin.firestore();
+      const offerRef = firestore.collection("offers").doc(offerId);
+      await firestore.recursiveDelete(offerRef);
+
+      await _logModerationEvent({
+        actorUid: authCheck.uid,
+        actorEmail: authCheck.email,
+        targetType: 'offer',
+        targetId: offerId,
+        action: 'delete_offer',
+        payload: null,
+      });
+
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      logger.error("[adminSupportDeleteOffer] error", e);
       return res.status(500).json({ error: "Internal error" });
     }
   },

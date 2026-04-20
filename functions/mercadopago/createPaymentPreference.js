@@ -340,6 +340,29 @@ exports.createPaymentPreference = onCall(
 
     console.log(`Payment preference created: ${result.id} for order ${orderId}`);
 
+    try {
+      const paymentsCollection = admin.firestore().collection("payments");
+      const paymentRef = paymentsCollection.doc(String(result.id));
+      await paymentRef.set(
+        {
+          orderId: String(orderId),
+          preferenceId: String(result.id),
+          status: "pending",
+          amount: Number(amountTotal) || 0,
+          currency: "CLP",
+          heroId: String(heroId),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        {merge: true},
+      );
+    } catch (persistPaymentErr) {
+      console.warn(
+        `Failed to persist initial payment doc for preference ${result.id}:`,
+        persistPaymentErr?.message ?? persistPaymentErr,
+      );
+    }
+
     return {
       preferenceId: result.id,
       initPoint: result.init_point,

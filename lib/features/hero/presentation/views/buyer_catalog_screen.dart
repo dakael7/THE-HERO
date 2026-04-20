@@ -952,7 +952,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   if (galleryImages.length > 1)
                     Positioned(
                       top: 90,
-                      right: 14,
+                      left: 14,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 5),

@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:async';
 import 'dart:typed_data';
 import '../models/offer_model.dart';
+import '../../domain/entities/offer.dart';
 
 abstract class OffersRemoteDataSource {
   Future<OfferModel> createOffer(OfferModel offer);
@@ -112,10 +114,14 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
   @override
   Future<OfferModel> updateOffer(OfferModel offer) async {
     try {
+      final data = offer.toJson();
+      data.remove('moderationStatus');
+      data.remove('reportCount');
+      data.remove('lastReportedAt');
       await _firestore
           .collection('offers')
           .doc(offer.offerId)
-          .update(offer.toJson());
+          .update(data);
       return offer;
     } catch (e) {
       throw Exception('Error al actualizar oferta: $e');
@@ -171,16 +177,17 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
     try {
       Query query = _firestore
           .collection('offers')
-          .where('status', isEqualTo: 'active')
-          .where('moderationStatus', whereIn: ['visible', null]);
+          .where('status', isEqualTo: 'active');
 
       if (category != null && category.isNotEmpty) {
         query = query.where('category', isEqualTo: category);
       }
 
+      final int fetchLimit = (limit * 3) > 100 ? 100 : (limit * 3);
+
       return query
-          .orderBy('publishedAt', descending: true)
-          .limit(limit)
+          .orderBy('createdAt', descending: true)
+          .limit(fetchLimit)
           .snapshots()
           .map(
             (snapshot) => snapshot.docs
@@ -188,6 +195,8 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
                   (doc) =>
                       OfferModel.fromJson(doc.data() as Map<String, dynamic>),
                 )
+                .where((offer) => offer.moderationStatus == ModerationStatus.visible)
+                .take(limit)
                 .toList(),
           );
     } catch (e) {

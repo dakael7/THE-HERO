@@ -145,6 +145,10 @@ class _ReportUserBottomSheetState extends ConsumerState<ReportUserBottomSheet> {
         throw Exception('Debes iniciar sesión para reportar');
       }
 
+      if (reporterId == widget.reportedUserId) {
+        throw Exception('No puedes reportarte a ti mismo');
+      }
+
       final useCase = ref.read(reportUserUseCaseProvider);
       await useCase.execute(
         reportedUserId: widget.reportedUserId,
@@ -165,8 +169,9 @@ class _ReportUserBottomSheetState extends ConsumerState<ReportUserBottomSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
+      final message = e.toString().replaceFirst('Exception: ', '').trim();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(content: Text(message.isEmpty ? 'Error al reportar' : message)),
       );
     }
   }

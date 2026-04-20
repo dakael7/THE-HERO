@@ -158,17 +158,17 @@ class ProductCard extends ConsumerWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            _FavoriteButton(
+                              offerId: offerId,
+                              userId: userId,
+                              ref: ref,
+                            ),
+                            const SizedBox(width: 6),
                             _OverflowMenu(
                               offerId: offerId,
                               offerTitle: name,
                               sellerHeroId: sellerHeroId,
                               userId: userId,
-                            ),
-                            const SizedBox(width: 6),
-                            _FavoriteButton(
-                              offerId: offerId,
-                              userId: userId,
-                              ref: ref,
                             ),
                           ],
                         ),

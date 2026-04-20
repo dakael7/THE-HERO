@@ -46,7 +46,12 @@ class PaymentRepositoryImpl implements PaymentRepository {
         createdAt: DateTime.now(),
       );
 
-      await savePayment(payment);
+      try {
+        await savePayment(payment);
+      } catch (_) {
+        // payments docs are created/updated by backend + MercadoPago webhook.
+        // Client writes may be blocked by Firestore rules, so ignore.
+      }
 
       return preferenceModel.toEntity();
     } on PaymentFunctionsException {

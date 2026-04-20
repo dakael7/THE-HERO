@@ -21,13 +21,18 @@ class ModerationRemoteDataSourceImpl implements ModerationRemoteDataSource {
   Future<void> reportOffer(OfferReportModel report) async {
     final batch = _firestore.batch();
 
-    final reportRef = _firestore.collection('offer_reports').doc();
+    final reportRef = _firestore
+        .collection('offers')
+        .doc(report.offerId)
+        .collection('reports')
+        .doc(report.reporterId);
     batch.set(reportRef, report.toJson());
 
     final offerRef = _firestore.collection('offers').doc(report.offerId);
     batch.update(offerRef, {
       'reportCount': FieldValue.increment(1),
       'lastReportedAt': FieldValue.serverTimestamp(),
+      'supportReviewStatus': 'pending',
     });
 
     await batch.commit();
@@ -35,27 +40,32 @@ class ModerationRemoteDataSourceImpl implements ModerationRemoteDataSource {
 
   @override
   Future<bool> hasUserReportedOffer(String offerId, String userId) async {
-    final snap = await _firestore
-        .collection('offer_reports')
-        .where('offerId', isEqualTo: offerId)
-        .where('reporterId', isEqualTo: userId)
-        .limit(1)
+    final doc = await _firestore
+        .collection('offers')
+        .doc(offerId)
+        .collection('reports')
+        .doc(userId)
         .get();
 
-    return snap.docs.isNotEmpty;
+    return doc.exists;
   }
 
   @override
   Future<void> reportUser(UserReportModel report) async {
     final batch = _firestore.batch();
 
-    final reportRef = _firestore.collection('user_reports').doc();
+    final reportRef = _firestore
+        .collection('users')
+        .doc(report.reportedUserId)
+        .collection('reports')
+        .doc(report.reporterId);
     batch.set(reportRef, report.toJson());
 
     final userRef = _firestore.collection('users').doc(report.reportedUserId);
     batch.update(userRef, {
       'reportCount': FieldValue.increment(1),
       'lastReportedAt': FieldValue.serverTimestamp(),
+      'supportReviewStatus': 'pending',
     });
 
     await batch.commit();
@@ -63,13 +73,13 @@ class ModerationRemoteDataSourceImpl implements ModerationRemoteDataSource {
 
   @override
   Future<bool> hasUserReportedUser(String reportedUserId, String reporterId) async {
-    final snap = await _firestore
-        .collection('user_reports')
-        .where('reportedUserId', isEqualTo: reportedUserId)
-        .where('reporterId', isEqualTo: reporterId)
-        .limit(1)
+    final doc = await _firestore
+        .collection('users')
+        .doc(reportedUserId)
+        .collection('reports')
+        .doc(reporterId)
         .get();
 
-    return snap.docs.isNotEmpty;
+    return doc.exists;
   }
 }
