@@ -32,6 +32,7 @@ abstract class AuthRepository {
 
   /// Obtiene el usuario actual
   Future<User?> getCurrentUser();
+  Future<User?> getCachedUser();
 
   Future<User?> getUserById(String userId);
 

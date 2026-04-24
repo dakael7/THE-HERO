@@ -686,7 +686,7 @@ class _OfferListItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sellerAsync = ref.watch(userByIdStreamProvider(offer.heroId));
+    final sellerAsync = ref.watch(userByIdProvider(offer.heroId));
 
     final sellerName = sellerAsync.maybeWhen(
       data: (user) => user?.fullName ?? 'Vendedor',

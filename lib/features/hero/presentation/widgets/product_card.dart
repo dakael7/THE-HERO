@@ -64,10 +64,7 @@ class ProductCard extends ConsumerWidget {
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final userId = ref.watch(profileProvider).maybeWhen(
-                data: (user) => user?.id,
-                orElse: () => null,
-              );
+          final userId = ref.watch(currentUserIdProvider);
 
           final maxWidth = constraints.maxWidth;
           final dpr = MediaQuery.of(context).devicePixelRatio;

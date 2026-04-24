@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -35,13 +36,113 @@ class AuthNotifier extends Notifier<AuthState> {
   late final SignOutUseCase _signOutUseCase;
   late final AuthRepository _authRepository;
 
+  void _logAuth(String message) {
+    final ts = DateTime.now().toIso8601String();
+    print('[AUTH][$ts] $message');
+  }
+
+  bool _hasActiveFirebaseSession() {
+    return ref.read(firebaseAuthProvider).currentUser != null;
+  }
+
+  String _normalizeErrorMessage(Object error) {
+    final raw = error.toString().trim();
+    if (raw.startsWith('Exception: ')) {
+      return raw.substring('Exception: '.length);
+    }
+    return raw;
+  }
+
+  Future<User?> _recoverGoogleUser({
+    required String email,
+    required UserRole role,
+    required Stopwatch sw,
+  }) async {
+    if (!_hasActiveFirebaseSession()) {
+      return null;
+    }
+
+    _logAuth(
+      'googleSignInAndCreateUser:recovery begin elapsedMs=${sw.elapsedMilliseconds}',
+    );
+
+    try {
+      final cachedOrRemoteUser = await _getCurrentUserUseCase.execute();
+      if (cachedOrRemoteUser != null) {
+        _logAuth(
+          'googleSignInAndCreateUser:recovery current_user success elapsedMs=${sw.elapsedMilliseconds} uid=${cachedOrRemoteUser.id}',
+        );
+        return cachedOrRemoteUser;
+      }
+    } catch (e) {
+      _logAuth(
+        'googleSignInAndCreateUser:recovery current_user failed elapsedMs=${sw.elapsedMilliseconds} error=$e',
+      );
+    }
+
+    if (email.isNotEmpty) {
+      try {
+        final registerGoogleUserUseCase = ref.read(
+          registerGoogleUserUseCaseProvider,
+        );
+        final recoveredUser = await registerGoogleUserUseCase.execute(
+          email: email,
+          role: role,
+        );
+        _logAuth(
+          'googleSignInAndCreateUser:recovery register_google_user success elapsedMs=${sw.elapsedMilliseconds} uid=${recoveredUser.id}',
+        );
+        return recoveredUser;
+      } catch (e) {
+        _logAuth(
+          'googleSignInAndCreateUser:recovery register_google_user failed elapsedMs=${sw.elapsedMilliseconds} error=$e',
+        );
+      }
+    }
+
+    try {
+      final cachedOrRemoteUser = await _getCurrentUserUseCase.execute();
+      if (cachedOrRemoteUser != null) {
+        _logAuth(
+          'googleSignInAndCreateUser:recovery final_current_user success elapsedMs=${sw.elapsedMilliseconds} uid=${cachedOrRemoteUser.id}',
+        );
+        return cachedOrRemoteUser;
+      }
+    } catch (e) {
+      _logAuth(
+        'googleSignInAndCreateUser:recovery final_current_user failed elapsedMs=${sw.elapsedMilliseconds} error=$e',
+      );
+    }
+
+    _logAuth(
+      'googleSignInAndCreateUser:recovery end elapsedMs=${sw.elapsedMilliseconds} result=null',
+    );
+    return null;
+  }
+
+  Future<void> _rollbackPartialSession({
+    required String source,
+    required Stopwatch sw,
+  }) async {
+    if (!_hasActiveFirebaseSession()) {
+      return;
+    }
+
+    try {
+      await _signOutUseCase.execute();
+      _logAuth('$source:rollback success elapsedMs=${sw.elapsedMilliseconds}');
+    } catch (e) {
+      _logAuth('$source:rollback failed elapsedMs=${sw.elapsedMilliseconds} error=$e');
+    }
+  }
+
   Future<void> _uploadProfilePhoto({
     required String uid,
     required Uint8List bytes,
     required String fileName,
   }) async {
     if (bytes.isEmpty) {
-      throw Exception('Foto de perfil vacía');
+      throw Exception('Foto de perfil vacÃ­a');
     }
 
     final storage = ref.read(firebaseStorageProvider);
@@ -103,46 +204,105 @@ class AuthNotifier extends Notifier<AuthState> {
     return AuthState.initial().copyWith(isAuthenticated: initialAuthenticated);
   }
 
-  Future<void> signInWithGoogleAndCreateUser(UserRole role) async {
+  Future<User> signInWithGoogleAndCreateUser(UserRole role) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
+    final sw = Stopwatch()..start();
+    var email = '';
+    _logAuth(
+      'googleSignInAndCreateUser:start role=$role isAuthenticated=${state.isAuthenticated}',
+    );
     try {
       final googleSignInUseCase = ref.read(googleSignInUseCaseProvider);
+      _logAuth('googleSignInAndCreateUser:step=google_execute begin');
       final userCredential = await googleSignInUseCase.execute();
-      final email = userCredential.user?.email ?? '';
+      _logAuth(
+        'googleSignInAndCreateUser:step=google_execute end elapsedMs=${sw.elapsedMilliseconds} uid=${userCredential.user?.uid}',
+      );
+      email =
+          userCredential.user?.email ??
+          ref.read(firebaseAuthProvider).currentUser?.email ??
+          '';
+      final emailDomain = email.contains('@') ? email.split('@').last : 'n/a';
 
       final registerGoogleUserUseCase = ref.read(
         registerGoogleUserUseCaseProvider,
       );
-      await registerGoogleUserUseCase.execute(email: email, role: role);
+      _logAuth(
+        'googleSignInAndCreateUser:step=register_google_user begin emailDomain=$emailDomain role=$role',
+      );
+      final registeredUser = await registerGoogleUserUseCase.execute(
+        email: email,
+        role: role,
+      );
+      _logAuth(
+        'googleSignInAndCreateUser:step=register_google_user end elapsedMs=${sw.elapsedMilliseconds}',
+      );
 
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
         errorMessage: null,
       );
+      _logAuth(
+        'googleSignInAndCreateUser:success elapsedMs=${sw.elapsedMilliseconds} emailDomain=$emailDomain',
+      );
+      return registeredUser;
     } catch (e) {
+      final recoveredUser = await _recoverGoogleUser(
+        email: email,
+        role: role,
+        sw: sw,
+      );
+      if (recoveredUser != null) {
+        state = state.copyWith(
+          isLoading: false,
+          isAuthenticated: true,
+          errorMessage: null,
+        );
+        _logAuth(
+          'googleSignInAndCreateUser:recovered elapsedMs=${sw.elapsedMilliseconds} uid=${recoveredUser.id}',
+        );
+        return recoveredUser;
+      }
+
+      final hadActiveSession = _hasActiveFirebaseSession();
+      await _rollbackPartialSession(
+        source: 'googleSignInAndCreateUser',
+        sw: sw,
+      );
+      final hasActiveSession = _hasActiveFirebaseSession();
+      final normalizedMessage = _normalizeErrorMessage(e);
+      final errorMessage = hadActiveSession && !hasActiveSession
+          ? 'No pudimos completar la configuración de tu cuenta con Google. Cerramos la sesión parcial para que puedas reintentar.'
+          : normalizedMessage;
+
       state = state.copyWith(
         isLoading: false,
-        isAuthenticated: false,
-        errorMessage: e.toString(),
+        isAuthenticated: hasActiveSession,
+        errorMessage: errorMessage,
       );
-      rethrow;
+      _logAuth(
+        'googleSignInAndCreateUser:error elapsedMs=${sw.elapsedMilliseconds} sessionActive=$hasActiveSession error=$e',
+      );
+      throw Exception(errorMessage);
     }
   }
 
   Future<void> loadSavedSession() async {
+    final hasFirebaseSession = _hasActiveFirebaseSession();
     try {
       final user = await _getCurrentUserUseCase.execute();
-      if (user != null) {
-        state = state.copyWith(isAuthenticated: true);
-      }
+      state = state.copyWith(
+        isAuthenticated: user != null || hasFirebaseSession,
+      );
     } catch (e) {
-      state = state.copyWith(isAuthenticated: false);
+      state = state.copyWith(isAuthenticated: hasFirebaseSession);
     }
   }
 
   Future<void> signInWithEmail(String email, String password) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
+    final sw = Stopwatch()..start();
     try {
       await _loginUseCase.execute(email, password);
       state = state.copyWith(
@@ -151,10 +311,15 @@ class AuthNotifier extends Notifier<AuthState> {
         errorMessage: null,
       );
     } catch (e) {
+      final hadActiveSession = _hasActiveFirebaseSession();
+      if (hadActiveSession) {
+        await _rollbackPartialSession(source: 'signInWithEmail', sw: sw);
+      }
+      final hasActiveSession = _hasActiveFirebaseSession();
       state = state.copyWith(
         isLoading: false,
-        isAuthenticated: false,
-        errorMessage: e.toString(),
+        isAuthenticated: hasActiveSession,
+        errorMessage: _normalizeErrorMessage(e),
       );
     }
   }
@@ -393,14 +558,27 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<bool> signInWithGoogle() async {
     state = state.copyWith(isLoading: true, errorMessage: null);
+    final sw = Stopwatch()..start();
+    _logAuth('googleSignInOnly:start');
     try {
       // Obtener el usecase directamente desde ref
       final googleSignInUseCase = ref.read(googleSignInUseCaseProvider);
+      _logAuth('googleSignInOnly:step=google_execute begin');
       final userCredential = await googleSignInUseCase.execute();
+      _logAuth(
+        'googleSignInOnly:step=google_execute end elapsedMs=${sw.elapsedMilliseconds} uid=${userCredential.user?.uid}',
+      );
       final email = userCredential.user?.email ?? '';
+      final emailDomain = email.contains('@') ? email.split('@').last : 'n/a';
 
       // Verificar si la cuenta existe
+      _logAuth(
+        'googleSignInOnly:step=checkEmailExists begin emailDomain=$emailDomain',
+      );
       final accountExists = await checkEmailExists(email);
+      _logAuth(
+        'googleSignInOnly:step=checkEmailExists end elapsedMs=${sw.elapsedMilliseconds} exists=$accountExists',
+      );
 
       state = state.copyWith(
         isLoading: false,
@@ -409,12 +587,26 @@ class AuthNotifier extends Notifier<AuthState> {
       );
 
       // Retorna true si es un usuario nuevo (no existe), false si ya existe
+      _logAuth(
+        'googleSignInOnly:success elapsedMs=${sw.elapsedMilliseconds} isNew=${!accountExists}',
+      );
       return !accountExists;
+    } on TimeoutException catch (_) {
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: false,
+        errorMessage: 'Tiempo de espera agotado en inicio de sesiÃ³n con Google',
+      );
+      _logAuth('googleSignInOnly:timeout elapsedMs=${sw.elapsedMilliseconds}');
+      rethrow;
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: false,
         errorMessage: e.toString(),
+      );
+      _logAuth(
+        'googleSignInOnly:error elapsedMs=${sw.elapsedMilliseconds} error=$e',
       );
       rethrow;
     }

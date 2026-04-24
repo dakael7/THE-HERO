@@ -56,3 +56,5 @@ firebase.json
 *.local
 .runtimeconfig.json
 moderation-flutter.md
+Firebase.rules
+storage.rules

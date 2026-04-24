@@ -7,7 +7,6 @@ import '../domain/entities/user.dart';
 import '../features/auth/presentation/views/login_page.dart';
 import '../features/auth/presentation/providers/session_provider.dart';
 import '../features/auth/presentation/views/unverified_email_screen.dart';
-import '../features/auth/presentation/providers/auth_provider.dart';
 import '../features/hero/presentation/views/hero_home_screen.dart';
 import '../features/rider/presentation/views/rider_home_screen.dart';
 
@@ -16,11 +15,11 @@ class App extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sessionCheck = ref.watch(sessionCheckProvider);
+    final bootstrapAsync = ref.watch(appBootstrapProvider);
 
     return MaterialApp(
       title: 'THE HERO',
-      navigatorKey: NotificationHandler().navigatorKey, 
+      navigatorKey: NotificationHandler().navigatorKey,
       scrollBehavior: const _NoStretchScrollBehavior(),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: primaryOrange),
@@ -33,99 +32,60 @@ class App extends ConsumerWidget {
           ),
         ),
       ),
-      home: sessionCheck.when(
-        data: (isAuthenticated) {
-          if (!isAuthenticated) {
+      home: bootstrapAsync.when(
+        data: (bootstrap) {
+          if (!bootstrap.isAuthenticated) {
             return const LoginPage();
           }
 
-          return FutureBuilder(
-            future: Future.delayed(const Duration(milliseconds: 100)),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return Scaffold(
-                  backgroundColor: primaryYellow,
-                  body: const Center(
-                    child: CircularProgressIndicator(color: primaryOrange),
-                  ),
-                );
-              }
-              return _buildHomeScreen(ref);
-            },
+          final user = bootstrap.user;
+          if (user == null) {
+            return const LoginPage();
+          }
+
+          final isEmailVerified =
+              bootstrap.isEmailVerified || user.contact.emailVerified;
+          if (!isEmailVerified) {
+            return UnverifiedEmailScreen(
+              userRole: user.isRider ? UserRole.rider : UserRole.hero,
+              email: user.email,
+            );
+          }
+
+          return _buildResolvedHome(
+            user: user,
+            lastRole: bootstrap.lastRole,
           );
         },
-        loading: () {
-          return Scaffold(
-            backgroundColor: primaryYellow,
-            body: const Center(
-              child: CircularProgressIndicator(color: primaryOrange),
-            ),
-          );
-        },
-        error: (error, stackTrace) {
-          return const LoginPage();
-        },
+        loading: _buildLoadingScreen,
+        error: (error, stackTrace) => const LoginPage(),
       ),
     );
   }
 
-  Widget _buildHomeScreen(WidgetRef ref) {
-    final currentUserAsync = ref.watch(currentUserProvider);
-    final lastRoleAsync = ref.watch(lastRoleProvider);
-    final emailVerifiedAsync = ref.watch(emailVerifiedCheckProvider);
+  Widget _buildResolvedHome({
+    required User user,
+    required String? lastRole,
+  }) {
+    final hasRider = user.isRider;
+    final hasHero = user.isHero;
 
-    return currentUserAsync.when(
-      data: (user) {
-        if (user == null) {
-          return const LoginPage();
-        }
+    if (hasRider && hasHero) {
+      if (lastRole == 'hero') return const HeroHomeScreen();
+      if (lastRole == 'rider') return const RiderHomeScreen();
+    }
 
-        if (emailVerifiedAsync.isLoading) {
-          return Scaffold(
-            backgroundColor: primaryYellow,
-            body: const Center(
-              child: CircularProgressIndicator(color: primaryOrange),
-            ),
-          );
-        }
+    if (hasRider) return const RiderHomeScreen();
+    if (hasHero) return const HeroHomeScreen();
+    return const LoginPage();
+  }
 
-        final isEmailVerified = emailVerifiedAsync.maybeWhen(
-          data: (v) => v,
-          orElse: () => false,
-        );
-
-        if (!isEmailVerified || !user.contact.emailVerified) {
-          return UnverifiedEmailScreen(
-            userRole: user.isRider ? UserRole.rider : UserRole.hero,
-            email: user.email,
-          );
-        }
-
-       
-        final hasRider = user.isRider;
-        final hasHero = user.isHero;
-        final lastRole = lastRoleAsync.maybeWhen(data: (v) => v, orElse: () => null);
-
-        if (hasRider && hasHero) {
-          if (lastRole == 'hero') return const HeroHomeScreen();
-          if (lastRole == 'rider') return const RiderHomeScreen();
-        }
-
-        if (hasRider) return const RiderHomeScreen();
-        if (hasHero) return const HeroHomeScreen();
-        return const LoginPage();
-      },
-      loading: () {
-        return Scaffold(
-          backgroundColor: primaryYellow,
-          body: const Center(
-            child: CircularProgressIndicator(color: primaryOrange),
-          ),
-        );
-      },
-      error: (error, stackTrace) {
-        return const LoginPage();
-      },
+  Widget _buildLoadingScreen() {
+    return Scaffold(
+      backgroundColor: primaryYellow,
+      body: const Center(
+        child: CircularProgressIndicator(color: primaryOrange),
+      ),
     );
   }
 }

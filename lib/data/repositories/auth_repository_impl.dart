@@ -7,6 +7,7 @@ import '../datasources/auth_local_data_source.dart';
 class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource _remoteDataSource;
   final AuthLocalDataSource _localDataSource;
+  final Map<String, User> _userByIdCache = <String, User>{};
 
   AuthRepositoryImpl({
     required AuthRemoteDataSource remoteDataSource,
@@ -14,13 +15,18 @@ class AuthRepositoryImpl implements AuthRepository {
   }) : _remoteDataSource = remoteDataSource,
        _localDataSource = localDataSource;
 
+  User _rememberUser(User user) {
+    _userByIdCache[user.id] = user;
+    return user;
+  }
+
   @override
   Future<User> signInWithEmail(String email, String password) async {
     final userModel = await _remoteDataSource.signInWithEmail(email, password);
 
     await _localDataSource.saveUser(userModel);
 
-    return UserMapper.toEntity(userModel);
+    return _rememberUser(UserMapper.toEntity(userModel));
   }
 
   @override
@@ -50,7 +56,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
     await _localDataSource.saveUser(userModel);
 
-    return UserMapper.toEntity(userModel);
+    return _rememberUser(UserMapper.toEntity(userModel));
   }
 
   @override
@@ -73,13 +79,14 @@ class AuthRepositoryImpl implements AuthRepository {
 
     await _localDataSource.saveUser(userModel);
 
-    return UserMapper.toEntity(userModel);
+    return _rememberUser(UserMapper.toEntity(userModel));
   }
 
   @override
   Future<void> signOut() async {
     await _remoteDataSource.signOut();
 
+    _userByIdCache.clear();
     await _localDataSource.clearUser();
   }
 
@@ -95,7 +102,7 @@ class AuthRepositoryImpl implements AuthRepository {
       final remoteUser = await _remoteDataSource.getCurrentUser();
       if (remoteUser != null) {
         await _localDataSource.saveUser(remoteUser);
-        return UserMapper.toEntity(remoteUser);
+        return _rememberUser(UserMapper.toEntity(remoteUser));
       }
     } catch (_) {
       // Fall back to locally cached user to avoid forcing logout on transient
@@ -104,17 +111,32 @@ class AuthRepositoryImpl implements AuthRepository {
 
     final localUser = await _localDataSource.getCurrentUser();
     if (localUser != null) {
-      return UserMapper.toEntity(localUser);
+      return _rememberUser(UserMapper.toEntity(localUser));
     }
 
     return null;
   }
 
   @override
+  Future<User?> getCachedUser() async {
+    final localUser = await _localDataSource.getCurrentUser();
+    if (localUser == null) return null;
+    return _rememberUser(UserMapper.toEntity(localUser));
+  }
+
+  @override
   Future<User?> getUserById(String userId) async {
-    final remoteUser = await _remoteDataSource.getUserById(userId);
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) return null;
+
+    final cachedUser = _userByIdCache[normalizedUserId];
+    if (cachedUser != null) {
+      return cachedUser;
+    }
+
+    final remoteUser = await _remoteDataSource.getUserById(normalizedUserId);
     if (remoteUser == null) return null;
-    return UserMapper.toEntity(remoteUser);
+    return _rememberUser(UserMapper.toEntity(remoteUser));
   }
 
   @override
@@ -133,14 +155,16 @@ class AuthRepositoryImpl implements AuthRepository {
     required UserRole role,
   }) async {
     final roleString = role == UserRole.hero ? 'hero' : 'rider';
+    final cachedUser = await _localDataSource.getCurrentUser();
     final userModel = await _remoteDataSource.registerGoogleUser(
       email: email,
       role: roleString,
+      fallbackUserData: cachedUser?.toJson(),
     );
 
     await _localDataSource.saveUser(userModel);
 
-    return UserMapper.toEntity(userModel);
+    return _rememberUser(UserMapper.toEntity(userModel));
   }
 
   @override
@@ -161,7 +185,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
     await _localDataSource.saveUser(userModel);
 
-    return UserMapper.toEntity(userModel);
+    return _rememberUser(UserMapper.toEntity(userModel));
   }
 
   @override
@@ -184,7 +208,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
     await _localDataSource.saveUser(userModel);
 
-    return UserMapper.toEntity(userModel);
+    return _rememberUser(UserMapper.toEntity(userModel));
   }
 
   @override

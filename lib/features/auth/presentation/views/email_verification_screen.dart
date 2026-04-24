@@ -171,24 +171,25 @@ class _EmailVerificationScreenState
     setState(() => _isLoading = true);
     await Future<void>.delayed(const Duration(milliseconds: 16));
 
+    void logRoute(String message) {
+      final ts = DateTime.now().toIso8601String();
+      debugPrint('[AUTH][ROUTE][$ts] $message');
+    }
+
     try {
       final authNotifier = ref.read(authNotifierProvider.notifier);
-      await authNotifier.signInWithGoogleAndCreateUser(widget.userRole);
-
-      final currentUser = await ref.read(getCurrentUserUseCaseProvider).execute();
+      logRoute('google_sign_in:start role=${widget.userRole}');
+      final currentUser =
+          await authNotifier.signInWithGoogleAndCreateUser(widget.userRole);
       if (!mounted) return;
-
-      if (currentUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al obtener datos del usuario')),
-        );
-        return;
-      }
 
       final authUser = fb_auth.FirebaseAuth.instance.currentUser;
       final isEmailVerified = authUser?.emailVerified ?? false;
 
       if (!isEmailVerified || !currentUser.contact.emailVerified) {
+        logRoute(
+          'route=unverified_email isEmailVerified=$isEmailVerified firestoreEmailVerified=${currentUser.contact.emailVerified}',
+        );
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -205,11 +206,23 @@ class _EmailVerificationScreenState
           currentUser.identity.documentId.trim().isEmpty ||
               currentUser.contact.phoneNumber.trim().isEmpty;
 
+      final missingDocId = currentUser.identity.documentId.trim().isEmpty;
+      final missingPhone = currentUser.contact.phoneNumber.trim().isEmpty;
+
       final needsProfilePhoto =
           (currentUser.profilePhotoUrl ?? '').trim().isEmpty;
 
+      final missingPhoto = (currentUser.profilePhotoUrl ?? '').trim().isEmpty;
+
+      logRoute(
+        'profile_check uid=${currentUser.id} roleWanted=${widget.userRole} roles=${currentUser.roles} missingDocId=$missingDocId missingPhone=$missingPhone missingPhoto=$missingPhoto isHero=${currentUser.isHero} isRider=${currentUser.isRider}',
+      );
+
       if (widget.userRole == UserRole.hero) {
         if (needsCriticalData || needsProfilePhoto || !currentUser.isHero) {
+          logRoute(
+            'route=register_hero reason needsCriticalData=$needsCriticalData needsProfilePhoto=$needsProfilePhoto isHero=${currentUser.isHero}',
+          );
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -224,6 +237,7 @@ class _EmailVerificationScreenState
 
         await ref.read(authNotifierProvider.notifier).saveLastRole('hero');
         if (!mounted) return;
+        logRoute('route=hero_home');
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
@@ -232,6 +246,9 @@ class _EmailVerificationScreenState
       }
 
       if (needsCriticalData || needsProfilePhoto || !currentUser.isRider) {
+        logRoute(
+          'route=register_rider reason needsCriticalData=$needsCriticalData needsProfilePhoto=$needsProfilePhoto isRider=${currentUser.isRider}',
+        );
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -246,16 +263,23 @@ class _EmailVerificationScreenState
 
       await ref.read(authNotifierProvider.notifier).saveLastRole('rider');
       if (!mounted) return;
+      logRoute('route=rider_home');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
       );
     } catch (e) {
       if (!mounted) return;
+      final authState = ref.read(authNotifierProvider);
+      final rawMessage = authState.errorMessage ?? e.toString();
+      final message = rawMessage.startsWith('Exception: ')
+          ? rawMessage.substring('Exception: '.length)
+          : rawMessage;
+      logRoute('google_sign_in:exception error=$e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          duration: const Duration(milliseconds: 2000),
+          content: Text(message),
+          duration: const Duration(milliseconds: 3000),
         ),
       );
     } finally {

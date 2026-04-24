@@ -199,18 +199,12 @@ class _DonationOrderTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final paymentAsync =
-        ref.watch(watchPaymentByOrderIdProvider(order.orderId));
+    final paymentAsync = ref.watch(getPaymentByOrderIdProvider(order.orderId));
     final payment = paymentAsync.asData?.value;
     final isPaymentApproved = payment?.status == PaymentStatus.approved;
 
-    final liveOrderAsync = ref.watch(orderByIdProvider(order.orderId));
-    final baseOrder = liveOrderAsync.maybeWhen(
-      data: (o) => o,
-      orElse: () => null,
-    );
-
-    final effectiveOrder = baseOrder ?? order;
+    final liveOrderAsync = ref.watch(orderByIdFutureProvider(order.orderId));
+    final effectiveOrder = liveOrderAsync.asData?.value ?? order;
 
     final sellerItems = effectiveOrder.items
         .where((i) => i.sellerHeroIdSnapshot.trim() == sellerId)
@@ -222,18 +216,7 @@ class _DonationOrderTile extends ConsumerWidget {
         ? effectiveOrder.orderId.substring(0, 8)
         : effectiveOrder.orderId;
 
-    final buyerAsync =
-        ref.watch(userByIdStreamProvider(effectiveOrder.heroId));
-    final buyerName = buyerAsync.maybeWhen(
-      data: (u) =>
-          u?.fullName.trim().isNotEmpty == true ? u!.fullName : 'Hero',
-      orElse: () => 'Hero',
-    );
-    final buyerPhotoUrl = buyerAsync.maybeWhen(
-      data: (u) => u?.profilePhotoUrl,
-      orElse: () => null,
-    );
-    final hasBuyerPhoto = (buyerPhotoUrl ?? '').trim().isNotEmpty;
+    final buyerName = 'Hero';
 
     final myItemsCount =
         sellerItems.fold<int>(0, (sum, item) => sum + item.qty);
@@ -286,8 +269,8 @@ class _DonationOrderTile extends ConsumerWidget {
               statusColor: statusColor,
               shortId: shortId,
               myAmount: myAmount,
-              hasBuyerPhoto: hasBuyerPhoto,
-              buyerPhotoUrl: buyerPhotoUrl,
+              hasBuyerPhoto: false,
+              buyerPhotoUrl: null,
             ),
 
             Container(

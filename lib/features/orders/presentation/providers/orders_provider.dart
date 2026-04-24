@@ -3,6 +3,7 @@ import '../../../../domain/entities/order.dart';
 import '../../../../domain/entities/vehicle.dart';
 import '../../../../domain/providers/orders_usecase_providers.dart';
 import '../../../../data/providers/network_providers.dart';
+import '../../../../data/providers/repository_providers.dart';
 import '../../../../data/models/order_model.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../../domain/config/pricing_config_provider.dart';
@@ -11,7 +12,7 @@ final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   ref,
   heroId,
 ) {
-  final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+  final currentUid = ref.watch(currentUserIdProvider);
   if (currentUid == null || currentUid != heroId) {
     return Stream.value(const []);
   }
@@ -24,7 +25,7 @@ final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
   ref,
   heroId,
 ) {
-  final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+  final currentUid = ref.watch(currentUserIdProvider);
   if (currentUid == null || currentUid != heroId) {
     return Stream.value(const []);
   }
@@ -50,7 +51,7 @@ final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
 
 final riderOrdersProvider = StreamProvider.autoDispose
     .family<List<Order>, String>((ref, riderId) {
-      final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+      final currentUid = ref.watch(currentUserIdProvider);
       if (currentUid == null || currentUid != riderId) {
         return Stream.value(const []);
       }
@@ -63,7 +64,7 @@ final orderByIdProvider = StreamProvider.autoDispose.family<Order?, String>((
   ref,
   orderId,
 ) {
-  final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+  final currentUid = ref.watch(currentUserIdProvider);
   if (currentUid == null) {
     return Stream.value(null);
   }
@@ -79,9 +80,22 @@ final orderByIdProvider = StreamProvider.autoDispose.family<Order?, String>((
   });
 });
 
+final orderByIdFutureProvider = FutureProvider.autoDispose.family<Order?, String>((
+  ref,
+  orderId,
+) async {
+  final currentUid = ref.watch(currentUserIdProvider);
+  if (currentUid == null) {
+    return null;
+  }
+
+  final repository = ref.read(ordersRepositoryProvider);
+  return repository.getOrderById(orderId);
+});
+
 final availableOrdersProvider = StreamProvider.autoDispose
     .family<List<Order>, VehicleType>((ref, riderVehicleType) {
-      final currentUid = ref.watch(firebaseAuthUserProvider).value?.uid;
+      final currentUid = ref.watch(currentUserIdProvider);
       if (currentUid == null) {
         print('⚠️ [AvailableOrders] No authenticated user');
         return Stream.value(const []);

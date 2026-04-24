@@ -751,6 +751,8 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                               const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final offer = offers[index];
+                            final sellerAsync =
+                                ref.watch(userByIdProvider(offer.heroId));
                             return GestureDetector(
                               onTap: () {
                                 Navigator.of(context).push(
@@ -798,21 +800,18 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                                   imageUrl: offer.coverImageUrl,
                                   avgRating: offer.avgRating,
                                   ratingCount: offer.ratingCount,
-                                  sellerName: _sellerNameFor(
-                                    ref.watch(userByIdStreamProvider(offer.heroId)),
+                                  sellerName: _sellerNameFor(sellerAsync),
+                                  sellerHeroRating: sellerAsync.maybeWhen(
+                                    data: (u) =>
+                                        (u?.heroProfile?.rating) ?? 0.0,
+                                    orElse: () => null,
                                   ),
-                                  sellerHeroRating: ref
-                                      .watch(userByIdStreamProvider(offer.heroId))
-                                      .maybeWhen(
-                                        data: (u) => (u?.heroProfile?.rating) ?? 0.0,
-                                        orElse: () => null,
-                                      ),
-                                  sellerHeroRatingCount: ref
-                                      .watch(userByIdStreamProvider(offer.heroId))
-                                      .maybeWhen(
-                                        data: (u) => (u?.heroProfile?.totalRatings) ?? 0,
-                                        orElse: () => null,
-                                      ),
+                                  sellerHeroRatingCount:
+                                      sellerAsync.maybeWhen(
+                                    data: (u) =>
+                                        (u?.heroProfile?.totalRatings) ?? 0,
+                                    orElse: () => null,
+                                  ),
                                 ),
                               ),
                             );

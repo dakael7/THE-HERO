@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../datasources/auth_local_data_source.dart';
 import '../datasources/auth_remote_data_source.dart';
@@ -13,9 +14,11 @@ import 'network_providers.dart';
 final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>((ref) {
   final firebaseAuth = ref.read(firebaseAuthProvider);
   final firestore = ref.read(firebaseFirestoreProvider);
+  final googleSignIn = GoogleSignIn.instance;
   return AuthRemoteDataSourceImpl(
     firebaseAuth: firebaseAuth,
     firestore: firestore,
+    googleSignIn: googleSignIn,
   );
 });
 

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:async';
 import '../models/user_model.dart';
 
 abstract class AuthRemoteDataSource {
@@ -32,6 +33,7 @@ abstract class AuthRemoteDataSource {
   Future<UserModel> registerGoogleUser({
     required String email,
     required String role,
+    Map<String, dynamic>? fallbackUserData,
   });
   Future<UserModel> upgradeToRider({
     required String uid,
@@ -53,12 +55,15 @@ abstract class AuthRemoteDataSource {
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   final FirebaseAuth _firebaseAuth;
   final FirebaseFirestore _firestore;
+  final GoogleSignIn _googleSignIn;
 
   AuthRemoteDataSourceImpl({
     required FirebaseAuth firebaseAuth,
     required FirebaseFirestore firestore,
+    required GoogleSignIn googleSignIn,
   }) : _firebaseAuth = firebaseAuth,
-       _firestore = firestore;
+       _firestore = firestore,
+       _googleSignIn = googleSignIn;
 
   String _normalizeRutForStorage(String raw) {
     final cleaned = raw
@@ -114,6 +119,300 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     };
     roles.add(role);
     return roles.toList();
+  }
+
+  void _logRegGoogle(String message) {
+    final ts = DateTime.now().toIso8601String();
+    debugPrint('[AUTH][REG_GOOGLE][$ts] $message');
+  }
+
+  Map<String, dynamic> _asStringDynamicMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(value);
+    }
+    if (value is Map) {
+      return value.map((key, value) => MapEntry(key.toString(), value));
+    }
+    return <String, dynamic>{};
+  }
+
+  bool _isBlankValue(dynamic value) {
+    return value == null || (value is String && value.trim().isEmpty);
+  }
+
+  Map<String, dynamic> _cloneJsonMap(Map<String, dynamic> source) {
+    final out = <String, dynamic>{};
+    for (final entry in source.entries) {
+      final value = entry.value;
+      if (value is Map<String, dynamic>) {
+        out[entry.key] = _cloneJsonMap(value);
+      } else if (value is Map) {
+        out[entry.key] = _cloneJsonMap(_asStringDynamicMap(value));
+      } else if (value is List) {
+        out[entry.key] = List<dynamic>.from(value);
+      } else {
+        out[entry.key] = value;
+      }
+    }
+    return out;
+  }
+
+  Map<String, dynamic> _deepMergeJson(
+    Map<String, dynamic> base,
+    Map<String, dynamic> patch,
+  ) {
+    final result = _cloneJsonMap(base);
+    for (final entry in patch.entries) {
+      final value = entry.value;
+      final current = result[entry.key];
+      if (value is Map<String, dynamic>) {
+        final currentMap = current is Map
+            ? _asStringDynamicMap(current)
+            : <String, dynamic>{};
+        result[entry.key] = _deepMergeJson(currentMap, value);
+      } else if (value is Map) {
+        final currentMap = current is Map
+            ? _asStringDynamicMap(current)
+            : <String, dynamic>{};
+        result[entry.key] = _deepMergeJson(
+          currentMap,
+          _asStringDynamicMap(value),
+        );
+      } else if (value is List) {
+        result[entry.key] = List<dynamic>.from(value);
+      } else {
+        result[entry.key] = value;
+      }
+    }
+    return result;
+  }
+
+  List<String> _mergeGoogleRoles(Map<String, dynamic> existingData, String role) {
+    final roles = _mergeRole(existingData['roles'] as List<dynamic>?, role)
+        .toSet();
+    if (existingData['heroProfile'] != null) {
+      roles.add('hero');
+    }
+    if (existingData['riderProfile'] != null) {
+      roles.add('rider');
+    }
+    return roles.toList();
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _getGoogleUserDocWithRetry({
+    required String uid,
+    required Stopwatch sw,
+    required String stage,
+    int attempts = 3,
+    Duration timeout = const Duration(seconds: 15),
+    bool rethrowOnFailure = true,
+  }) async {
+    Object? lastError;
+    for (int attempt = 1; attempt <= attempts; attempt++) {
+      _logRegGoogle(
+        'stage=$stage attempt=$attempt begin elapsedMs=${sw.elapsedMilliseconds} uid=$uid',
+      );
+      try {
+        final doc = await _firestore
+            .collection('users')
+            .doc(uid)
+            .get()
+            .timeout(timeout, onTimeout: () {
+          throw TimeoutException('timeout_stage=$stage attempt=$attempt');
+        });
+        _logRegGoogle(
+          'stage=$stage attempt=$attempt end elapsedMs=${sw.elapsedMilliseconds} uid=$uid exists=${doc.exists}',
+        );
+        return doc;
+      } catch (e) {
+        lastError = e;
+        if (attempt >= attempts) {
+          if (rethrowOnFailure) {
+            throw e;
+          }
+          _logRegGoogle(
+            'stage=$stage exhausted elapsedMs=${sw.elapsedMilliseconds} uid=$uid error=$e',
+          );
+          return null;
+        }
+        _logRegGoogle(
+          'stage=$stage retry_scheduled attempt=$attempt elapsedMs=${sw.elapsedMilliseconds} uid=$uid error=$e',
+        );
+        await Future<void>.delayed(Duration(milliseconds: 700 * attempt));
+      }
+    }
+
+    if (rethrowOnFailure && lastError != null) {
+      throw lastError;
+    }
+
+    return null;
+  }
+
+  Future<void> _mergeGoogleUserDocWithRetry({
+    required String uid,
+    required Map<String, dynamic> data,
+    required Stopwatch sw,
+    required String stage,
+    int attempts = 3,
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    Object? lastError;
+    for (int attempt = 1; attempt <= attempts; attempt++) {
+      _logRegGoogle(
+        'stage=$stage attempt=$attempt begin elapsedMs=${sw.elapsedMilliseconds} uid=$uid patchKeys=${data.keys.length}',
+      );
+      try {
+        await _firestore
+            .collection('users')
+            .doc(uid)
+            .set(data, SetOptions(merge: true))
+            .timeout(timeout, onTimeout: () {
+          throw TimeoutException('timeout_stage=$stage attempt=$attempt');
+        });
+        _logRegGoogle(
+          'stage=$stage attempt=$attempt end elapsedMs=${sw.elapsedMilliseconds} uid=$uid',
+        );
+        return;
+      } catch (e) {
+        lastError = e;
+        if (attempt >= attempts) {
+          throw e;
+        }
+        _logRegGoogle(
+          'stage=$stage retry_scheduled attempt=$attempt elapsedMs=${sw.elapsedMilliseconds} uid=$uid error=$e',
+        );
+        await Future<void>.delayed(Duration(milliseconds: 700 * attempt));
+      }
+    }
+
+    if (lastError != null) {
+      throw lastError;
+    }
+  }
+
+  Map<String, dynamic> _buildGoogleUserPatch({
+    required Map<String, dynamic> existingData,
+    required User user,
+    required String email,
+    required String role,
+    required bool isEmailVerified,
+  }) {
+    final now = DateTime.now().toIso8601String();
+    final normalizedEmail = (email.isNotEmpty ? email : (user.email ?? ''))
+        .trim()
+        .toLowerCase();
+    final nameParts = (user.displayName ?? '')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    final firstName = nameParts.isNotEmpty ? nameParts.first : '';
+    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+    final photoUrl = (user.photoURL ?? '').trim();
+
+    final contact = _asStringDynamicMap(existingData['contact']);
+    final identity = _asStringDynamicMap(existingData['identity']);
+    final status = _asStringDynamicMap(existingData['status']);
+
+    final patch = <String, dynamic>{
+      'authProvider': 'google',
+      'roles': _mergeGoogleRoles(existingData, role),
+      'status': {
+        'createdAt': _isBlankValue(status['createdAt'])
+            ? now
+            : status['createdAt'],
+        'lastUpdated': now,
+        'termsAccepted': status['termsAccepted'] ?? true,
+      },
+      'contact': {
+        'email': _isBlankValue(contact['email'])
+            ? normalizedEmail
+            : contact['email'],
+        'phoneNumber': _isBlankValue(contact['phoneNumber'])
+            ? ''
+            : contact['phoneNumber'],
+        'emailVerified': isEmailVerified,
+      },
+      'identity': {
+        'firstName': _isBlankValue(identity['firstName'])
+            ? firstName
+            : identity['firstName'],
+        'lastName': _isBlankValue(identity['lastName'])
+            ? lastName
+            : identity['lastName'],
+        'documentType': _isBlankValue(identity['documentType'])
+            ? 'rut'
+            : identity['documentType'],
+        'documentId': _isBlankValue(identity['documentId'])
+            ? ''
+            : identity['documentId'],
+      },
+    };
+
+    if (existingData['rutVerification'] == null) {
+      patch['rutVerification'] = {
+        'status': 'pending',
+        'requestId': null,
+        'submittedAt': null,
+        'verifiedAt': null,
+        'mode': null,
+      };
+    }
+
+    if (_isBlankValue(existingData['profilePhotoUrl']) && photoUrl.isNotEmpty) {
+      patch['profilePhotoUrl'] = photoUrl;
+    }
+
+    if (role == 'hero' && existingData['heroProfile'] == null) {
+      patch['heroProfile'] = {
+        'isActive': true,
+        'completedOrders': 0,
+        'rating': 0.0,
+        'totalRatings': 0,
+        'totalSpent': 0.0,
+      };
+    }
+
+    if (role == 'rider' && existingData['riderProfile'] == null) {
+      patch['riderProfile'] = {
+        'isActive': false,
+        'isVerified': false,
+        'vehicle': {
+          'type': 'bicycle',
+          'plateNumber': null,
+          'model': null,
+          'year': null,
+        },
+        'documents': {
+          'idCardUrl': '',
+          'licenseUrl': null,
+          'padronUrl': null,
+        },
+        'limits': {
+          'maxDistanceKm': 3.0,
+          'maxWeightKg': 7.0,
+        },
+        'verification': null,
+        'deliveredOrders': 0,
+        'rating': 0.0,
+      };
+    }
+
+    if (role == 'rider' && existingData['riderWallet'] == null) {
+      patch['riderWallet'] = {
+        'cashBalance': 0.0,
+        'cashOnHold': 0.0,
+        'earningsBalance': 0.0,
+        'totalEarnings': 0.0,
+        'cashBalanceCents': 0,
+        'cashOnHoldCents': 0,
+        'earningsBalanceCents': 0,
+        'totalEarningsCents': 0,
+      };
+    }
+
+    return patch;
   }
 
   Future<void> _assertRutNotRegistered({
@@ -491,12 +790,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<void> signOut() async {
     try {
       try {
-        await GoogleSignIn.instance
-            .signOut()
-            .timeout(const Duration(seconds: 6));
-        await GoogleSignIn.instance
-            .disconnect()
-            .timeout(const Duration(seconds: 6));
+        await _googleSignIn.signOut().timeout(const Duration(seconds: 6));
+        await _googleSignIn.disconnect().timeout(const Duration(seconds: 6));
       } catch (_) {}
       await _firebaseAuth.signOut().timeout(const Duration(seconds: 2));
     } catch (e) {
@@ -571,221 +866,68 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   Future<UserModel> registerGoogleUser({
     required String email,
     required String role,
+    Map<String, dynamic>? fallbackUserData,
   }) async {
     try {
-      final user = _firebaseAuth.currentUser;
-      if (user == null) {
+      final authUser = _firebaseAuth.currentUser;
+      if (authUser == null) {
         throw Exception('Usuario no autenticado en Firebase');
       }
 
-      await user.reload();
-      final refreshed = _firebaseAuth.currentUser;
-      if (refreshed != null) {
-        await _syncEmailVerified(refreshed);
-      }
+      final sw = Stopwatch()..start();
+      _logRegGoogle(
+        'start uid=${authUser.uid} role=$role emailDomain=${email.contains('@') ? email.split('@').last : 'n/a'}',
+      );
 
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      _logRegGoogle('stage=firebase_user_reload begin uid=${authUser.uid}');
+      await authUser.reload().timeout(const Duration(seconds: 10), onTimeout: () {
+        throw TimeoutException('timeout_stage=register_google_user_reload');
+      });
+      _logRegGoogle(
+        'stage=firebase_user_reload end elapsedMs=${sw.elapsedMilliseconds} uid=${authUser.uid}',
+      );
+      final refreshedUser = _firebaseAuth.currentUser ?? authUser;
+      final isEmailVerified = refreshedUser.emailVerified;
 
-      if (userDoc.exists) {
-        final userData = userDoc.data();
-        if (userData != null) {
-          String firstName = '';
-          String lastName = '';
+      final existingDoc = await _getGoogleUserDocWithRetry(
+        uid: refreshedUser.uid,
+        sw: sw,
+        stage: 'firestore_user_get_before_sync',
+        attempts: fallbackUserData == null ? 2 : 1,
+        timeout: const Duration(seconds: 4),
+        rethrowOnFailure: false,
+      );
+      final existingData =
+          existingDoc?.data() ??
+          (fallbackUserData != null
+              ? Map<String, dynamic>.from(fallbackUserData)
+              : <String, dynamic>{});
 
-          if (user.displayName != null && user.displayName!.isNotEmpty) {
-            final nameParts = user.displayName!.trim().split(' ');
-            if (nameParts.isNotEmpty) {
-              firstName = nameParts.first;
-              if (nameParts.length > 1) {
-                lastName = nameParts.sublist(1).join(' ');
-              }
-            }
-          }
+      final patch = _buildGoogleUserPatch(
+        existingData: existingData,
+        user: refreshedUser,
+        email: email,
+        role: role,
+        isEmailVerified: isEmailVerified,
+      );
 
-          bool _isEmptyString(dynamic v) {
-            return v == null || (v is String && v.trim().isEmpty);
-          }
+      await _mergeGoogleUserDocWithRetry(
+        uid: refreshedUser.uid,
+        data: patch,
+        sw: sw,
+        stage: 'firestore_user_set_merge',
+        attempts: 2,
+        timeout: const Duration(seconds: 10),
+      );
 
-          final now = DateTime.now().toIso8601String();
-          final patch = <String, dynamic>{};
-
-          // Ensure provider & basic status.
-          patch['authProvider'] = 'google';
-          patch['status.lastUpdated'] = now;
-
-          // Contact bootstrap.
-          final contact = userData['contact'] is Map ? (userData['contact'] as Map) : null;
-          if (contact == null || _isEmptyString(contact['email'])) {
-            patch['contact.email'] = email.toLowerCase();
-          }
-          patch['contact.emailVerified'] = true;
-
-          // Identity bootstrap (only if empty to respect immutability rules).
-          final identity = userData['identity'] is Map ? (userData['identity'] as Map) : null;
-          if (identity == null || _isEmptyString(identity['firstName'])) {
-            if (firstName.trim().isNotEmpty) {
-              patch['identity.firstName'] = firstName;
-            }
-          }
-          if (identity == null || _isEmptyString(identity['lastName'])) {
-            if (lastName.trim().isNotEmpty) {
-              patch['identity.lastName'] = lastName;
-            }
-          }
-          if (identity == null || _isEmptyString(identity['documentType'])) {
-            patch['identity.documentType'] = 'rut';
-          }
-          if (identity == null || identity['documentId'] == null) {
-            patch['identity.documentId'] = '';
-          }
-
-          // Roles bootstrap/merge.
-          final nextRoles = _mergeRole(userData['roles'] as List<dynamic>?, role);
-          patch['roles'] = nextRoles;
-
-          // Ensure status.createdAt exists (do not overwrite existing createdAt).
-          final status = userData['status'] is Map ? (userData['status'] as Map) : null;
-          if (status == null || _isEmptyString(status['createdAt'])) {
-            patch['status.createdAt'] = now;
-          }
-          if (status == null || status['termsAccepted'] == null) {
-            patch['status.termsAccepted'] = true;
-          }
-
-          // Profile bootstrap (only if missing).
-          if (role == 'hero' && userData['heroProfile'] == null) {
-            patch['heroProfile'] = {
-              'isActive': true,
-              'completedOrders': 0,
-              'rating': 0.0,
-              'totalRatings': 0,
-              'totalSpent': 0.0,
-            };
-          } else if (role == 'rider' && userData['riderProfile'] == null) {
-            patch['riderProfile'] = {
-              'isActive': false,
-              'isVerified': false,
-              'vehicle': {
-                'type': 'bicycle',
-                'plateNumber': null,
-                'model': null,
-                'year': null,
-              },
-              'documents': {
-                'idCardUrl': '',
-                'licenseUrl': null,
-                'padronUrl': null,
-              },
-              'limits': {
-                'maxDistanceKm': 3.0,
-                'maxWeightKg': 7.0,
-              },
-              'verification': null,
-              'deliveredOrders': 0,
-              'rating': 0.0,
-            };
-
-            if (userData['riderWallet'] == null) {
-              patch['riderWallet'] = {
-                'cashBalance': 0.0,
-                'cashOnHold': 0.0,
-                'earningsBalance': 0.0,
-                'totalEarnings': 0.0,
-                'cashBalanceCents': 0,
-                'cashOnHoldCents': 0,
-                'earningsBalanceCents': 0,
-                'totalEarningsCents': 0,
-              };
-            }
-          }
-
-          try {
-            // Update supports dot-notation and won't overwrite unrelated maps.
-            await _firestore.collection('users').doc(user.uid).update(patch);
-          } catch (_) {
-            // Fallback: attempt merge set in case dot-update fails due to schema mismatch.
-            await _firestore
-                .collection('users')
-                .doc(user.uid)
-                .set(patch, SetOptions(merge: true));
-          }
-
-          final updatedDoc = await _firestore.collection('users').doc(user.uid).get();
-          final updatedData = updatedDoc.data() ?? userData;
-          return UserModel.fromJson({'id': user.uid, ...updatedData});
-        }
-      }
-
-      String firstName = '';
-      String lastName = '';
-
-      if (user.displayName != null && user.displayName!.isNotEmpty) {
-        final nameParts = user.displayName!.trim().split(' ');
-        if (nameParts.isNotEmpty) {
-          firstName = nameParts.first;
-          if (nameParts.length > 1) {
-            lastName = nameParts.sublist(1).join(' ');
-          }
-        }
-      }
-
-      final now = DateTime.now().toIso8601String();
-      final newUserData = {
-        'authProvider': 'google',
-        'identity': {
-          'firstName': firstName,
-          'lastName': lastName,
-          'documentType': 'rut',
-          'documentId': '',
-        },
-        'rutVerification': {
-          'status': 'pending',
-          'requestId': null,
-          'submittedAt': null,
-          'verifiedAt': null,
-          'mode': null,
-        },
-        'contact': {
-          'email': email.toLowerCase(),
-          'phoneNumber': '',
-          'emailVerified': true,
-        },
-        'roles': [role],
-        'status': {'termsAccepted': true, 'createdAt': now, 'lastUpdated': now},
-      };
-
-      if (role == 'hero') {
-        newUserData['heroProfile'] = {
-          'isActive': true,
-          'completedOrders': 0,
-          'rating': 0.0,
-          'totalRatings': 0,
-          'totalSpent': 0.0,
-        };
-      } else if (role == 'rider') {
-        newUserData['riderProfile'] = {
-          'isActive': false,
-          'isVerified': false,
-          'vehicle': {
-            'type': 'bicycle',
-            'plateNumber': null,
-            'model': null,
-            'year': null,
-          },
-          'documents': {'idCardUrl': '', 'licenseUrl': null, 'padronUrl': null},
-          'limits': {'maxDistanceKm': 3.0, 'maxWeightKg': 7.0},
-          'verification': null,
-          'deliveredOrders': 0,
-          'rating': 0.0,
-        };
-      }
-
-      await _firestore.collection('users').doc(user.uid).set(
-            newUserData,
-            SetOptions(merge: true),
-          );
-
-      return UserModel.fromJson({'id': user.uid, ...newUserData});
+      final mergedFallbackData = _deepMergeJson(existingData, patch);
+      _logRegGoogle(
+        'success elapsedMs=${sw.elapsedMilliseconds} uid=${refreshedUser.uid} path=write_ack_local_merge',
+      );
+      return UserModel.fromJson({
+        'id': refreshedUser.uid,
+        ...mergedFallbackData,
+      });
     } catch (e) {
       throw Exception('Error al registrar usuario con Google: $e');
     }

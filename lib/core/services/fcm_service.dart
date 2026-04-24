@@ -20,7 +20,26 @@ class FCMService {
   String? _fcmToken;
   String? _currentTopic;
 
+  Timer? _topicRetryTimer;
+  int _topicRetryAttempt = 0;
+
   String? _activeChatId;
+
+  Future<String?> _getTokenWithRetry({int attempts = 3}) async {
+    for (int i = 0; i < attempts; i++) {
+      try {
+        return await _firebaseMessaging
+            .getToken()
+            .timeout(const Duration(seconds: 8));
+      } catch (e) {
+        if (i == attempts - 1) {
+          return null;
+        }
+        await Future<void>.delayed(Duration(milliseconds: 500 * (i + 1)));
+      }
+    }
+    return null;
+  }
 
   void setActiveChatId(String? chatId) {
     final normalized = chatId?.trim();
@@ -43,13 +62,21 @@ class FCMService {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    // Request permission fo   iOS
-    NotificationSettings settings = await _firebaseMessaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
+    // Request permission for iOS (and noop on Android)
+    NotificationSettings settings;
+    try {
+      settings = await _firebaseMessaging
+          .requestPermission(
+            alert: true,
+            badge: true,
+            sound: true,
+            provisional: false,
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      print('FCM: requestPermission failed/timeout: $e');
+      return;
+    }
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       print('FCM: User granted permission');
@@ -62,16 +89,29 @@ class FCMService {
     }
 
     // Initialize local notifications for Android
-    await _initializeLocalNotifications();
+    try {
+      await _initializeLocalNotifications().timeout(const Duration(seconds: 10));
+    } catch (e) {
+      print('FCM: local notifications init failed/timeout: $e');
+      // Don't return; token/topics can still work.
+    }
 
     // Get FCM token
-    _fcmToken = await _firebaseMessaging.getToken();
-    print('FCM Token: $_fcmToken');
+    try {
+      _fcmToken = await _getTokenWithRetry(attempts: 3);
+      print('FCM Token: $_fcmToken');
+    } catch (e) {
+      _fcmToken = null;
+      print('FCM: getToken failed: $e');
+    }
 
     FirebaseAuth.instance.authStateChanges().listen(
       (user) async {
         try {
           if (user == null) {
+            _topicRetryTimer?.cancel();
+            _topicRetryTimer = null;
+            _topicRetryAttempt = 0;
             try {
               await _unsubscribeFromCurrentTopic()
                   .timeout(const Duration(seconds: 6));
@@ -104,16 +144,22 @@ class FCMService {
       print('FCM Token refreshed: $newToken');
       _fcmToken = newToken;
       _saveFCMToken(newToken);
+      _subscribeToUserTopic();
     });
 
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
     FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
 
-    RemoteMessage? initialMessage = await _firebaseMessaging
-        .getInitialMessage();
-    if (initialMessage != null) {
-      _handleMessageOpenedApp(initialMessage);
+    try {
+      RemoteMessage? initialMessage = await _firebaseMessaging
+          .getInitialMessage()
+          .timeout(const Duration(seconds: 6));
+      if (initialMessage != null) {
+        _handleMessageOpenedApp(initialMessage);
+      }
+    } catch (e) {
+      print('FCM: getInitialMessage failed: $e');
     }
 
     _initialized = true;
@@ -228,13 +274,37 @@ class FCMService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    final token = _fcmToken;
+    if (token == null || token.isEmpty) {
+      print('FCM: skip subscribeToUserTopic (no fcmToken yet) uid=${user.uid}');
+      return;
+    }
+
     final topic = 'user_${user.uid}';
     if (_currentTopic == topic) return;
 
     await _unsubscribeFromCurrentTopic();
 
-    await _firebaseMessaging.subscribeToTopic(topic);
+    try {
+      await _firebaseMessaging
+          .subscribeToTopic(topic)
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      _topicRetryAttempt = (_topicRetryAttempt + 1).clamp(1, 6);
+      final delayMs = 800 * _topicRetryAttempt;
+      print(
+        'FCM: subscribeToTopic failed/timeout topic=$topic uid=${user.uid} retryAttempt=$_topicRetryAttempt retryInMs=$delayMs error=$e',
+      );
+      _topicRetryTimer?.cancel();
+      _topicRetryTimer = Timer(Duration(milliseconds: delayMs), () {
+        _subscribeToUserTopic();
+      });
+      return;
+    }
     _currentTopic = topic;
+    _topicRetryTimer?.cancel();
+    _topicRetryTimer = null;
+    _topicRetryAttempt = 0;
     print('Subscribed to topic: $topic');
   }
 

@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/entities/rider_stats.dart';
-import '../../../../domain/providers/orders_usecase_providers.dart';
 import '../../../../domain/services/rider_stats_service.dart';
+import '../../../orders/presentation/providers/orders_provider.dart';
 
 final riderCumulativeStatsProvider = StreamProvider.autoDispose
     .family<RiderStats?, String>((ref, riderId) {
@@ -26,7 +26,6 @@ final riderCumulativeStatsProvider = StreamProvider.autoDispose
       .collection('riderTripEvents')
       .orderBy('createdAt', descending: true);
 
-  final ordersUseCase = ref.read(getOrdersByRiderUseCaseProvider);
   final service = const RiderStatsService();
 
   final controller = StreamController<RiderStats?>.broadcast();
@@ -90,16 +89,24 @@ final riderCumulativeStatsProvider = StreamProvider.autoDispose
     emitIfReady();
   }, onError: controller.addError);
 
-  final ordersSub = ordersUseCase.execute(riderId).listen((list) {
-    latestOrders = list;
-    emitIfReady();
-  }, onError: controller.addError);
+  ref.listen<AsyncValue<List<Order>>>(
+    riderOrdersProvider(riderId),
+    (previous, next) {
+      next.whenOrNull(
+        data: (list) {
+          latestOrders = list;
+          emitIfReady();
+        },
+        error: (error, stackTrace) => controller.addError(error, stackTrace),
+      );
+    },
+    fireImmediately: true,
+  );
 
   ref.onDispose(() {
     userSub.cancel();
     txSub.cancel();
     tripEventsSub.cancel();
-    ordersSub.cancel();
     controller.close();
   });
 

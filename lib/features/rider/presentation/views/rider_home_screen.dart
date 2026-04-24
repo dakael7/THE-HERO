@@ -24,7 +24,7 @@ import '../providers/rider_nearby_providers.dart';
 import '../providers/rider_payout_summary_provider.dart';
 import '../providers/rider_cumulative_stats_provider.dart';
 import '../../../orders/presentation/providers/orders_provider.dart';
-import '../../../../domain/providers/orders_usecase_providers.dart';
+import '../../../../domain/entities/order.dart';
 import '../../../../domain/entities/order_status.dart';
 import '../../domain/entities/nearby_order.dart';
 import 'rider_delivery_map_screen.dart';
@@ -164,7 +164,7 @@ class _ResolvedAddressTextState extends State<_ResolvedAddressText> {
     final text = (_resolved ?? widget.snapshot).trim();
     return Text(
       _loading && (text.isEmpty || text.startsWith('Lat:'))
-          ? 'Resolviendo dirección...'
+          ? 'Resolviendo direcciÃ³n...'
           : text,
       style: widget.style,
       maxLines: widget.maxLines,
@@ -200,12 +200,12 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar cobro'),
         content: const Text(
-          'Este pedido es con pago en efectivo. ¿Confirmas que cobraste el dinero al entregar?',
+          'Este pedido es con pago en efectivo. Â¿Confirmas que cobraste el dinero al entregar?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Aún no'),
+            child: const Text('AÃºn no'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -382,111 +382,101 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
             ],
           );
         }
+
         final cumulativeAsync = ref.watch(
           riderCumulativeStatsProvider(user.id),
         );
+        final ordersAsync = ref.watch(riderOrdersProvider(user.id));
         final riderProfile = user.riderProfile;
-        final ordersUseCase = ref.read(getOrdersByRiderUseCaseProvider);
-
         final rating = riderProfile?.rating ?? 0.0;
 
-        return StreamBuilder(
-          stream: ordersUseCase.execute(user.id),
-          builder: (context, snapshot) {
-            final pendingAsync = ref.watch(
-              riderPendingEarningsProvider(user.id),
-            );
-            final pendingAmount = pendingAsync.asData?.value;
+        final pendingAsync = ref.watch(
+          riderPendingEarningsProvider(user.id),
+        );
+        final pendingAmount = pendingAsync.asData?.value;
+        final cumulative = cumulativeAsync.asData?.value;
+        final orders = ordersAsync.asData?.value ?? const <Order>[];
+        final computedFailedTrips = orders
+            .where((o) => o.status == OrderStatus.failed)
+            .length;
 
-            final cumulative = cumulativeAsync.asData?.value;
+        final effectiveDeliveredTrips = cumulative?.completedTrips ?? 0;
+        final canceledTrips = cumulative?.canceledTrips ?? 0;
+        final effectiveTotalTrips = cumulative?.totalTrips ?? 0;
+        final effectiveFailedTrips = computedFailedTrips;
+        final tips = cumulative?.totalTips ?? 0.0;
 
-            final orders = snapshot.data ?? const [];
-            final computedFailedTrips = orders
-                .where((o) => o.status == OrderStatus.failed)
-                .length;
-
-            final effectiveDeliveredTrips = cumulative?.completedTrips ?? 0;
-            final canceledTrips = cumulative?.canceledTrips ?? 0;
-            final effectiveTotalTrips = cumulative?.totalTrips ?? 0;
-            final effectiveFailedTrips = computedFailedTrips;
-
-            final tips = cumulative?.totalTips ?? 0.0;
-
-            final effectiveCompletionRate =
+        final effectiveCompletionRate =
+            (effectiveDeliveredTrips + canceledTrips + effectiveFailedTrips) ==
+                0
+            ? 0.0
+            : effectiveDeliveredTrips /
                 (effectiveDeliveredTrips +
-                        canceledTrips +
-                        effectiveFailedTrips) ==
-                    0
-                ? 0.0
-                : effectiveDeliveredTrips /
-                      (effectiveDeliveredTrips +
-                          canceledTrips +
-                          effectiveFailedTrips);
+                    canceledTrips +
+                    effectiveFailedTrips);
 
-            final headlineAmount = cumulative?.totalEarnings ?? 0.0;
-            final secondaryAmount = pendingAmount ?? 0.0;
+        final headlineAmount = cumulative?.totalEarnings ?? 0.0;
+        final secondaryAmount = pendingAmount ?? 0.0;
 
-            return CustomScrollView(
-              slivers: [
-                const RiderHeader(),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        RutVerificationCtaBanner(
-                          user: user,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const RutVerificationScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        if (!user.isRutVerified) const SizedBox(height: 16),
-                        RiderHomeMetricsDashboard(
-                          headlineTitle: 'Ganancias acumuladas',
-                          headlineAmount: headlineAmount,
-                          headlineSecondaryLabel: 'Pendiente por pagar',
-                          headlineSecondaryAmount: secondaryAmount,
-                          totalTrips: effectiveTotalTrips,
-                          averageRating: rating,
-                          tips: tips,
-                          canceledTrips: canceledTrips,
-                          completionRate: effectiveCompletionRate,
-                          onTapViewRequests: () {
-                            ref
-                                .read(riderHomeViewModelProvider.notifier)
-                                .selectNavItem(1);
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        _infoCard(
-                          iconBg: const Color(0xFFFFF7ED),
-                          icon: Icons.access_time,
-                          iconColor: const Color(0xFFEA580C),
-                          title: 'Horario sugerido',
-                          subtitle:
-                              'Mayor demanda entre 12:00 - 14:00 y 19:00 - 21:00',
-                        ),
-                        const SizedBox(height: 12),
-                        _infoCard(
-                          iconBg: const Color(0xFFF5F3FF),
-                          icon: Icons.location_on_outlined,
-                          iconColor: const Color(0xFF7C3AED),
-                          title: 'Zonas activas',
-                          subtitle:
-                              'Las Condes, Providencia y Ñuñoa con más pedidos ahora',
-                        ),
-                        const SizedBox(height: 16),
-                      ],
+        return CustomScrollView(
+          slivers: [
+            const RiderHeader(),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    RutVerificationCtaBanner(
+                      user: user,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const RutVerificationScreen(),
+                          ),
+                        );
+                      },
                     ),
-                  ),
+                    if (!user.isRutVerified) const SizedBox(height: 16),
+                    RiderHomeMetricsDashboard(
+                      headlineTitle: 'Ganancias acumuladas',
+                      headlineAmount: headlineAmount,
+                      headlineSecondaryLabel: 'Pendiente por pagar',
+                      headlineSecondaryAmount: secondaryAmount,
+                      totalTrips: effectiveTotalTrips,
+                      averageRating: rating,
+                      tips: tips,
+                      canceledTrips: canceledTrips,
+                      completionRate: effectiveCompletionRate,
+                      onTapViewRequests: () {
+                        ref
+                            .read(riderHomeViewModelProvider.notifier)
+                            .selectNavItem(1);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _infoCard(
+                      iconBg: const Color(0xFFFFF7ED),
+                      icon: Icons.access_time,
+                      iconColor: const Color(0xFFEA580C),
+                      title: 'Horario sugerido',
+                      subtitle:
+                          'Mayor demanda entre 12:00 - 14:00 y 19:00 - 21:00',
+                    ),
+                    const SizedBox(height: 12),
+                    _infoCard(
+                      iconBg: const Color(0xFFF5F3FF),
+                      icon: Icons.location_on_outlined,
+                      iconColor: const Color(0xFF7C3AED),
+                      title: 'Zonas activas',
+                      subtitle:
+                          'Las Condes, Providencia y Ñuñoa con más pedidos ahora',
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                 ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         );
       },
     );
@@ -618,8 +608,8 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
         if (user == null) {
           return _buildEmptyState(
             icon: Icons.login,
-            title: 'Sesión requerida',
-            message: 'Inicia sesión para ver tus entregas activas',
+            title: 'SesiÃ³n requerida',
+            message: 'Inicia sesiÃ³n para ver tus entregas activas',
           );
         }
 
@@ -634,7 +624,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                 icon: Icons.delivery_dining_outlined,
                 title: 'Sin entregas activas',
                 message:
-                    'Acepta pedidos desde la pestaña de solicitudes para empezar a ganar',
+                    'Acepta pedidos desde la pestaÃ±a de solicitudes para empezar a ganar',
               );
             }
 
@@ -663,7 +653,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
       error: (e, _) => _buildEmptyState(
         icon: Icons.error_outline,
         title: 'Error de perfil',
-        message: 'No pudimos cargar tu información de perfil',
+        message: 'No pudimos cargar tu informaciÃ³n de perfil',
       ),
     );
   }
@@ -1090,7 +1080,7 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
           _mapController?.animateCamera(gmap.CameraUpdate.newLatLng(newPos));
 
           debugPrint(
-            '📍 [Map] Rider moved to: ${newPos.latitude}, ${newPos.longitude}',
+            'ðŸ“ [Map] Rider moved to: ${newPos.latitude}, ${newPos.longitude}',
           );
         }
       }
@@ -1113,7 +1103,7 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
         );
         _initialCameraSet = true;
         debugPrint(
-          '📍 [Map] Initial position set to: ${_lastRiderPosition!.latitude}, ${_lastRiderPosition!.longitude}',
+          'ðŸ“ [Map] Initial position set to: ${_lastRiderPosition!.latitude}, ${_lastRiderPosition!.longitude}',
         );
       }
     }
@@ -1145,7 +1135,7 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
             icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
               gmap.BitmapDescriptor.hueAzure,
             ),
-            infoWindow: const gmap.InfoWindow(title: 'Tu ubicación'),
+            infoWindow: const gmap.InfoWindow(title: 'Tu ubicaciÃ³n'),
           ),
         // Marcadores de pedidos
         ...nearby.map((n) {
@@ -1205,7 +1195,7 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
                 ),
               );
               _initialCameraSet = true;
-              debugPrint('📍 [Map] Camera positioned at rider location');
+              debugPrint('ðŸ“ [Map] Camera positioned at rider location');
             }
           });
         }
@@ -1327,7 +1317,7 @@ class _OrderListSliver extends ConsumerWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Mantente disponible y revisa que tu ubicación esté activa.',
+                      'Mantente disponible y revisa que tu ubicaciÃ³n estÃ© activa.',
                       style: TextStyle(color: textGray600),
                       textAlign: TextAlign.center,
                     ),
@@ -1674,7 +1664,7 @@ class _OrderListSliver extends ConsumerWidget {
                             ),
                           ),
                           Text(
-                            '•',
+                            'â€¢',
                             style: TextStyle(fontSize: 13, color: textGray600),
                           ),
                           Text(
@@ -1721,7 +1711,7 @@ class _OrderListSliver extends ConsumerWidget {
                                         SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
-                                            'Este pedido no tiene coordenadas válidas. Contacta al soporte.',
+                                            'Este pedido no tiene coordenadas vÃ¡lidas. Contacta al soporte.',
                                             style: TextStyle(fontSize: 13),
                                           ),
                                         ),

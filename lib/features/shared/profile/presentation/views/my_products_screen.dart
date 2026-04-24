@@ -30,9 +30,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
       MaterialPageRoute(builder: (_) => DonationQuestionsScreen(initialOffer: offer)),
     );
     if (result == true && mounted) {
-      final user = ref.read(profileProvider).value;
-      if (user != null) {
-        ref.invalidate(myOffersProvider(user.id));
+      final userId = ref.read(currentUserIdProvider);
+      if (userId != null) {
+        ref.invalidate(myOffersProvider(userId));
       }
     }
   }

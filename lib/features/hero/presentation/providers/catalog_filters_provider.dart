@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 import '../../../../domain/entities/offer.dart';
-import '../../../../data/providers/network_providers.dart';
 import '../../../offers/presentation/providers/offers_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
@@ -133,13 +132,7 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
       ref.watch(activeOffersProvider(OffersFilter(limit: limit)));
   final filters = ref.watch(catalogFiltersProvider);
 
-  final authUid = ref.watch(firebaseAuthUserProvider).value?.uid;
-  final profileUserId = ref.watch(profileProvider).maybeWhen(
-        data: (user) => user?.id,
-        orElse: () => null,
-      );
-
-  final currentUserId = authUid ?? profileUserId;
+  final currentUserId = ref.watch(currentUserIdProvider);
 
   List<Offer> applyFilters(List<Offer> offers) {
     var filtered = offers.where((offer) {

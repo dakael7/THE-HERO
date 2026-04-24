@@ -42,10 +42,17 @@ void main() async {
   // Set up background message handler for FCM
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  // Initialize FCM Service
-  await FCMService().initialize();
-
   runApp(const AppProviderScope(child: App()));
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    Future<void>(() async {
+      try {
+        await FCMService().initialize();
+      } catch (e) {
+        debugPrint('FCM initialize failed: $e');
+      }
+    });
+  });
 }
 
 class _ImagePreloader extends StatefulWidget {

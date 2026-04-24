@@ -664,12 +664,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   // ── Cart helpers ──────────────────────────────────────────────
   void _addToCart() {
     final offer = widget.offer;
-
-    final maxQty = offer.availableQty;
-    final currentUserId = ref.read(profileProvider).maybeWhen(
-          data: (user) => user?.id,
-          orElse: () => null,
-        );
+    final currentUserId = ref.read(currentUserIdProvider);
 
     final currentUser = ref.read(profileProvider).maybeWhen(
           data: (user) => user,
