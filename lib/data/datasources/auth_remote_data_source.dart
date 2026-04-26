@@ -187,6 +187,23 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     return result;
   }
 
+  Map<String, dynamic>? _validatedFallbackGoogleData({
+    required Map<String, dynamic>? fallbackUserData,
+    required String uid,
+  }) {
+    if (fallbackUserData == null) return null;
+
+    final fallbackMap = _asStringDynamicMap(fallbackUserData);
+    final fallbackId = (fallbackMap['id'] ?? '').toString().trim();
+    if (fallbackId.isEmpty || fallbackId != uid) {
+      return null;
+    }
+
+    final sanitized = _cloneJsonMap(fallbackMap);
+    sanitized.remove('id');
+    return sanitized;
+  }
+
   List<String> _mergeGoogleRoles(Map<String, dynamic> existingData, String role) {
     final roles = _mergeRole(existingData['roles'] as List<dynamic>?, role)
         .toSet();
@@ -288,6 +305,27 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
     if (lastError != null) {
       throw lastError;
+    }
+  }
+
+  Future<void> _writeGoogleUserPatchBestEffort({
+    required String uid,
+    required Map<String, dynamic> patch,
+    required Stopwatch sw,
+  }) async {
+    try {
+      await _mergeGoogleUserDocWithRetry(
+        uid: uid,
+        data: patch,
+        sw: sw,
+        stage: 'firestore_user_set_merge_bg',
+        attempts: 1,
+        timeout: const Duration(seconds: 8),
+      );
+    } catch (e) {
+      _logRegGoogle(
+        'stage=firestore_user_set_merge_bg failed elapsedMs=${sw.elapsedMilliseconds} uid=$uid error=$e',
+      );
     }
   }
 
@@ -879,21 +917,45 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'start uid=${authUser.uid} role=$role emailDomain=${email.contains('@') ? email.split('@').last : 'n/a'}',
       );
 
-      _logRegGoogle('stage=firebase_user_reload begin uid=${authUser.uid}');
-      await authUser.reload().timeout(const Duration(seconds: 10), onTimeout: () {
-        throw TimeoutException('timeout_stage=register_google_user_reload');
-      });
-      _logRegGoogle(
-        'stage=firebase_user_reload end elapsedMs=${sw.elapsedMilliseconds} uid=${authUser.uid}',
-      );
-      final refreshedUser = _firebaseAuth.currentUser ?? authUser;
+      final refreshedUser = authUser;
       final isEmailVerified = refreshedUser.emailVerified;
+      final validatedFallbackData = _validatedFallbackGoogleData(
+        fallbackUserData: fallbackUserData,
+        uid: refreshedUser.uid,
+      );
+      if (validatedFallbackData != null) {
+        _logRegGoogle(
+          'stage=fast_path_cache hit elapsedMs=${sw.elapsedMilliseconds} uid=${refreshedUser.uid}',
+        );
+        final patch = _buildGoogleUserPatch(
+          existingData: validatedFallbackData,
+          user: refreshedUser,
+          email: email,
+          role: role,
+          isEmailVerified: isEmailVerified,
+        );
+        final mergedFallbackData = _deepMergeJson(validatedFallbackData, patch);
+        unawaited(
+          _writeGoogleUserPatchBestEffort(
+            uid: refreshedUser.uid,
+            patch: patch,
+            sw: sw,
+          ),
+        );
+        _logRegGoogle(
+          'success_fast_path elapsedMs=${sw.elapsedMilliseconds} uid=${refreshedUser.uid}',
+        );
+        return UserModel.fromJson({
+          'id': refreshedUser.uid,
+          ...mergedFallbackData,
+        });
+      }
 
       final existingDoc = await _getGoogleUserDocWithRetry(
         uid: refreshedUser.uid,
         sw: sw,
         stage: 'firestore_user_get_before_sync',
-        attempts: fallbackUserData == null ? 2 : 1,
+        attempts: 1,
         timeout: const Duration(seconds: 4),
         rethrowOnFailure: false,
       );
@@ -916,8 +978,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         data: patch,
         sw: sw,
         stage: 'firestore_user_set_merge',
-        attempts: 2,
-        timeout: const Duration(seconds: 10),
+        attempts: 1,
+        timeout: const Duration(seconds: 8),
       );
 
       final mergedFallbackData = _deepMergeJson(existingData, patch);

@@ -218,6 +218,11 @@ class AuthNotifier extends Notifier<AuthState> {
       _logAuth(
         'googleSignInAndCreateUser:step=google_execute end elapsedMs=${sw.elapsedMilliseconds} uid=${userCredential.user?.uid}',
       );
+      state = state.copyWith(
+        isLoading: true,
+        isAuthenticated: true,
+        errorMessage: null,
+      );
       email =
           userCredential.user?.email ??
           ref.read(firebaseAuthProvider).currentUser?.email ??
