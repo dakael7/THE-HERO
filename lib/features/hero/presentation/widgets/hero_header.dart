@@ -516,6 +516,7 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
   late final AnimationController _panelController;
   late final Animation<double> _panelOpacity;
   late final Animation<Offset> _panelOffset;
+  bool _wasShowingRecentPanel = false;
 
   Color _conditionColor(OfferCondition condition) {
     switch (condition) {
@@ -566,10 +567,13 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
     final offersAsync = ref.watch(filteredOffersProvider);
     final showRecent = searchState.query.trim().isEmpty;
 
-    if (showRecent) {
-      _panelController.forward();
-    } else {
-      _panelController.reverse();
+    if (showRecent != _wasShowingRecentPanel) {
+      _wasShowingRecentPanel = showRecent;
+      if (showRecent) {
+        _panelController.forward();
+      } else {
+        _panelController.reverse();
+      }
     }
 
     final isMobile = ResponsiveUtils.isMobile(context);
@@ -797,7 +801,7 @@ class _HeroSearchContentState extends ConsumerState<HeroSearchContent>
                                   allowInPersonPickup:
                                       offer.allowInPersonPickup,
                                   showShadow: false,
-                                  imageUrl: offer.coverImageUrl,
+                                  imageUrl: offer.displayImageUrl,
                                   avgRating: offer.avgRating,
                                   ratingCount: offer.ratingCount,
                                   sellerName: _sellerNameFor(sellerAsync),

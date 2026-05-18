@@ -133,6 +133,10 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
   final filters = ref.watch(catalogFiltersProvider);
 
   final currentUserId = ref.watch(currentUserIdProvider);
+  final normalizedQuery = filters.searchQuery.trim().toLowerCase();
+  final hasSearchQuery = normalizedQuery.isNotEmpty;
+  final shouldApplyTextSearch = normalizedQuery.length >= 2;
+  final selectedCategory = filters.selectedCategory;
 
   List<Offer> applyFilters(List<Offer> offers) {
     var filtered = offers.where((offer) {
@@ -140,27 +144,26 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
         return false;
       }
 
-      if (filters.searchQuery.isNotEmpty) {
-        final query = filters.searchQuery.toLowerCase().trim();
-        if (query.length < 2) return true;
+      if (hasSearchQuery) {
+        if (!shouldApplyTextSearch) return true;
 
         final title = offer.title.toLowerCase();
         final description = offer.description.toLowerCase();
         final category = offer.category.toLowerCase();
         final matchesKeywords = offer.searchKeywords.any(
-          (keyword) => keyword.toLowerCase().contains(query),
+          (keyword) => keyword.toLowerCase().contains(normalizedQuery),
         );
 
-        if (!title.contains(query) &&
-            !description.contains(query) &&
-            !category.contains(query) &&
+        if (!title.contains(normalizedQuery) &&
+            !description.contains(normalizedQuery) &&
+            !category.contains(normalizedQuery) &&
             !matchesKeywords) {
           return false;
         }
       }
 
-      if (filters.selectedCategory != null) {
-        if (offer.category != filters.selectedCategory) return false;
+      if (selectedCategory != null) {
+        if (offer.category != selectedCategory) return false;
       }
 
       return true;
@@ -186,7 +189,7 @@ final filteredOffersProvider = Provider<AsyncValue<List<Offer>>>((ref) {
     return filtered;
   }
 
-  final cached = ref.watch(_filteredOffersCacheProvider);
+  final cached = ref.read(_filteredOffersCacheProvider);
 
   return offersAsync.when(
     data: (offers) {

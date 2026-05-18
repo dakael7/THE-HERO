@@ -96,7 +96,7 @@ class MapViewModel extends Notifier<MapState> {
             location: loc,
             offer: offer,
             distanceFromUser: distance,
-            imageUrl: offer.coverImageUrl,
+            imageUrl: offer.displayImageUrl,
           );
         })
         .where((mp) => mp.distanceFromUser == null || mp.distanceFromUser! <= state.searchRadius)
@@ -113,16 +113,22 @@ class MapViewModel extends Notifier<MapState> {
 
   /// Select a product on the map
   void selectProduct(MapProduct? product) {
-    state = state.copyWith(selectedProduct: product);
-
-    if (product != null) {
-      // Center map on selected product
-      state = state.copyWith(mapCenter: product.location);
-    }
+    state = MapState(
+      userLocation: state.userLocation,
+      nearbyProducts: state.nearbyProducts,
+      selectedProduct: product,
+      searchRadius: state.searchRadius,
+      currentZoom: state.currentZoom,
+      mapCenter: product?.location ?? state.mapCenter,
+      isLoading: state.isLoading,
+      error: state.error,
+      hasLocationPermission: state.hasLocationPermission,
+    );
   }
 
   /// Update search radius and reload products
   void updateSearchRadius(double radius) {
+    if ((state.searchRadius - radius).abs() < 1) return;
     state = state.copyWith(searchRadius: radius);
     _recomputeNearby();
   }

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../data/providers/network_providers.dart';
+import '../../../../../domain/entities/user.dart';
 import '../providers/profile_provider.dart';
 
 class RutVerificationScreen extends ConsumerStatefulWidget {
@@ -67,11 +68,19 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
     );
   }
 
+  Future<User?> _resolveCurrentUser() async {
+    final cached = ref.read(profileStreamProvider).value;
+    if (cached != null) return cached;
+    return ref
+        .read(profileStreamProvider.future)
+        .timeout(const Duration(seconds: 8), onTimeout: () => null);
+  }
+
   Future<void> _pickImage({
     required String label,
     required void Function(Uint8List bytes, String name) onPicked,
   }) async {
-    final profile = await ref.read(profileProvider.future);
+    final profile = await _resolveCurrentUser();
     final status = profile?.rutVerificationStatus;
     if (!_canEditForStatus(status)) {
       _showLockedSnackBar();
@@ -159,7 +168,7 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
   Future<void> _submit() async {
     if (_saving) return;
 
-    final profile = await ref.read(profileProvider.future);
+    final profile = await _resolveCurrentUser();
     final status = profile?.rutVerificationStatus;
     if (!_canEditForStatus(status)) {
       _showLockedSnackBar();
@@ -281,7 +290,7 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
         );
       }
 
-      ref.invalidate(profileProvider);
+      ref.invalidate(profileStreamProvider);
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(

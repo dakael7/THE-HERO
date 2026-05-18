@@ -1,10 +1,15 @@
+﻿import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/user.dart';
+import '../../../../data/models/user_model.dart';
+import '../../../../data/mappers/user_mapper.dart';
 import '../providers/auth_provider.dart';
 import 'registro_hero.dart';
 import 'registro_rider.dart';
@@ -25,6 +30,16 @@ class EmailVerificationScreen extends ConsumerStatefulWidget {
       _EmailVerificationScreenState();
 }
 
+class _ResolvedGoogleRoutingUser {
+  final User user;
+  final bool hasFirebaseSnapshot;
+
+  const _ResolvedGoogleRoutingUser({
+    required this.user,
+    required this.hasFirebaseSnapshot,
+  });
+}
+
 class _EmailVerificationScreenState
     extends ConsumerState<EmailVerificationScreen> {
   final TextEditingController _emailController = TextEditingController();
@@ -35,6 +50,128 @@ class _EmailVerificationScreenState
   bool _requiresGoogleSignIn = false;
   bool _obscurePassword = true;
   bool _navigated = false;
+
+  Future<_ResolvedGoogleRoutingUser> _resolveFreshGoogleUser(User fallback) async {
+    final uid = fallback.id.trim();
+    if (uid.isEmpty) {
+      return _ResolvedGoogleRoutingUser(
+        user: fallback,
+        hasFirebaseSnapshot: false,
+      );
+    }
+
+    final firestore = ref.read(firebaseFirestoreProvider);
+    final authPhotoUrl =
+        (fb_auth.FirebaseAuth.instance.currentUser?.photoURL ?? '').trim();
+
+    User withAuthPhoto(User user) {
+      if ((user.profilePhotoUrl ?? '').trim().isNotEmpty || authPhotoUrl.isEmpty) {
+        return user;
+      }
+      return user.copyWith(profilePhotoUrl: authPhotoUrl);
+    }
+
+    int scoreByKeyFields(User user) {
+      var score = 0;
+      if (user.identity.documentId.trim().isNotEmpty) score += 3;
+      if (user.contact.phoneNumber.trim().isNotEmpty) score += 3;
+      if (widget.userRole == UserRole.hero ? user.isHero : user.isRider) {
+        score += 3;
+      }
+      if (user.identity.firstName.trim().isNotEmpty) score += 1;
+      if (user.identity.lastName.trim().isNotEmpty) score += 1;
+      return score;
+    }
+
+    Future<User?> readUserDoc({
+      GetOptions? options,
+      Duration timeout = const Duration(milliseconds: 1500),
+    }) async {
+      try {
+        final docRef = firestore.collection('users').doc(uid);
+        final future = options == null ? docRef.get() : docRef.get(options);
+        final doc = await future.timeout(timeout);
+        final data = doc.data();
+        if (!doc.exists || data == null) return null;
+        return UserMapper.toEntity(UserModel.fromJson({'id': uid, ...data}));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    var bestUser = withAuthPhoto(fallback);
+    var bestScore = scoreByKeyFields(bestUser);
+    var hasFirebaseSnapshot = false;
+
+    void consider(User? candidate) {
+      if (candidate == null) return;
+      final fixed = withAuthPhoto(candidate);
+      final score = scoreByKeyFields(fixed);
+      if (score > bestScore) {
+        bestUser = fixed;
+        bestScore = score;
+      }
+    }
+
+    // 1) Fast local/cache read first.
+    consider(
+      await readUserDoc(
+        options: const GetOptions(source: Source.cache),
+        timeout: const Duration(milliseconds: 300),
+      ),
+    );
+    if (bestScore >= 9) {
+      return _ResolvedGoogleRoutingUser(
+        user: bestUser,
+        hasFirebaseSnapshot: hasFirebaseSnapshot,
+      );
+    }
+
+    // 2) Fast server read with bounded timeout.
+    final serverUser = await readUserDoc(
+      options: const GetOptions(source: Source.server),
+      timeout: const Duration(milliseconds: 2200),
+    );
+    if (serverUser != null) {
+      hasFirebaseSnapshot = true;
+      consider(serverUser);
+    }
+    if (bestScore >= 9) {
+      return _ResolvedGoogleRoutingUser(
+        user: bestUser,
+        hasFirebaseSnapshot: hasFirebaseSnapshot,
+      );
+    }
+
+    // 3) Default read as a short fallback.
+    consider(
+      await readUserDoc(
+        timeout: const Duration(milliseconds: 1200),
+      ),
+    );
+
+    if ((bestUser.profilePhotoUrl ?? '').trim().isEmpty && authPhotoUrl.isNotEmpty) {
+      bestUser = bestUser.copyWith(profilePhotoUrl: authPhotoUrl);
+      unawaited(() async {
+        try {
+          await firestore.collection('users').doc(uid).set(
+            {
+              'profilePhotoUrl': authPhotoUrl,
+              'status': {
+                'lastUpdated': DateTime.now().toIso8601String(),
+              },
+            },
+            SetOptions(merge: true),
+          );
+        } catch (_) {}
+      }());
+    }
+
+    return _ResolvedGoogleRoutingUser(
+      user: bestUser,
+      hasFirebaseSnapshot: hasFirebaseSnapshot,
+    );
+  }
 
   static final Uri _termsAndConditionsUri = Uri.parse(
     'https://theheroprojects.com/privacy-policy',
@@ -88,7 +225,7 @@ class _EmailVerificationScreenState
               Expanded(
                 child: Text(
                   isGoogleFallback
-                      ? 'Inicia sesión con Google'
+                       ? 'Inicia sesión con Google'
                       : 'Error de Autenticación',
                   style: const TextStyle(
                     fontSize: 18,
@@ -133,7 +270,7 @@ class _EmailVerificationScreenState
                     Expanded(
                       child: Text(
                         isGoogleFallback
-                            ? 'Usa el botón “Continuar con Google” para entrar.'
+                            ? 'Usa el botón "Continuar con Google" para entrar.'
                             : 'Verifica tus credenciales',
                         style: const TextStyle(
                           fontSize: 12,
@@ -186,9 +323,9 @@ class _EmailVerificationScreenState
       final authUser = fb_auth.FirebaseAuth.instance.currentUser;
       final isEmailVerified = authUser?.emailVerified ?? false;
 
-      if (!isEmailVerified || !currentUser.contact.emailVerified) {
+      if (!isEmailVerified) {
         logRoute(
-          'route=unverified_email isEmailVerified=$isEmailVerified firestoreEmailVerified=${currentUser.contact.emailVerified}',
+          'route=unverified_email isEmailVerified=$isEmailVerified',
         );
         Navigator.pushReplacement(
           context,
@@ -202,33 +339,38 @@ class _EmailVerificationScreenState
         return;
       }
 
+      final resolvedUser = await _resolveFreshGoogleUser(currentUser).timeout(
+        const Duration(milliseconds: 1800),
+        onTimeout: () => _ResolvedGoogleRoutingUser(
+          user: currentUser,
+          hasFirebaseSnapshot: false,
+        ),
+      );
+      final routedUser = resolvedUser.user;
+      final hasFirebaseSnapshot = resolvedUser.hasFirebaseSnapshot;
+      final missingDocId = routedUser.identity.documentId.trim().isEmpty;
+      final missingPhone = routedUser.contact.phoneNumber.trim().isEmpty;
       final needsCriticalData =
-          currentUser.identity.documentId.trim().isEmpty ||
-              currentUser.contact.phoneNumber.trim().isEmpty;
+          hasFirebaseSnapshot && (missingDocId || missingPhone);
 
-      final missingDocId = currentUser.identity.documentId.trim().isEmpty;
-      final missingPhone = currentUser.contact.phoneNumber.trim().isEmpty;
-
-      final needsProfilePhoto =
-          (currentUser.profilePhotoUrl ?? '').trim().isEmpty;
-
-      final missingPhoto = (currentUser.profilePhotoUrl ?? '').trim().isEmpty;
+      final missingPhoto = (routedUser.profilePhotoUrl ?? '').trim().isEmpty;
 
       logRoute(
-        'profile_check uid=${currentUser.id} roleWanted=${widget.userRole} roles=${currentUser.roles} missingDocId=$missingDocId missingPhone=$missingPhone missingPhoto=$missingPhoto isHero=${currentUser.isHero} isRider=${currentUser.isRider}',
+        'profile_check uid=${routedUser.id} roleWanted=${widget.userRole} roles=${routedUser.roles} hasFirebaseSnapshot=$hasFirebaseSnapshot missingDocId=$missingDocId missingPhone=$missingPhone missingPhoto=$missingPhoto isHero=${routedUser.isHero} isRider=${routedUser.isRider}',
       );
 
       if (widget.userRole == UserRole.hero) {
-        if (needsCriticalData || needsProfilePhoto || !currentUser.isHero) {
+        final needsRoleUpgrade = hasFirebaseSnapshot && !routedUser.isHero;
+        if (needsCriticalData || needsRoleUpgrade) {
           logRoute(
-            'route=register_hero reason needsCriticalData=$needsCriticalData needsProfilePhoto=$needsProfilePhoto isHero=${currentUser.isHero}',
+            'route=register_hero reason needsCriticalData=$needsCriticalData needsRoleUpgrade=$needsRoleUpgrade isHero=${routedUser.isHero} missingPhoto=$missingPhoto',
           );
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (_) => RegisterHeroScreen(
-                email: currentUser.email,
-                existingUser: currentUser,
+                email: routedUser.email,
+                existingUser: routedUser,
               ),
             ),
           );
@@ -245,16 +387,17 @@ class _EmailVerificationScreenState
         return;
       }
 
-      if (needsCriticalData || needsProfilePhoto || !currentUser.isRider) {
+      final needsRoleUpgrade = hasFirebaseSnapshot && !routedUser.isRider;
+      if (needsCriticalData || needsRoleUpgrade) {
         logRoute(
-          'route=register_rider reason needsCriticalData=$needsCriticalData needsProfilePhoto=$needsProfilePhoto isRider=${currentUser.isRider}',
+          'route=register_rider reason needsCriticalData=$needsCriticalData needsRoleUpgrade=$needsRoleUpgrade isRider=${routedUser.isRider} missingPhoto=$missingPhoto',
         );
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (_) => RegisterRiderScreen(
-              email: currentUser.email,
-              existingUser: currentUser,
+              email: routedUser.email,
+              existingUser: routedUser,
             ),
           ),
         );
@@ -659,7 +802,7 @@ class _EmailVerificationScreenState
                     validator: (value) {
                       if (_accountExists) {
                         if (value == null || value.isEmpty) {
-                          return 'Por favor ingresa tu contraseña';
+                          return 'Por favor ingresa tu contraseÃ±a';
                         }
                         if (value.length < 6) {
                           return 'La contraseña debe tener al menos 6 caracteres';
@@ -908,7 +1051,7 @@ class _EmailVerificationScreenState
   }
 
   Widget _buildLogoSection() {
-    // Optimización: RepaintBoundary para logo
+    // OptimizaciÃ³n: RepaintBoundary para logo
     return RepaintBoundary(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -927,7 +1070,7 @@ class _EmailVerificationScreenState
     required VoidCallback? onTap,
     required bool isApple,
   }) {
-    // Optimización: RepaintBoundary para botones sociales
+    // OptimizaciÃ³n: RepaintBoundary para botones sociales
     return RepaintBoundary(
       child: SizedBox(
         width: double.infinity,
@@ -961,3 +1104,4 @@ class _EmailVerificationScreenState
     );
   }
 }
+

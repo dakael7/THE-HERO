@@ -48,23 +48,31 @@ class GoogleSignInUseCase {
     throw TimeoutException('timeout_stage=firebase_signInWithCredential');
   }
 
+  bool _isStaleGoogleCredentialError(FirebaseAuthException e) {
+    final code = e.code.toLowerCase();
+    final message = (e.message ?? '').toLowerCase();
+    return (message.contains('id token issued at') &&
+            message.contains('stale')) ||
+        (message.contains('credential') && message.contains('expired')) ||
+        (code == 'invalid-credential' && message.contains('token'));
+  }
+
   GoogleSignInUseCase({
     required FirebaseAuth firebaseAuth,
     required GoogleSignIn googleSignIn,
-  })  : _firebaseAuth = firebaseAuth,
-        _googleSignIn = googleSignIn;
+  }) : _firebaseAuth = firebaseAuth,
+       _googleSignIn = googleSignIn;
 
   Future<UserCredential> execute() async {
     final sw = Stopwatch()..start();
     try {
-      _logGsi('stage=preflight end elapsedMs=${sw.elapsedMilliseconds}');
-      // El signOut previo se reserva para el logout real.
-      // Evita re-selecciones forzadas de cuenta y errores artificiales.
+      _logGsi('stage=preflight begin elapsedMs=${sw.elapsedMilliseconds}');
 
-      // 1. Iniciar el flujo de autenticación interactivo (API 7.2.0)
-      // authenticate() reemplaza a signIn() y siempre devuelve una cuenta válida
-      // o lanza una GoogleSignInException si falla o el usuario cancela.
-      // scopeHint ayuda a la plataforma a combinar autenticación + autorización
+      // Force credential manager to avoid reusing old local state.
+      try {
+        await _googleSignIn.signOut().timeout(const Duration(seconds: 6));
+      } catch (_) {}
+
       _logGsi('stage=google_authenticate begin');
       final GoogleSignInAccount googleUser = await _googleSignIn.authenticate(
         scopeHint: const ['email', 'profile'],
@@ -73,39 +81,42 @@ class GoogleSignInUseCase {
         'stage=google_authenticate end elapsedMs=${sw.elapsedMilliseconds} email=${googleUser.email}',
       );
 
-      // 2. Obtener los tokens de autenticación asociados a la cuenta
       _logGsi('stage=google_tokens begin');
       final GoogleSignInAuthentication googleAuth =
           await Future<GoogleSignInAuthentication>.sync(
-        () => googleUser.authentication,
-      ).timeout(const Duration(seconds: 20), onTimeout: () {
-        throw TimeoutException('timeout_stage=google_tokens');
-      });
+            () => googleUser.authentication,
+          ).timeout(const Duration(seconds: 20), onTimeout: () {
+            throw TimeoutException('timeout_stage=google_tokens');
+          });
       _logGsi(
         'stage=google_tokens end elapsedMs=${sw.elapsedMilliseconds} hasIdToken=${googleAuth.idToken != null}',
       );
 
-      // 3. Obtener el idToken
       final String? idToken = googleAuth.idToken;
-
       if (idToken == null) {
         throw Exception('No se pudo obtener el idToken de Google');
       }
 
-      // 4. Crear credencial para Firebase
+      String? accessToken;
+      try {
+        final authz = await googleUser.authorizationClient
+            .authorizationForScopes(const ['email', 'profile'])
+            .timeout(const Duration(seconds: 10));
+        accessToken = authz?.accessToken;
+      } catch (_) {
+        accessToken = null;
+      }
+
       _logGsi('stage=firebase_credential_create begin');
       final OAuthCredential credential = GoogleAuthProvider.credential(
         idToken: idToken,
+        accessToken: accessToken,
       );
       _logGsi(
         'stage=firebase_credential_create end elapsedMs=${sw.elapsedMilliseconds}',
       );
 
-      // 5. Autenticarse con Firebase
-      final UserCredential userCredential =
-          await _signInWithFirebase(credential, sw);
-
-      return userCredential;
+      return await _signInWithFirebase(credential, sw);
     } on TimeoutException catch (e) {
       throw Exception(
         'Tiempo de espera agotado en Google Sign-In (${e.message ?? 'timeout'}) - revisa conectividad y Google Play Services',
@@ -116,7 +127,7 @@ class GoogleSignInUseCase {
           'stage=google_canceled elapsedMs=${sw.elapsedMilliseconds} description=${e.description}',
         );
         throw Exception(
-          'Google Sign-In cancelado (usuario o sistema/Credential Manager). Si no tocaste nada, puede ser cierre automático del selector o un problema de Google Play Services.',
+          'Google Sign-In cancelado (usuario o sistema/Credential Manager). Si no tocaste nada, puede ser cierre automatico del selector o un problema de Google Play Services.',
         );
       }
       _logGsi(
@@ -127,6 +138,11 @@ class GoogleSignInUseCase {
       _logGsi(
         'stage=firebase_auth_exception elapsedMs=${sw.elapsedMilliseconds} code=${e.code} message=${e.message}',
       );
+      if (_isStaleGoogleCredentialError(e)) {
+        throw Exception(
+          'Firebase Auth Error: token de Google vencido. Vuelve a intentar iniciar sesion.',
+        );
+      }
       throw Exception('Firebase Auth Error: ${e.message}');
     } catch (e) {
       _logGsi(

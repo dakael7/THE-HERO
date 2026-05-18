@@ -74,11 +74,27 @@
           }
         },
         {
+          "client_id": "9377083728-cs7u4il275lpqmm9978ei5vsulkpfmgu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.theheroprojects.thehero",
+            "certificate_hash": "e982c9549b93f90e727bc19051e1fe737d8427aa"
+          }
+        },
+        {
           "client_id": "9377083728-k3ku6s2l1bv0ikpvk0skj82ladugkc7g.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.theheroprojects.thehero",
             "certificate_hash": "98fe7f057e471debf1f84e334d6f8083e01f8845"
+          }
+        },
+        {
+          "client_id": "9377083728-o25g90qm8td4644j1au5b54mca9ja82f.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.theheroprojects.thehero",
+            "certificate_hash": "9b47deb615ea303440e2f7d9181c8b8b6708dc78"
           }
         },
         {

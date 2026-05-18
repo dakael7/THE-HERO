@@ -1,122 +1,102 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
-import '../../../../../domain/entities/payment.dart';
 import '../providers/profile_provider.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../hero/orders/presentation/views/seller_order_status_screen.dart';
 import '../../../../hero/orders/presentation/views/order_receipt_screen.dart';
-import '../../../../hero/payment/providers/payment_providers.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 //  ROOT SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 
 class MyDonationOrdersScreen extends ConsumerWidget {
   const MyDonationOrdersScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profileAsync = ref.watch(profileProvider);
+    final userId = ref.watch(currentUserIdProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,
       appBar: const HeroHeaderAppBar(
-        title: 'Pedidos de mis donaciones',
+        title: 'Pedidos recibidos',
         icon: Icons.volunteer_activism_rounded,
       ),
-      body: profileAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator(color: primaryOrange)),
-        error: (err, _) => _EmptyState(
-          icon: Icons.error_outline_rounded,
-          title: 'No pudimos cargar tu perfil',
-          message: err.toString(),
-        ),
-        data: (user) {
-          if (user == null) {
-            return const _EmptyState(
+      body: userId == null
+          ? const _EmptyState(
               icon: Icons.login_rounded,
               title: 'Inicia sesión',
               message: 'Necesitas iniciar sesión para ver los pedidos.',
-            );
-          }
+            )
+          : Builder(
+              builder: (context) {
+                final uid = userId!;
+                final ordersAsync = ref.watch(myDonationOrdersProvider(uid));
+                return ordersAsync.when(
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(color: primaryOrange),
+                  ),
+                  error: (err, _) => _EmptyState(
+                    icon: Icons.error_outline_rounded,
+                    title: 'No pudimos cargar los pedidos',
+                    message: err.toString(),
+                  ),
+                  data: (orders) {
+                    final filtered = orders
+                        .map((o) => _filterOrderItemsForSeller(o, uid))
+                        .where((o) => o.items.isNotEmpty)
+                        .toList();
 
-          final ordersAsync = ref.watch(myDonationOrdersProvider(user.id));
-          return ordersAsync.when(
-            loading: () => const Center(
-                child: CircularProgressIndicator(color: primaryOrange)),
-            error: (err, _) => _EmptyState(
-              icon: Icons.error_outline_rounded,
-              title: 'No pudimos cargar los pedidos',
-              message: err.toString(),
-            ),
-            data: (orders) {
-              final filtered = orders
-                  .map((o) => _filterOrderItemsForSeller(o, user.id))
-                  .where((o) => o.items.isNotEmpty)
-                  .toList();
+                    if (filtered.isEmpty) {
+                      return const _EmptyState(
+                        icon: Icons.volunteer_activism_outlined,
+                        title: 'Aún no tienes pedidos',
+                        message:
+                            'Cuando alguien pida uno de tus artículos publicados, aparecerá aquí.',
+                      );
+                    }
 
-              if (filtered.isEmpty) {
-                return const _EmptyState(
-                  icon: Icons.volunteer_activism_outlined,
-                  title: 'Aún no tienes pedidos',
-                  message:
-                      'Cuando alguien pida uno de tus artículos publicados, aparecerá aquí.',
-                );
-              }
+                    final sorted = [...filtered]
+                      ..sort(
+                        (a, b) {
+                          final byDate = b.timestamps.createdAt.compareTo(
+                            a.timestamps.createdAt,
+                          );
+                          if (byDate != 0) return byDate;
+                          return b.orderId.compareTo(a.orderId);
+                        },
+                      );
 
-              final sorted = [...filtered]
-                ..sort((a, b) => b.timestamps.createdAt.compareTo(a.timestamps.createdAt));
-
-              final active =
-                  sorted.where((o) => !o.status.isCompleted).toList();
-              final completed = [...orders]
-                ..removeWhere((o) => !o.status.isCompleted)
-                ..sort((a, b) => b.timestamps.createdAt.compareTo(a.timestamps.createdAt));
-
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                children: [
-                  if (active.isNotEmpty) ...[
-                    _SectionHeader(
-                      label: 'Activos',
-                      count: active.length,
+                    return RefreshIndicator(
                       color: primaryOrange,
-                    ),
-                    const SizedBox(height: 10),
-                    ...active.map(
-                      (o) => _DonationOrderTile(
-                        order: o,
-                        sellerId: user.id,
+                      onRefresh: () async {
+                        ref.invalidate(myDonationOrdersProvider(uid));
+                        await Future<void>.delayed(
+                          const Duration(milliseconds: 250),
+                        );
+                      },
+                      child: ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                        itemCount: sorted.length,
+                        itemBuilder: (context, index) {
+                          return _DonationOrderTile(
+                            order: sorted[index],
+                            sellerId: uid,
+                          );
+                        },
                       ),
-                    ),
-                    const SizedBox(height: 22),
-                  ],
-                  if (completed.isNotEmpty) ...[
-                    _SectionHeader(
-                      label: 'Completados',
-                      count: completed.length,
-                      color: textGray600,
-                    ),
-                    const SizedBox(height: 10),
-                    ...completed.map(
-                      (o) => _DonationOrderTile(
-                        order: o,
-                        sellerId: user.id,
-                      ),
-                    ),
-                  ],
-                ],
-              );
-            },
-          );
-        },
-      ),
+                    );
+                  },
+                );
+              },
+            ),
     );
   }
 
@@ -128,9 +108,9 @@ class MyDonationOrdersScreen extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 //  SECTION HEADER
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 
 class _SectionHeader extends StatelessWidget {
   final String label;
@@ -187,47 +167,40 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 //  DONATION ORDER TILE
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 
-class _DonationOrderTile extends ConsumerWidget {
+class _DonationOrderTile extends StatelessWidget {
   final Order order;
   final String sellerId;
 
   const _DonationOrderTile({required this.order, required this.sellerId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final paymentAsync = ref.watch(getPaymentByOrderIdProvider(order.orderId));
-    final payment = paymentAsync.asData?.value;
-    final isPaymentApproved = payment?.status == PaymentStatus.approved;
+  Widget build(BuildContext context) {
+    final canShowReceipt = order.status != OrderStatus.created &&
+        order.status != OrderStatus.pendingPayment &&
+        order.status != OrderStatus.canceled &&
+        order.status != OrderStatus.failed;
 
-    final liveOrderAsync = ref.watch(orderByIdFutureProvider(order.orderId));
-    final effectiveOrder = liveOrderAsync.asData?.value ?? order;
-
-    final sellerItems = effectiveOrder.items
-        .where((i) => i.sellerHeroIdSnapshot.trim() == sellerId)
-        .toList();
-
-    final statusColor = _statusColor(effectiveOrder.status);
-    final statusBg = _statusBg(effectiveOrder.status);
-    final shortId = effectiveOrder.orderId.length > 8
-        ? effectiveOrder.orderId.substring(0, 8)
-        : effectiveOrder.orderId;
+    final statusColor = _statusColor(order.status);
+    final statusBg = _statusBg(order.status);
+    final shortId = order.orderId.length > 8
+        ? order.orderId.substring(0, 8)
+        : order.orderId;
+    final createdAtText = _formatCreatedAt(order.timestamps.createdAt);
 
     final buyerName = 'Hero';
 
-    final myItemsCount =
-        sellerItems.fold<int>(0, (sum, item) => sum + item.qty);
+    final myItemsCount = order.items.fold<int>(0, (sum, item) => sum + item.qty);
     final myAmount =
-        sellerItems.fold<double>(0, (sum, item) => sum + item.totalPrice);
+        order.items.fold<double>(0, (sum, item) => sum + item.totalPrice);
 
-    final hasRider = effectiveOrder.rider.isAssigned &&
-        (effectiveOrder.rider.riderNameSnapshot?.isNotEmpty ?? false);
+    final hasRider = order.rider.isAssigned &&
+        (order.rider.riderNameSnapshot?.isNotEmpty ?? false);
 
-    final hasAddress =
-        effectiveOrder.delivery.addressSnapshot.isNotEmpty;
+    final hasAddress = order.delivery.addressSnapshot.isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -262,9 +235,9 @@ class _DonationOrderTile extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Colored header ──────────────────────────────────
+            //  Colored header 
             _TileHeader(
-              effectiveOrder: effectiveOrder,
+              effectiveOrder: order,
               statusBg: statusBg,
               statusColor: statusColor,
               shortId: shortId,
@@ -278,12 +251,18 @@ class _DonationOrderTile extends ConsumerWidget {
               color: borderGray100,
             ),
 
-            // ── Body ────────────────────────────────────────────
+            //  Body 
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 11, 14, 13),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _InfoRow(
+                    icon: Icons.calendar_today_rounded,
+                    iconColor: textGray600,
+                    text: 'Fecha: $createdAtText',
+                  ),
+                  const SizedBox(height: 6),
                   // Buyer row
                   _InfoRow(
                     icon: Icons.person_rounded,
@@ -310,7 +289,7 @@ class _DonationOrderTile extends ConsumerWidget {
                     _InfoRow(
                       icon: Icons.location_on_rounded,
                       iconColor: const Color(0xFF2563EB),
-                      text: effectiveOrder.delivery.addressSnapshot,
+                      text: order.delivery.addressSnapshot,
                     ),
                   ],
 
@@ -331,7 +310,7 @@ class _DonationOrderTile extends ConsumerWidget {
                           child: _InfoRow(
                             icon: Icons.delivery_dining_rounded,
                             iconColor: primaryOrange,
-                            text: effectiveOrder.rider.riderNameSnapshot!,
+                            text: order.rider.riderNameSnapshot!,
                             textColor: primaryOrange,
                             fontWeight: FontWeight.w700,
                           ),
@@ -341,10 +320,9 @@ class _DonationOrderTile extends ConsumerWidget {
                   ),
 
                   // Receipt button
-                  if (effectiveOrder.status != OrderStatus.pendingPayment &&
-                      isPaymentApproved) ...[
+                  if (canShowReceipt) ...[
                     const SizedBox(height: 12),
-                    _ReceiptButton(orderId: effectiveOrder.orderId),
+                    _ReceiptButton(orderId: order.orderId),
                   ],
                 ],
               ),
@@ -353,6 +331,11 @@ class _DonationOrderTile extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  static String _formatCreatedAt(DateTime createdAt) {
+    final local = createdAt.toLocal();
+    return DateFormat('dd/MM/yyyy HH:mm').format(local);
   }
 
   static Color _statusBg(OrderStatus status) {
@@ -388,9 +371,9 @@ class _DonationOrderTile extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 //  TILE HEADER  (colored top band with decorative HERO text)
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 
 class _TileHeader extends StatelessWidget {
   final Order effectiveOrder;
@@ -445,7 +428,7 @@ class _TileHeader extends StatelessWidget {
             color: statusBg,
           ),
 
-          // ── Decorative "HERO" watermark — top-right ──────────
+          //  Decorative "HERO" watermark  top-right 
           Positioned(
             top: -4,
             right: 10,
@@ -462,7 +445,7 @@ class _TileHeader extends StatelessWidget {
             ),
           ),
 
-          // ── Actual content ────────────────────────────────────
+          //  Actual content 
           Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
@@ -555,7 +538,7 @@ class _TileHeader extends StatelessWidget {
                   ),
                 ),
 
-                // ── Price + HERO decorative text ─────────────
+                // â”€â”€ Price + HERO decorative text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 _PriceWithHero(
                   amount: myAmount,
                   statusColor: statusColor,
@@ -569,9 +552,9 @@ class _TileHeader extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  PRICE WIDGET with "HERO" decorative text behind it
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _PriceWithHero extends StatelessWidget {
   final double amount;
@@ -612,9 +595,9 @@ class _PriceWithHero extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  INFO ROW  — icon + text utility
-// ─────────────────────────────────────────────────────────────────────────────
+// 
+//  INFO ROW  â€” icon + text utility
+// 
 
 class _InfoRow extends StatelessWidget {
   final IconData icon;
@@ -670,9 +653,9 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  RECEIPT BUTTON
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _ReceiptButton extends StatelessWidget {
   final String orderId;
@@ -716,9 +699,9 @@ class _ReceiptButton extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  EMPTY STATE
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _EmptyState extends StatelessWidget {
   final IconData icon;

@@ -12,7 +12,7 @@ class RiderDeliveryHistoryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(profileProvider);
+    final userAsync = ref.watch(profileStreamProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,

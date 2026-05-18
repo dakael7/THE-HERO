@@ -1,6 +1,7 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -68,30 +69,139 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
   late Animation<Offset> _offsetAnimation;
   late Animation<double> _opacityAnimation;
 
-  Future<void> _takeProfilePhoto() async {
+  void _setProfilePhoto(Uint8List bytes, String fileName) {
+    if (!mounted) return;
+    final normalizedName = fileName.trim();
+    setState(() {
+      _profilePhotoBytes = bytes;
+      _profilePhotoName =
+          normalizedName.isEmpty ? 'profile_photo.jpg' : normalizedName;
+    });
+  }
+
+  Future<void> _pickProfilePhoto(ImageSource source) async {
     try {
-      final picked = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
-        imageQuality: 85,
-        maxWidth: 2000,
-      );
+      final picked = source == ImageSource.camera
+          ? await _imagePicker.pickImage(
+              source: ImageSource.camera,
+              preferredCameraDevice: CameraDevice.front,
+              imageQuality: 85,
+              maxWidth: 2000,
+            )
+          : await _imagePicker.pickImage(
+              source: source,
+              imageQuality: 85,
+              maxWidth: 2000,
+            );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
-      if (!mounted) return;
-      setState(() {
-        _profilePhotoBytes = bytes;
-        _profilePhotoName = picked.name;
-      });
+      _setProfilePhoto(bytes, picked.name);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No se pudo tomar la foto: $e'),
+          content: Text('No se pudo seleccionar la foto: $e'),
           duration: const Duration(milliseconds: 2200),
         ),
       );
     }
+  }
+
+  Future<void> _pickProfilePhotoFromFiles() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final pickedFile = result.files.first;
+      final bytes = pickedFile.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No pudimos leer el archivo seleccionado.'),
+            duration: Duration(milliseconds: 2200),
+          ),
+        );
+        return;
+      }
+
+      _setProfilePhoto(bytes, pickedFile.name);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo seleccionar el archivo: $e'),
+          duration: const Duration(milliseconds: 2200),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showProfilePhotoOptions() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: backgroundWhite,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text(
+                    'Foto de perfil',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: textGray900,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Elige como cargar tu foto',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: textGray600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Galeria'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _pickProfilePhoto(ImageSource.gallery);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.folder_open_outlined),
+                  title: const Text('Archivos'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _pickProfilePhotoFromFiles();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined),
+                  title: const Text('Camara'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _pickProfilePhoto(ImageSource.camera);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -116,8 +226,12 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     _firstNameController.text = user?.identity.firstName ?? authFirstName;
     _lastNameController.text = user?.identity.lastName ?? authLastName;
     _rutController.text = user?.identity.documentId ?? '';
-    _selectedDocumentType =
-        user?.identity.documentType.trim().toLowerCase() ?? 'rut';
+    final seededDocumentType =
+        (user?.identity.documentType ?? '').trim().toLowerCase();
+    const allowedDocumentTypes = {'rut', 'cedula', 'dni', 'pasaporte'};
+    _selectedDocumentType = allowedDocumentTypes.contains(seededDocumentType)
+        ? seededDocumentType
+        : 'rut';
     _phoneController.text = user?.contact.phoneNumber ?? '';
 
     _controller = AnimationController(
@@ -275,6 +389,14 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     final authState = ref.watch(authNotifierProvider);
     final isUpgrade = widget.existingUser != null;
     final hasPhoto = _profilePhotoBytes != null;
+    final uploadProgress = authState.uploadProgress;
+    final isUploadingPhoto = authState.isLoading && uploadProgress != null;
+    final uploadPercent = isUploadingPhoto
+        ? ((uploadProgress!.clamp(0.0, 1.0)) * 100).round()
+        : null;
+    final loadingLabel = isUploadingPhoto
+        ? 'Subiendo imagen... $uploadPercent%'
+        : (authState.loadingMessage ?? 'Procesando...');
     final existingHasPhoto =
         ((widget.existingUser?.profilePhotoUrl ?? '').trim().isNotEmpty);
     final needsPhotoForUpgrade = isUpgrade && !existingHasPhoto;
@@ -331,16 +453,18 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                       ),
                     ),
 
-                    // ── PROFILE PHOTO ──────────────────────────────
+                    //  PROFILE PHOTO 
                     _PhotoPicker(
                       photoBytes: _profilePhotoBytes,
                       isLoading: authState.isLoading,
-                      onTap: _takeProfilePhoto,
+                      uploadProgress: authState.uploadProgress,
+                      loadingMessage: authState.loadingMessage,
+                      onTap: _showProfilePhotoOptions,
                     ),
 
                     const SizedBox(height: 32),
 
-                    // ── DATOS PERSONALES ───────────────────────────
+                    //  DATOS PERSONALES 
                     _SectionLabel(
                       label: 'Datos personales',
                       icon: Icons.person_outline_rounded,
@@ -416,7 +540,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
                         _FieldDivider(),
 
-                        // Teléfono
+                        // TelÃ©fono
                         TextFormField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
@@ -426,7 +550,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                             LengthLimitingTextInputFormatter(9),
                           ],
                           decoration: _inputDecoration(
-                            label: 'Número de teléfono',
+                            label: 'Número de telefono',
                             hint: 'Ej: 912345678',
                             prefixIconData: Icons.phone_outlined,
                           ),
@@ -445,7 +569,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
                     const SizedBox(height: 20),
 
-                    // ── DOCUMENTO ──────────────────────────────────
+                    //  DOCUMENTO 
                     _SectionLabel(
                       label: 'Documento de identidad',
                       icon: Icons.badge_outlined,
@@ -497,7 +621,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                       ],
                     ),
 
-                    // ── SEGURIDAD (solo nuevo registro) ────────────
+                    //  SEGURIDAD (solo nuevo registro) 
                     if (widget.existingUser == null) ...[
                       const SizedBox(height: 20),
                       _SectionLabel(
@@ -616,7 +740,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
                     const SizedBox(height: 24),
 
-                    // ── TÉRMINOS ────────────────────────────────────
+                    // Terminos y condiciones 
                     _TermsRow(
                       accepted: _acceptedTerms,
                       onChanged: (v) =>
@@ -629,7 +753,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
                     const SizedBox(height: 28),
 
-                    // ── SUBMIT ──────────────────────────────────────
+                    //  SUBMIT 
                     Builder(
                       builder: (BuildContext buttonContext) {
                         return GestureDetector(
@@ -656,7 +780,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                         ScaffoldMessenger.of(buttonContext)
                                             .showSnackBar(const SnackBar(
                                           content: Text(
-                                              'Debes tomar una foto de perfil para continuar.'),
+                                              'Debes seleccionar una foto de perfil para continuar.'),
                                           duration: Duration(milliseconds: 2000),
                                         ));
                                         return;
@@ -699,7 +823,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                       ScaffoldMessenger.of(buttonContext)
                                           .showSnackBar(const SnackBar(
                                         content: Text(
-                                            'Debes tomar una foto de perfil para continuar.'),
+                                            'Debes seleccionar una foto de perfil para continuar.'),
                                         duration: Duration(milliseconds: 2000),
                                       ));
                                       return;
@@ -715,7 +839,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                       return;
                                     }
 
-                                    ref
+                                    await ref
                                         .read(authNotifierProvider.notifier)
                                         .registerHero(
                                           email: email,
@@ -760,14 +884,33 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                                     ],
                             ),
                             child: authState.isLoading
-                                ? const Center(
-                                    child: SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        color: Colors.white,
-                                      ),
+                                ? Center(
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2.5,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Flexible(
+                                          child: Text(
+                                            loadingLabel,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white,
+                                              letterSpacing: 0.1,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   )
                                 : Row(
@@ -809,22 +952,34 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  PHOTO PICKER
-// ─────────────────────────────────────────────────────────────────────────────
+// 
+// ----------------------- WIDGETS AUXILIARES -----------------------
 class _PhotoPicker extends StatelessWidget {
   const _PhotoPicker({
     required this.photoBytes,
     required this.isLoading,
+    this.uploadProgress,
+    this.loadingMessage,
     required this.onTap,
   });
   final Uint8List? photoBytes;
   final bool isLoading;
+  final double? uploadProgress;
+  final String? loadingMessage;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final hasPhoto = photoBytes != null;
+    final isUploadingPhoto = isLoading && uploadProgress != null;
+    final normalizedProgress = uploadProgress?.clamp(0.0, 1.0) ?? 0.0;
+    final progressPercent = (normalizedProgress * 100).round();
+    final statusTitle = isUploadingPhoto
+        ? 'Subiendo foto de perfil'
+        : (hasPhoto ? 'Foto de perfil lista' : 'Foto de perfil');
+    final statusDescription = isUploadingPhoto
+        ? '${loadingMessage ?? 'Subiendo imagen...'} $progressPercent%'
+        : (hasPhoto ? 'Toca para cambiarla' : 'Requerida - galeria o archivos');
 
     return GestureDetector(
       onTap: isLoading ? null : onTap,
@@ -836,9 +991,7 @@ class _PhotoPicker extends StatelessWidget {
           color: hasPhoto ? const Color(0xFFFFF8F0) : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: hasPhoto
-                ? primaryOrange
-                : const Color(0xFFE8E8E8),
+            color: hasPhoto ? primaryOrange : const Color(0xFFE8E8E8),
             width: hasPhoto ? 2 : 1.5,
           ),
           boxShadow: hasPhoto
@@ -859,7 +1012,6 @@ class _PhotoPicker extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Avatar
             Stack(
               children: [
                 Container(
@@ -867,9 +1019,8 @@ class _PhotoPicker extends StatelessWidget {
                   height: 72,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: hasPhoto
-                        ? const Color(0xFFF0F0EE)
-                        : const Color(0xFFF5F5F5),
+                    color:
+                        hasPhoto ? const Color(0xFFF0F0EE) : const Color(0xFFF5F5F5),
                     border: Border.all(
                       color: hasPhoto
                           ? primaryOrange.withOpacity(0.3)
@@ -881,8 +1032,11 @@ class _PhotoPicker extends StatelessWidget {
                     child: hasPhoto
                         ? Image.memory(photoBytes!, fit: BoxFit.cover)
                         : const Center(
-                            child: Icon(Icons.person_rounded,
-                                size: 30, color: Color(0xFFCCCCCC)),
+                            child: Icon(
+                              Icons.person_rounded,
+                              size: 30,
+                              color: Color(0xFFCCCCCC),
+                            ),
                           ),
                   ),
                 ),
@@ -898,8 +1052,11 @@ class _PhotoPicker extends StatelessWidget {
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2),
                       ),
-                      child: const Icon(Icons.check_rounded,
-                          color: Colors.white, size: 12),
+                      child: const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 12,
+                      ),
                     ),
                   )
                 else
@@ -921,66 +1078,81 @@ class _PhotoPicker extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: const Icon(Icons.camera_alt_rounded,
-                          color: Colors.white, size: 11),
+                      child: const Icon(
+                        Icons.camera_alt_rounded,
+                        color: Colors.white,
+                        size: 11,
+                      ),
                     ),
                   ),
               ],
             ),
-
             const SizedBox(width: 16),
-
-            // Text content
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    hasPhoto ? 'Foto de perfil lista' : 'Foto de perfil',
+                    statusTitle,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
-                      color: hasPhoto
-                          ? const Color(0xFF10B981)
-                          : textGray900,
+                      color: isUploadingPhoto
+                          ? primaryOrange
+                          : hasPhoto
+                              ? const Color(0xFF10B981)
+                              : textGray900,
                       letterSpacing: -0.2,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    hasPhoto
-                        ? 'Toca para cambiarla'
-                        : 'Requerida · Toca para tomar',
+                    statusDescription,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
-                      color: hasPhoto
-                          ? const Color(0xFF10B981).withOpacity(0.7)
-                          : textGray600,
+                      color: isUploadingPhoto
+                          ? primaryOrange.withOpacity(0.85)
+                          : hasPhoto
+                              ? const Color(0xFF10B981).withOpacity(0.7)
+                              : textGray600,
                     ),
                   ),
+                  if (isUploadingPhoto) ...[
+                    const SizedBox(height: 9),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: LinearProgressIndicator(
+                        minHeight: 6,
+                        value: normalizedProgress,
+                        backgroundColor: const Color(0xFFFFE9D2),
+                        valueColor:
+                            const AlwaysStoppedAnimation<Color>(primaryOrange),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-
-            // Arrow / check indicator
             Container(
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: hasPhoto
-                    ? const Color(0xFFE6FDF4)
-                    : const Color(0xFFFFF3E0),
+                color: hasPhoto ? const Color(0xFFE6FDF4) : const Color(0xFFFFF3E0),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                hasPhoto
-                    ? Icons.edit_rounded
-                    : Icons.arrow_forward_ios_rounded,
+                isUploadingPhoto
+                    ? Icons.cloud_upload_rounded
+                    : hasPhoto
+                        ? Icons.edit_rounded
+                        : Icons.arrow_forward_ios_rounded,
                 size: 15,
-                color: hasPhoto
-                    ? const Color(0xFF10B981)
-                    : primaryOrange,
+                color: isUploadingPhoto
+                    ? primaryOrange
+                    : hasPhoto
+                        ? const Color(0xFF10B981)
+                        : primaryOrange,
               ),
             ),
           ],
@@ -991,10 +1163,6 @@ class _PhotoPicker extends StatelessWidget {
 }
 
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  SECTION LABEL
-// ─────────────────────────────────────────────────────────────────────────────
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel({required this.label, required this.icon});
   final String label;
@@ -1037,9 +1205,9 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 //  FIELD GROUP  (white card wrapping related fields)
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 class _FieldGroup extends StatelessWidget {
   const _FieldGroup({required this.children});
   final List<Widget> children;
@@ -1080,9 +1248,9 @@ class _FieldDivider extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 //  TERMS ROW
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 class _TermsRow extends StatelessWidget {
   const _TermsRow({
     required this.accepted,
@@ -1169,3 +1337,4 @@ class _TermsRow extends StatelessWidget {
     );
   }
 }
+

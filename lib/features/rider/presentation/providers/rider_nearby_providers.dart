@@ -55,7 +55,7 @@ class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
   FutureOr<List<NearbyOrder>> build() async {
     developer.log('🔍 [NearbyOrders] Starting reactive build...');
 
-    final profile = await ref.watch(profileProvider.future);
+    final profile = await ref.watch(profileStreamProvider.future);
     developer.log('👤 [NearbyOrders] Profile loaded: ${profile?.id}');
 
     final riderProfile = profile?.riderProfile;

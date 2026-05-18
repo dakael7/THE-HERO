@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +8,7 @@ import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../core/config/env.dart';
 import '../../../../../domain/entities/address.dart';
+import '../../../../../domain/entities/user.dart';
 import '../providers/profile_provider.dart';
 import 'location_picker_screen.dart';
 
@@ -91,121 +94,235 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
     super.dispose();
   }
 
+  Future<User?> _resolveCurrentUser() async {
+    final cached = ref.read(profileStreamProvider).value;
+    if (cached != null) return cached;
+    return ref
+        .read(profileStreamProvider.future)
+        .timeout(const Duration(seconds: 8), onTimeout: () => null);
+  }
+
   Future<void> _loadExistingAddresses() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
+
+    var finishLoadingInFinally = true;
     try {
-      final user = await ref.read(profileProvider.future);
+      final user = await _resolveCurrentUser();
       if (user == null) return;
 
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.id)
-          .get();
-      final data = snap.data();
-      if (data == null) return;
-
-      bool updated = false;
-
-      final rawSlots = data['addressSlots'];
-      if (rawSlots is Map) {
-        final slots = Map<String, dynamic>.from(rawSlots);
-        for (final s in AddressSlot.values) {
-          final raw = slots[s.jsonValue];
-          if (raw is! Map) continue;
-          final m = Map<String, dynamic>.from(raw);
-          final fullAddress = m['fullAddress']?.toString();
-          final lat = m['latitude'];
-          final lng = m['longitude'];
-          final cc = m['countryCode']?.toString();
-
-          _slotLocations[s] = (
-            address: fullAddress,
-            lat: lat is num ? lat.toDouble() : null,
-            lng: lng is num ? lng.toDouble() : null,
-            countryCode: cc,
-          );
-          _nameControllers[s]?.text = (m['name']?.toString() ?? '').trim();
-          _unitControllers[s]?.text =
-              (m['unitIdentifier']?.toString() ?? '').trim();
-          _postalCodeControllers[s]?.text =
-              (m['postalCode']?.toString() ?? '').trim();
-          updated = true;
-        }
-
-        final primary = data['primaryAddressSlot']?.toString();
-        if (primary != null && primary.trim().isNotEmpty) {
-          try {
-            _primarySlot = AddressSlot.fromString(primary);
-          } catch (_) {}
-        }
-
-        if (updated && mounted) setState(() {});
+      final hydratedFromProfile = _applyAddressDataFromUser(user);
+      if (hydratedFromProfile && mounted) {
+        setState(() => _isLoading = false);
+        finishLoadingInFinally = false;
+        _fadeInController?.forward(from: 0.0);
+        unawaited(_refreshAddressesFromFirestore(user.id, repaint: true));
         return;
       }
 
-      // Legacy: addressUnits
-      final rawUnits = data['addressUnits'];
-      if (rawUnits is Map) {
-        final units = Map<String, dynamic>.from(rawUnits);
-        for (final s in AddressSlot.values) {
-          final raw = units[s.jsonValue];
-          if (raw is! Map) continue;
-          final m = Map<String, dynamic>.from(raw);
-          final fullAddress = m['fullAddress']?.toString();
-          final lat = m['latitude'];
-          final lng = m['longitude'];
-          final cc = m['countryCode']?.toString();
-
-          _slotLocations[s] = (
-            address: fullAddress,
-            lat: lat is num ? lat.toDouble() : null,
-            lng: lng is num ? lng.toDouble() : null,
-            countryCode: cc,
-          );
-          _nameControllers[s]?.text = (m['name']?.toString() ?? '').trim();
-          _unitControllers[s]?.text =
-              (m['unitIdentifier']?.toString() ?? '').trim();
-          _postalCodeControllers[s]?.text =
-              (m['postalCode']?.toString() ?? '').trim();
-          updated = true;
-        }
-
-        if (updated && mounted) setState(() {});
-        return;
-      }
-
-      // Legacy: single address
-      final legacy = data['address'];
-      if (legacy is Map) {
-        final m = Map<String, dynamic>.from(legacy);
-        final fullAddress = m['fullAddress']?.toString();
-        final lat = m['latitude'];
-        final lng = m['longitude'];
-        final cc = m['countryCode']?.toString();
-
-        _primarySlot = AddressSlot.one;
-        _slotLocations[AddressSlot.one] = (
-          address: fullAddress,
-          lat: lat is num ? lat.toDouble() : null,
-          lng: lng is num ? lng.toDouble() : null,
-          countryCode: cc,
-        );
-        _nameControllers[AddressSlot.one]?.text =
-            (m['name']?.toString() ?? '').trim();
-        _unitControllers[AddressSlot.one]?.text =
-            (m['unitIdentifier']?.toString() ?? '').trim();
-        _postalCodeControllers[AddressSlot.one]?.text =
-            (m['postalCode']?.toString() ?? '').trim();
-
-        if (mounted) setState(() {});
-      }
+      await _refreshAddressesFromFirestore(user.id, repaint: false);
     } finally {
-      if (mounted) {
+      if (mounted && finishLoadingInFinally) {
         setState(() => _isLoading = false);
         _fadeInController?.forward(from: 0.0);
       }
     }
+  }
+
+  bool _applyAddressDataFromUser(User user) {
+    bool updated = false;
+
+    if (user.addressSlots.isNotEmpty) {
+      for (final slot in AddressSlot.values) {
+        final address = user.addressSlots[slot];
+        if (address == null) continue;
+        if (_applyAddressEntityToSlot(slot, address)) {
+          updated = true;
+        }
+      }
+
+      final preferredPrimary = user.primaryAddressSlot;
+      if (preferredPrimary != null && preferredPrimary != _primarySlot) {
+        _primarySlot = preferredPrimary;
+        updated = true;
+      } else if (preferredPrimary == null &&
+          !user.addressSlots.containsKey(_primarySlot)) {
+        final first = user.addressSlots.keys.first;
+        if (first != _primarySlot) {
+          _primarySlot = first;
+          updated = true;
+        }
+      }
+
+      return updated;
+    }
+
+    final legacyAddress = user.address;
+    if (legacyAddress == null) return false;
+
+    if (_primarySlot != AddressSlot.one) {
+      _primarySlot = AddressSlot.one;
+      updated = true;
+    }
+
+    return _applyAddressEntityToSlot(AddressSlot.one, legacyAddress) || updated;
+  }
+
+  bool _applyAddressEntityToSlot(AddressSlot slot, Address address) {
+    final fullAddress = address.fullAddress.trim();
+    final name = (address.name ?? '').trim();
+    final unit = (address.unitIdentifier ?? '').trim();
+    final postal = (address.postalCode ?? '').trim();
+    final countryCode = address.countryCode?.trim();
+
+    final hasAnyData = fullAddress.isNotEmpty ||
+        address.latitude != 0 ||
+        address.longitude != 0 ||
+        name.isNotEmpty ||
+        unit.isNotEmpty ||
+        postal.isNotEmpty ||
+        (countryCode?.isNotEmpty ?? false);
+
+    if (!hasAnyData) return false;
+
+    _slotLocations[slot] = (
+      address: fullAddress.isEmpty ? null : fullAddress,
+      lat: address.latitude,
+      lng: address.longitude,
+      countryCode: countryCode,
+    );
+    _nameControllers[slot]?.text = name;
+    _unitControllers[slot]?.text = unit;
+    _postalCodeControllers[slot]?.text = postal;
+    return true;
+  }
+
+  Future<void> _refreshAddressesFromFirestore(
+    String userId, {
+    required bool repaint,
+  }) async {
+    final docRef = FirebaseFirestore.instance.collection('users').doc(userId);
+    Map<String, dynamic>? data;
+
+    try {
+      final cacheSnap = await docRef
+          .get(const GetOptions(source: Source.cache))
+          .timeout(const Duration(milliseconds: 700));
+      data = cacheSnap.data();
+    } catch (_) {
+      // Ignore cache misses/timeouts and continue with server fallback.
+    }
+
+    if (data == null) {
+      try {
+        final serverSnap =
+            await docRef.get().timeout(const Duration(seconds: 3));
+        data = serverSnap.data();
+      } catch (_) {
+        return;
+      }
+    }
+
+    if (data == null) return;
+
+    final updated = _applyAddressDataFromMap(data);
+    if (updated && repaint && mounted) {
+      setState(() {});
+    }
+  }
+
+  bool _applyAddressDataFromMap(Map<String, dynamic> data) {
+    bool updated = false;
+
+    final rawSlots = data['addressSlots'];
+    if (rawSlots is Map) {
+      final slots = Map<String, dynamic>.from(rawSlots);
+      for (final slot in AddressSlot.values) {
+        final raw = slots[slot.jsonValue];
+        if (raw is! Map) continue;
+        if (_applySlotMap(slot, Map<String, dynamic>.from(raw))) {
+          updated = true;
+        }
+      }
+
+      final primaryRaw = data['primaryAddressSlot']?.toString();
+      if (primaryRaw != null && primaryRaw.trim().isNotEmpty) {
+        try {
+          final parsedPrimary = AddressSlot.fromString(primaryRaw);
+          if (parsedPrimary != _primarySlot) {
+            _primarySlot = parsedPrimary;
+            updated = true;
+          }
+        } catch (_) {}
+      }
+
+      if (updated || slots.isNotEmpty) return updated;
+    }
+
+    final rawUnits = data['addressUnits'];
+    if (rawUnits is Map) {
+      final units = Map<String, dynamic>.from(rawUnits);
+      for (final slot in AddressSlot.values) {
+        final raw = units[slot.jsonValue];
+        if (raw is! Map) continue;
+        if (_applySlotMap(slot, Map<String, dynamic>.from(raw))) {
+          updated = true;
+        }
+      }
+
+      if (updated || units.isNotEmpty) return updated;
+    }
+
+    final legacy = data['address'];
+    if (legacy is Map) {
+      if (_primarySlot != AddressSlot.one) {
+        _primarySlot = AddressSlot.one;
+        updated = true;
+      }
+      if (_applySlotMap(AddressSlot.one, Map<String, dynamic>.from(legacy))) {
+        updated = true;
+      }
+    }
+
+    return updated;
+  }
+
+  bool _applySlotMap(AddressSlot slot, Map<String, dynamic> raw) {
+    final fullAddress = raw['fullAddress']?.toString().trim();
+    final latRaw = raw['latitude'];
+    final lngRaw = raw['longitude'];
+    final countryCode = raw['countryCode']?.toString().trim();
+    final name = (raw['name']?.toString() ?? '').trim();
+    final unit = (raw['unitIdentifier']?.toString() ?? '').trim();
+    final postal = (raw['postalCode']?.toString() ?? '').trim();
+
+    final lat = latRaw is num
+        ? latRaw.toDouble()
+        : double.tryParse(latRaw?.toString() ?? '');
+    final lng = lngRaw is num
+        ? lngRaw.toDouble()
+        : double.tryParse(lngRaw?.toString() ?? '');
+
+    final hasAnyData = (fullAddress?.isNotEmpty ?? false) ||
+        lat != null ||
+        lng != null ||
+        (countryCode?.isNotEmpty ?? false) ||
+        name.isNotEmpty ||
+        unit.isNotEmpty ||
+        postal.isNotEmpty;
+
+    if (!hasAnyData) return false;
+
+    _slotLocations[slot] = (
+      address: fullAddress?.isEmpty ?? true ? null : fullAddress,
+      lat: lat,
+      lng: lng,
+      countryCode: countryCode,
+    );
+    _nameControllers[slot]?.text = name;
+    _unitControllers[slot]?.text = unit;
+    _postalCodeControllers[slot]?.text = postal;
+    return true;
   }
 
   Future<void> _openMapPickerForSlot(AddressSlot slot) async {
@@ -339,7 +456,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
     setState(() => _isSaving = true);
 
     try {
-      final user = await ref.read(profileProvider.future);
+      final user = await _resolveCurrentUser();
       if (user == null) throw Exception('Usuario no encontrado');
 
       Map<String, dynamic> slotToJson(AddressSlot s) {
@@ -385,7 +502,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
         },
       }, SetOptions(merge: true));
 
-      ref.invalidate(profileProvider);
+      ref.invalidate(profileStreamProvider);
 
       if (mounted) {
         _showSnackBar(

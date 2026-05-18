@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
@@ -14,7 +14,7 @@ class PreviousOrdersScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profileAsync = ref.watch(profileProvider);
+    final userId = ref.watch(currentUserIdProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -29,56 +29,47 @@ class PreviousOrdersScreen extends ConsumerWidget {
           ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
         },
       ),
-      body: profileAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: primaryOrange),
-        ),
-        error: (err, _) => _EmptyState(
-          icon: Icons.error_outline,
-          title: 'No pudimos cargar tu perfil',
-          message: err.toString(),
-        ),
-        data: (user) {
-          if (user == null) {
-            return const _EmptyState(
+      body: userId == null
+          ? const _EmptyState(
               icon: Icons.login,
-              title: 'Inicia sesión',
-              message: 'Necesitas iniciar sesión para ver tus pedidos.',
-            );
-          }
+              title: 'Inicia sesiÃ³n',
+              message: 'Necesitas iniciar sesiÃ³n para ver tus pedidos.',
+            )
+          : ref.watch(myOrdersProvider(userId)).when(
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: primaryOrange),
+              ),
+              error: (err, _) => _EmptyState(
+                icon: Icons.error_outline,
+                title: 'No pudimos cargar tus pedidos',
+                message: err.toString(),
+              ),
+              data: (orders) {
+                final completed = [...orders]
+                  ..removeWhere((o) => !o.status.isCompleted)
+                  ..sort(
+                    (a, b) =>
+                        b.timestamps.createdAt.compareTo(a.timestamps.createdAt),
+                  );
 
-          final ordersAsync = ref.watch(myOrdersProvider(user.id));
-          return ordersAsync.when(
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: primaryOrange),
-            ),
-            error: (err, _) => _EmptyState(
-              icon: Icons.error_outline,
-              title: 'No pudimos cargar tus pedidos',
-              message: err.toString(),
-            ),
-            data: (orders) {
-              final completed = [...orders]
-                ..removeWhere((o) => !o.status.isCompleted)
-                ..sort((a, b) => b.timestamps.createdAt.compareTo(a.timestamps.createdAt));
+                if (completed.isEmpty) {
+                  return const _EmptyState(
+                    icon: Icons.receipt_long,
+                    title: 'No tienes pedidos anteriores',
+                    message:
+                        'Cuando finalices un pedido, podrÃ¡s ver el historial aquÃ­.',
+                  );
+                }
 
-              if (completed.isEmpty) {
-                return const _EmptyState(
-                  icon: Icons.receipt_long,
-                  title: 'No tienes pedidos anteriores',
-                  message:
-                      'Cuando finalices un pedido, podrás ver el historial aquí.',
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: completed.length,
+                  itemBuilder: (context, index) {
+                    return _OrderTile(order: completed[index]);
+                  },
                 );
-              }
-
-              return ListView(
-                padding: const EdgeInsets.all(16),
-                children: completed.map((o) => _OrderTile(order: o)).toList(),
-              );
-            },
-          );
-        },
-      ),
+              },
+            ),
     );
   }
 }
@@ -176,7 +167,7 @@ class _OrderTile extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Colored header band ─────────────────────────
+            // â”€â”€ Colored header band â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -236,7 +227,7 @@ class _OrderTile extends ConsumerWidget {
                 ],
               ),
             ),
-            // ── Body ──────────────────────────────────────────
+            // â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
               child: Column(
@@ -350,3 +341,4 @@ class _OrderTile extends ConsumerWidget {
     return '$day/$month/$year';
   }
 }
+

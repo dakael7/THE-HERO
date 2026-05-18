@@ -17,20 +17,21 @@ class FCMService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
+  bool _initializing = false;
   String? _fcmToken;
   String? _currentTopic;
 
-  Timer? _topicRetryTimer;
-  int _topicRetryAttempt = 0;
+  StreamSubscription<User?>? _authStateSubscription;
+  StreamSubscription<String>? _tokenRefreshSubscription;
 
   String? _activeChatId;
 
   Future<String?> _getTokenWithRetry({int attempts = 3}) async {
     for (int i = 0; i < attempts; i++) {
       try {
-        return await _firebaseMessaging
-            .getToken()
-            .timeout(const Duration(seconds: 8));
+        return await _firebaseMessaging.getToken().timeout(
+          const Duration(seconds: 8),
+        );
       } catch (e) {
         if (i == attempts - 1) {
           return null;
@@ -60,109 +61,122 @@ class FCMService {
   }
 
   Future<void> initialize() async {
-    if (_initialized) return;
-
-    // Request permission for iOS (and noop on Android)
-    NotificationSettings settings;
+    if (_initialized || _initializing) return;
+    _initializing = true;
     try {
-      settings = await _firebaseMessaging
-          .requestPermission(
-            alert: true,
-            badge: true,
-            sound: true,
-            provisional: false,
-          )
-          .timeout(const Duration(seconds: 8));
-    } catch (e) {
-      print('FCM: requestPermission failed/timeout: $e');
-      return;
-    }
-
-    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      print('FCM: User granted permission');
-    } else if (settings.authorizationStatus ==
-        AuthorizationStatus.provisional) {
-      print('FCM: User granted provisional permission');
-    } else {
-      print('FCM: User declined or has not accepted permission');
-      return;
-    }
-
-    // Initialize local notifications for Android
-    try {
-      await _initializeLocalNotifications().timeout(const Duration(seconds: 10));
-    } catch (e) {
-      print('FCM: local notifications init failed/timeout: $e');
-      // Don't return; token/topics can still work.
-    }
-
-    // Get FCM token
-    try {
-      _fcmToken = await _getTokenWithRetry(attempts: 3);
-      print('FCM Token: $_fcmToken');
-    } catch (e) {
-      _fcmToken = null;
-      print('FCM: getToken failed: $e');
-    }
-
-    FirebaseAuth.instance.authStateChanges().listen(
-      (user) async {
-        try {
-          if (user == null) {
-            _topicRetryTimer?.cancel();
-            _topicRetryTimer = null;
-            _topicRetryAttempt = 0;
-            try {
-              await _unsubscribeFromCurrentTopic()
-                  .timeout(const Duration(seconds: 6));
-            } catch (e) {
-              print('FCM: unsubscribe current topic failed: $e');
-            }
-            try {
-              await _unsubscribeFromLegacyTopics()
-                  .timeout(const Duration(seconds: 6));
-            } catch (e) {
-              print('FCM: unsubscribe legacy topics failed: $e');
-            }
-            return;
-          }
-
-          await _unsubscribeFromLegacyTopics();
-          await _subscribeToUserTopic();
-
-          final token = _fcmToken;
-          if (token != null) {
-            await _saveFCMToken(token);
-          }
-        } catch (_) {
-          // ignore
-        }
-      },
-    );
-
-    _firebaseMessaging.onTokenRefresh.listen((newToken) {
-      print('FCM Token refreshed: $newToken');
-      _fcmToken = newToken;
-      _saveFCMToken(newToken);
-      _subscribeToUserTopic();
-    });
-
-    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
-
-    try {
-      RemoteMessage? initialMessage = await _firebaseMessaging
-          .getInitialMessage()
-          .timeout(const Duration(seconds: 6));
-      if (initialMessage != null) {
-        _handleMessageOpenedApp(initialMessage);
+      // Request permission for iOS (and noop on Android)
+      NotificationSettings? settings;
+      try {
+        settings = await _firebaseMessaging
+            .requestPermission(
+              alert: true,
+              badge: true,
+              sound: true,
+              provisional: false,
+            )
+            .timeout(const Duration(seconds: 6));
+      } catch (e) {
+        print('FCM: requestPermission failed/timeout: $e');
       }
-    } catch (e) {
-      print('FCM: getInitialMessage failed: $e');
-    }
 
-    _initialized = true;
+      if (settings != null) {
+        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+          print('FCM: User granted permission');
+        } else if (settings.authorizationStatus ==
+            AuthorizationStatus.provisional) {
+          print('FCM: User granted provisional permission');
+        } else {
+          print('FCM: User declined or has not accepted permission');
+        }
+      }
+
+      // Initialize local notifications for Android
+      try {
+        await _initializeLocalNotifications().timeout(
+          const Duration(seconds: 6),
+        );
+      } catch (e) {
+        print('FCM: local notifications init failed/timeout: $e');
+        // Don't return; token/topics can still work.
+      }
+
+      // Get FCM token
+      try {
+        _fcmToken = await _getTokenWithRetry(attempts: 2);
+        print('FCM Token: $_fcmToken');
+      } catch (e) {
+        _fcmToken = null;
+        print('FCM: getToken failed: $e');
+      }
+
+      await _authStateSubscription?.cancel();
+      _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
+        user,
+      ) {
+        unawaited(_handleAuthStateChanged(user));
+      });
+
+      await _tokenRefreshSubscription?.cancel();
+      _tokenRefreshSubscription = _firebaseMessaging.onTokenRefresh.listen((
+        newToken,
+      ) {
+        print('FCM Token refreshed: $newToken');
+        _fcmToken = newToken;
+        unawaited(_saveFCMToken(newToken));
+        unawaited(_subscribeToUserTopic());
+      });
+
+      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
+
+      try {
+        final initialMessage = await _firebaseMessaging
+            .getInitialMessage()
+            .timeout(const Duration(seconds: 4));
+        if (initialMessage != null) {
+          _handleMessageOpenedApp(initialMessage);
+        }
+      } catch (e) {
+        print('FCM: getInitialMessage failed: $e');
+      }
+
+      _initialized = true;
+    } finally {
+      _initializing = false;
+    }
+  }
+
+  Future<void> _handleAuthStateChanged(User? user) async {
+    try {
+      if (user == null) {
+        try {
+          await _unsubscribeFromCurrentTopic().timeout(
+            const Duration(seconds: 4),
+          );
+        } catch (e) {
+          print('FCM: unsubscribe current topic failed: $e');
+        }
+        try {
+          await _unsubscribeFromLegacyTopics().timeout(
+            const Duration(seconds: 4),
+          );
+        } catch (e) {
+          print('FCM: unsubscribe legacy topics failed: $e');
+        }
+        return;
+      }
+
+      await _unsubscribeFromLegacyTopics();
+      await _subscribeToUserTopic();
+
+      final token = _fcmToken;
+      if (token != null) {
+        await _saveFCMToken(token);
+      }
+    } catch (_) {
+      // ignore
+    }
   }
 
   Future<void> _unsubscribeFromLegacyTopics() async {
@@ -288,23 +302,14 @@ class FCMService {
     try {
       await _firebaseMessaging
           .subscribeToTopic(topic)
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 4));
     } catch (e) {
-      _topicRetryAttempt = (_topicRetryAttempt + 1).clamp(1, 6);
-      final delayMs = 800 * _topicRetryAttempt;
       print(
-        'FCM: subscribeToTopic failed/timeout topic=$topic uid=${user.uid} retryAttempt=$_topicRetryAttempt retryInMs=$delayMs error=$e',
+        'FCM: subscribeToTopic failed/timeout topic=$topic uid=${user.uid} error=$e (SDK will retry in background)',
       );
-      _topicRetryTimer?.cancel();
-      _topicRetryTimer = Timer(Duration(milliseconds: delayMs), () {
-        _subscribeToUserTopic();
-      });
       return;
     }
     _currentTopic = topic;
-    _topicRetryTimer?.cancel();
-    _topicRetryTimer = null;
-    _topicRetryAttempt = 0;
     print('Subscribed to topic: $topic');
   }
 
@@ -328,17 +333,23 @@ class FCMService {
     }
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'fcmToken': FieldValue.delete(),
-        'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)).timeout(const Duration(seconds: 6));
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({
+            'fcmToken': FieldValue.delete(),
+            'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 6));
       print('FCM cleanupBeforeSignOut: fcmToken deleted from Firestore');
     } catch (e) {
       print('FCM cleanupBeforeSignOut: Firestore delete token failed: $e');
     }
 
     try {
-      await _firebaseMessaging.deleteToken().timeout(const Duration(seconds: 6));
+      await _firebaseMessaging.deleteToken().timeout(
+        const Duration(seconds: 6),
+      );
       _fcmToken = null;
       print('FCM cleanupBeforeSignOut: local FCM token deleted');
     } catch (e) {
@@ -350,31 +361,37 @@ class FCMService {
   void _handleForegroundMessage(RemoteMessage message) {
     print('Foreground message received: ${message.messageId}');
 
-    final notification = message.notification;
-    final data = message.data;
+    final data = NotificationHandler().extractMessageData(message);
+    final title = _resolveNotificationTitle(message, data: data);
+    final body = _resolveNotificationBody(message, data: data);
+    final type = data['type']?.toString();
+    final isChat =
+        type == 'chat' || type == 'chat_message' || type == 'open_chat';
+    final chatId = data['chatId']?.toString();
 
-    if (notification != null) {
-      final type = data['type']?.toString();
-      final isChat = type == 'chat' || type == 'chat_message' || type == 'open_chat';
-      final chatId = data['chatId']?.toString();
-
-      if (!(isChat && _isChatCurrentlyOpen(chatId))) {
+    if (!(isChat && _isChatCurrentlyOpen(chatId))) {
+      final hasContent = title.trim().isNotEmpty || body.trim().isNotEmpty;
+      if (hasContent) {
         _showLocalNotification(
-          title: notification.title ?? 'The Hero',
-          body: notification.body ?? '',
+          title: title,
+          body: body,
           data: data,
         );
       }
     }
 
-    // Save notification to Firestore
-    _saveNotificationToFirestore(message);
+    // Save notification to Firestore (also for data-only messages).
+    _saveNotificationToFirestore(
+      message,
+      titleOverride: title,
+      bodyOverride: body,
+    );
   }
 
   /// Handle message opened from background/terminated state
   void _handleMessageOpenedApp(RemoteMessage message) {
     print('Message opened app: ${message.messageId}');
-    final data = message.data;
+    final data = NotificationHandler().extractMessageData(message);
 
     // Navigate based on notification type
     _handleNotificationNavigation(data);
@@ -406,26 +423,28 @@ class FCMService {
     }
 
     final chatId = data?['chatId']?.toString();
-    final isChat = channelId == 'chat_messages' && chatId != null && chatId.isNotEmpty;
+    final isChat =
+        channelId == 'chat_messages' && chatId != null && chatId.isNotEmpty;
     final groupKey = isChat ? 'chat_$chatId' : null;
     final notificationId = isChat
         ? _stableNotificationIdForChat(chatId)
         : DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
-    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      channelId,
-      channelId == 'order_updates'
-          ? 'Actualizaciones de Pedidos'
-          : channelId == 'nearby_orders'
+    final AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          channelId,
+          channelId == 'order_updates'
+              ? 'Actualizaciones de Pedidos'
+              : channelId == 'nearby_orders'
               ? 'Pedidos Cercanos'
               : channelId == 'chat_messages'
-                  ? 'Mensajes'
-                  : 'Notificaciones del Sistema',
-      importance: Importance.high,
-      priority: Priority.high,
-      showWhen: true,
-      groupKey: groupKey,
-    );
+              ? 'Mensajes'
+              : 'Notificaciones del Sistema',
+          importance: Importance.high,
+          priority: Priority.high,
+          showWhen: true,
+          groupKey: groupKey,
+        );
 
     final DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
       presentAlert: true,
@@ -463,26 +482,33 @@ class FCMService {
   }
 
   /// Save notification to Firestore
-  Future<void> _saveNotificationToFirestore(RemoteMessage message) async {
+  Future<void> _saveNotificationToFirestore(
+    RemoteMessage message, {
+    String? titleOverride,
+    String? bodyOverride,
+  }) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      final notification = message.notification;
-      if (notification == null) return;
+      final data = NotificationHandler().extractMessageData(message);
+      final title = (titleOverride ?? _resolveNotificationTitle(message, data: data))
+          .trim();
+      final body = (bodyOverride ?? _resolveNotificationBody(message, data: data))
+          .trim();
+      if (title.isEmpty && body.isEmpty) return;
 
       // Determine priority from data or default to normal
-      final priority = message.data['priority'] as String? ?? 'normal';
+      final priority = data['priority']?.toString() ?? 'normal';
 
       await FirebaseFirestore.instance.collection('notifications').add({
         'userId': user.uid,
-        'type': message.data['type'] ?? 'system',
-        'title': notification.title ?? '',
-        'body': notification.body ?? '',
-        'data': message.data,
-        'action': message.data['action'],
-        'imageUrl':
-            notification.android?.imageUrl ?? notification.apple?.imageUrl,
+        'type': data['type'] ?? 'system',
+        'title': title,
+        'body': body,
+        'data': data,
+        'action': data['action'],
+        'imageUrl': _resolveNotificationImageUrl(message, data: data),
         'priority': priority,
         'createdAt': FieldValue.serverTimestamp(),
         'read': false,
@@ -495,6 +521,69 @@ class FCMService {
   /// Encode payload for local notification
   String _encodePayload(Map<String, dynamic> data) {
     return jsonEncode(data);
+  }
+
+  String _resolveNotificationTitle(
+    RemoteMessage message, {
+    required Map<String, dynamic> data,
+  }) {
+    final titleFromNotification = message.notification?.title?.trim();
+    if (titleFromNotification != null && titleFromNotification.isNotEmpty) {
+      return titleFromNotification;
+    }
+
+    final titleFromData = data['title']?.toString().trim();
+    if (titleFromData != null && titleFromData.isNotEmpty) {
+      return titleFromData;
+    }
+
+    final fallbackFromData = data['notificationTitle']?.toString().trim();
+    if (fallbackFromData != null && fallbackFromData.isNotEmpty) {
+      return fallbackFromData;
+    }
+
+    return 'The Hero';
+  }
+
+  String _resolveNotificationBody(
+    RemoteMessage message, {
+    required Map<String, dynamic> data,
+  }) {
+    final bodyFromNotification = message.notification?.body?.trim();
+    if (bodyFromNotification != null && bodyFromNotification.isNotEmpty) {
+      return bodyFromNotification;
+    }
+
+    final bodyFromData = data['body']?.toString().trim();
+    if (bodyFromData != null && bodyFromData.isNotEmpty) {
+      return bodyFromData;
+    }
+
+    final messageFromData = data['message']?.toString().trim();
+    if (messageFromData != null && messageFromData.isNotEmpty) {
+      return messageFromData;
+    }
+
+    return '';
+  }
+
+  String? _resolveNotificationImageUrl(
+    RemoteMessage message, {
+    required Map<String, dynamic> data,
+  }) {
+    final imageFromNotification =
+        message.notification?.android?.imageUrl ??
+        message.notification?.apple?.imageUrl;
+    if (imageFromNotification != null && imageFromNotification.trim().isNotEmpty) {
+      return imageFromNotification.trim();
+    }
+
+    final imageFromData = data['imageUrl']?.toString().trim();
+    if (imageFromData != null && imageFromData.isNotEmpty) {
+      return imageFromData;
+    }
+
+    return null;
   }
 
   /// Decode payload from local notification

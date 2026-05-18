@@ -7,6 +7,7 @@ import '../../../domain/entities/concierge_info.dart';
 class CartItem {
   final String offerId;
   final String? sellerHeroId;
+  final String category;
   final String name;
   final String condition;
   final int quantity;
@@ -25,6 +26,7 @@ class CartItem {
   const CartItem({
     required this.offerId,
     this.sellerHeroId,
+    this.category = 'others',
     required this.name,
     required this.condition,
     this.quantity = 1,
@@ -45,6 +47,7 @@ class CartItem {
     return CartItem(
       offerId: offerId,
       sellerHeroId: sellerHeroId,
+      category: category,
       name: name,
       condition: condition,
       quantity: quantity ?? this.quantity,
@@ -67,6 +70,7 @@ class CartItem {
     return OrderItem(
       offerId: offerId,
       sellerHeroIdSnapshot: sellerHeroId?.trim() ?? '',
+      categorySnapshot: category,
       titleSnapshot: name,
       unitPriceSnapshot: price,
       qty: quantity,

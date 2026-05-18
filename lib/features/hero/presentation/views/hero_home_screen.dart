@@ -92,7 +92,9 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
   }
 
   void _onSearchExpandedChanged(bool expanded) {
+    if (_isSearchExpanded == expanded) return;
     setState(() => _isSearchExpanded = expanded);
+    if (!_scrollController.hasClients) return;
     _scrollController.animateTo(
       expanded ? 80.0 : 0.0,
       duration: const Duration(milliseconds: 300),
@@ -553,9 +555,14 @@ class _CatalogSliverList extends ConsumerWidget {
     }
 
     // ── Offer list as a MultiSliver so we can append the spinner sliver ───
+    final indexByOfferId = <String, int>{
+      for (var i = 0; i < offers.length; i++) offers[i].offerId: i,
+    };
+
     return _OfferSliverGroup(
       offers: offers,
       isLoadingMore: isLoadingMore,
+      indexByOfferId: indexByOfferId,
     );
   }
 }
@@ -564,10 +571,12 @@ class _OfferSliverGroup extends StatelessWidget {
   const _OfferSliverGroup({
     required this.offers,
     required this.isLoadingMore,
+    required this.indexByOfferId,
   });
 
   final List<Offer> offers;
   final bool isLoadingMore;
+  final Map<String, int> indexByOfferId;
 
   @override
   Widget build(BuildContext context) {
@@ -621,11 +630,8 @@ class _OfferSliverGroup extends StatelessWidget {
               // Stable key function so Flutter reuses elements by offerId
               // instead of by index when the list grows.
               findChildIndexCallback: (key) {
-                final valueKey = key as ValueKey<String>;
-                final idx = offers.indexWhere(
-                  (o) => o.offerId == valueKey.value,
-                );
-                return idx == -1 ? null : idx;
+                if (key is! ValueKey<String>) return null;
+                return indexByOfferId[key.value];
               },
             ),
           ),
@@ -759,7 +765,7 @@ class _OfferListItem extends ConsumerWidget {
                     offer.itemLocationSnapshot?.countryCode,
                 allowInPersonPickup: offer.allowInPersonPickup,
                 showShadow: false,
-                imageUrl: offer.coverImageUrl,
+                imageUrl: offer.displayImageUrl,
                 avgRating: offer.avgRating,
                 ratingCount: offer.ratingCount,
                 sellerName: sellerName,

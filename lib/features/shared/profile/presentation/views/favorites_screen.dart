@@ -14,7 +14,7 @@ class FavoritesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(profileProvider);
+    final userId = ref.watch(currentUserIdProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -29,111 +29,112 @@ class FavoritesScreen extends ConsumerWidget {
           ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
         },
       ),
-      body: userAsync.when(
-        data: (user) {
-          if (user == null) {
-            return const Center(child: Text('Usuario no encontrado'));
-          }
+      body: userId == null
+          ? const Center(child: Text('Usuario no encontrado'))
+          : Builder(
+              builder: (context) {
+                final uid = userId!;
+                final favoriteIdsAsync = ref.watch(
+                  favoriteOfferIdsProvider(uid),
+                );
 
-          final favoriteIdsAsync = ref.watch(favoriteOfferIdsProvider(user.id));
+                return favoriteIdsAsync.when(
+                  data: (favoriteIds) {
+                    if (favoriteIds.isEmpty) {
+                      return _buildEmptyState();
+                    }
 
-          return favoriteIdsAsync.when(
-            data: (favoriteIds) {
-              if (favoriteIds.isEmpty) {
-                return _buildEmptyState();
-              }
+                    // Get all active offers
+                    final allOffersAsync = ref.watch(
+                      activeOffersProvider(OffersFilter(limit: 100)),
+                    );
 
-              // Get all active offers
-              final allOffersAsync = ref.watch(
-                activeOffersProvider(OffersFilter(limit: 100)),
-              );
+                    return allOffersAsync.when(
+                      data: (allOffers) {
+                        // Filter to only show favorite offers
+                        final favoriteOffers = allOffers
+                            .where((offer) => favoriteIds.contains(offer.offerId))
+                            .where((offer) => offer.heroId != uid)
+                            .toList();
 
-              return allOffersAsync.when(
-                data: (allOffers) {
-                  // Filter to only show favorite offers
-                  final favoriteOffers = allOffers
-                      .where((offer) => favoriteIds.contains(offer.offerId))
-                      .where((offer) => offer.heroId != user.id)
-                      .toList();
+                        if (favoriteOffers.isEmpty) {
+                          return _buildEmptyState();
+                        }
 
-                  if (favoriteOffers.isEmpty) {
-                    return _buildEmptyState();
-                  }
-
-                  return RefreshIndicator(
-                    color: primaryOrange,
-                    onRefresh: () async {
-                      ref.invalidate(favoriteOfferIdsProvider);
-                      ref.invalidate(activeOffersProvider);
-                    },
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: favoriteOffers.length,
-                      itemBuilder: (context, index) {
-                        final offer = favoriteOffers[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: ProductCard(
-                            offerId: offer.offerId,
-                            name: offer.title,
-                            sellerHeroId: offer.heroId,
-                            moderationStatus: offer.moderationStatus,
-                            condition: offer.condition.name,
-                            colorCondition:
-                                offer.condition == OfferCondition.newProduct
-                                ? Colors.green
-                                : offer.condition == OfferCondition.excellent
-                                ? Colors.blue
-                                : Colors.orange,
-                            category: offer.category,
-                            availableQty: offer.availableQty,
-                            viewCount: offer.viewCount,
-                            orderCount: offer.orderCount,
-                            weight: offer.weight,
-                            pickupGeo: offer.itemLocationSnapshot?.geopoint,
-                            pickupAddressSnapshot:
-                                offer.itemLocationSnapshot?.fullAddress,
-                            pickupCountryCode:
-                                offer.itemLocationSnapshot?.countryCode,
-                            allowInPersonPickup: offer.allowInPersonPickup,
-                            imageUrl: offer.coverImageUrl,
-                            avgRating: offer.avgRating,
-                            ratingCount: offer.ratingCount,
-                            sellerHeroRating: ref
-                                .watch(userByIdStreamProvider(offer.heroId))
-                                .maybeWhen(
-                                  data: (u) => (u?.heroProfile?.rating) ?? 0.0,
-                                  orElse: () => null,
+                        return RefreshIndicator(
+                          color: primaryOrange,
+                          onRefresh: () async {
+                            ref.invalidate(favoriteOfferIdsProvider);
+                            ref.invalidate(activeOffersProvider);
+                          },
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: favoriteOffers.length,
+                            itemBuilder: (context, index) {
+                              final offer = favoriteOffers[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: ProductCard(
+                                  offerId: offer.offerId,
+                                  name: offer.title,
+                                  sellerHeroId: offer.heroId,
+                                  moderationStatus: offer.moderationStatus,
+                                  condition: offer.condition.name,
+                                  colorCondition:
+                                      offer.condition == OfferCondition.newProduct
+                                      ? Colors.green
+                                      : offer.condition ==
+                                            OfferCondition.excellent
+                                      ? Colors.blue
+                                      : Colors.orange,
+                                  category: offer.category,
+                                  availableQty: offer.availableQty,
+                                  viewCount: offer.viewCount,
+                                  orderCount: offer.orderCount,
+                                  weight: offer.weight,
+                                  pickupGeo: offer.itemLocationSnapshot?.geopoint,
+                                  pickupAddressSnapshot:
+                                      offer.itemLocationSnapshot?.fullAddress,
+                                  pickupCountryCode:
+                                      offer.itemLocationSnapshot?.countryCode,
+                                  allowInPersonPickup: offer.allowInPersonPickup,
+                                  imageUrl: offer.displayImageUrl,
+                                  avgRating: offer.avgRating,
+                                  ratingCount: offer.ratingCount,
+                                  sellerHeroRating: ref
+                                      .watch(userByIdStreamProvider(offer.heroId))
+                                      .maybeWhen(
+                                        data: (u) =>
+                                            (u?.heroProfile?.rating) ?? 0.0,
+                                        orElse: () => null,
+                                      ),
+                                  sellerHeroRatingCount: ref
+                                      .watch(userByIdStreamProvider(offer.heroId))
+                                      .maybeWhen(
+                                        data: (u) =>
+                                            (u?.heroProfile?.totalRatings) ?? 0,
+                                        orElse: () => null,
+                                      ),
                                 ),
-                            sellerHeroRatingCount: ref
-                                .watch(userByIdStreamProvider(offer.heroId))
-                                .maybeWhen(
-                                  data: (u) => (u?.heroProfile?.totalRatings) ?? 0,
-                                  orElse: () => null,
-                                ),
+                              );
+                            },
                           ),
                         );
                       },
-                    ),
-                  );
-                },
-                loading: () => const Center(
-                  child: CircularProgressIndicator(color: primaryOrange),
-                ),
-                error: (error, stack) => Center(child: Text('Error: $error')),
-              );
-            },
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: primaryOrange),
+                      loading: () => const Center(
+                        child: CircularProgressIndicator(color: primaryOrange),
+                      ),
+                      error: (error, stack) =>
+                          Center(child: Text('Error: $error')),
+                    );
+                  },
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(color: primaryOrange),
+                  ),
+                  error: (error, stack) => Center(child: Text('Error: $error')),
+                );
+              },
             ),
-            error: (error, stack) => Center(child: Text('Error: $error')),
-          );
-        },
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: primaryOrange),
-        ),
-        error: (error, stack) => Center(child: Text('Error: $error')),
-      ),
     );
   }
 

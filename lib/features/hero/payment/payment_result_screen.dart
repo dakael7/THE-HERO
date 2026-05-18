@@ -7,6 +7,7 @@ import '../../../core/config/mercadopago_config.dart';
 import '../../../domain/entities/payment.dart';
 import 'providers/payment_providers.dart';
 import '../../hero/presentation/views/hero_home_screen.dart';
+import '../orders/presentation/views/hero_orders_screen.dart';
 
 enum PaymentResultType { success, failure, pending }
 
@@ -486,8 +487,11 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
 
   void _handlePrimaryAction(Payment? payment) {
     if (widget.resultType == PaymentResultType.failure) {
-      // Go back to checkout to retry
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      // Go to orders so user can retry payment on pending orders.
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HeroOrdersScreen()),
+        (route) => false,
+      );
     } else {
       // Go to home
       Navigator.of(context).pushAndRemoveUntil(
@@ -500,7 +504,7 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
   void _handleSecondaryAction() {
     // Navigate to orders screen
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
+      MaterialPageRoute(builder: (_) => const HeroOrdersScreen()),
       (route) => false,
     );
   }

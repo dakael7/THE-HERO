@@ -1,14 +1,17 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
-import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../../core/config/env.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/map_camera_utils.dart';
 import '../../../../domain/entities/location_entity.dart';
 import '../../../../domain/entities/order.dart';
 import '../../../../domain/services/rider_commission_calculator.dart';
@@ -551,16 +554,24 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                 onMapCreated: (controller) {
                   _mapController = controller;
                   if (polylinePoints.isNotEmpty) {
-                    Future.delayed(const Duration(milliseconds: 500), () {
-                      if (_mapController != null) {
-                        _mapController!.animateCamera(
-                          gmap.CameraUpdate.newLatLngBounds(
-                            boundsForPoints(cameraPoints),
-                            80,
-                          ),
+                    unawaited(() async {
+                      await Future<void>.delayed(
+                        const Duration(milliseconds: 16),
+                      );
+                      if (!mounted || _mapController == null) return;
+                      final moved = await animateCameraWhenMapReady(
+                        controller: _mapController!,
+                        cameraUpdateBuilder: () => gmap.CameraUpdate.newLatLngBounds(
+                          boundsForPoints(cameraPoints),
+                          80,
+                        ),
+                      );
+                      if (!moved) {
+                        debugPrint(
+                          '[DeliveryDetails] Could not fit map bounds',
                         );
                       }
-                    });
+                    }());
                   }
                 },
                 polylines: {

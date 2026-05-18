@@ -21,13 +21,14 @@ class MyProductsScreen extends ConsumerStatefulWidget {
 }
 
 class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
-  final TextEditingController _searchController = TextEditingController();
   OfferStatus? _statusFilter;
   final Set<String> _busyOfferIds = <String>{};
 
   Future<void> _openOfferForm({Offer? offer}) async {
     final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => DonationQuestionsScreen(initialOffer: offer)),
+      MaterialPageRoute(
+        builder: (_) => DonationQuestionsScreen(initialOffer: offer),
+      ),
     );
     if (result == true && mounted) {
       final userId = ref.read(currentUserIdProvider);
@@ -37,22 +38,11 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
   List<Offer> _applyFilters(List<Offer> offers) {
-    final query = _searchController.text.trim().toLowerCase();
     final filtered = offers.where((offer) {
       final matchesStatus =
           _statusFilter == null || offer.status == _statusFilter;
-      if (!matchesStatus) return false;
-
-      if (query.isEmpty) return true;
-      return offer.title.toLowerCase().contains(query) ||
-          offer.category.toLowerCase().contains(query);
+      return matchesStatus;
     }).toList();
 
     filtered.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -142,51 +132,6 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     );
 
     return result ?? false;
-  }
-
-  Widget _buildSearchBar(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: backgroundWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderGray100),
-        boxShadow: [
-          BoxShadow(
-            color: textGray900.withOpacity(0.05),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: _searchController,
-        onChanged: (_) => setState(() {}),
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 14,
-          ),
-          border: InputBorder.none,
-          hintText: 'Buscar por nombre o categoría',
-          hintStyle: TextStyle(
-            color: textGray600.withOpacity(0.9),
-            fontWeight: FontWeight.w500,
-          ),
-          prefixIcon: const Icon(Icons.search, color: textGray600),
-          suffixIcon: _searchController.text.trim().isEmpty
-              ? null
-              : IconButton(
-                  tooltip: 'Limpiar',
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() {});
-                  },
-                  icon: const Icon(Icons.close, color: textGray600),
-                ),
-        ),
-      ),
-    );
   }
 
   Widget _buildFilterChips(BuildContext context, List<Offer> offers) {
@@ -347,10 +292,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
         return Container(
           color: borderGray100,
           child: const Center(
-            child: Icon(
-              Icons.image_outlined,
-              color: textGray600,
-            ),
+            child: Icon(Icons.image_outlined, color: textGray600),
           ),
         );
       }
@@ -412,9 +354,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           InkWell(
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(18),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
             onTap: () {
               Navigator.push(
                 context,
@@ -673,7 +613,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final profileAsync = ref.watch(profileProvider);
+    final profileAsync = ref.watch(profileStreamProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -689,7 +629,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
         },
         actions: [
           IconButton(
-            tooltip: 'Pedidos de mis donaciones',
+            tooltip: 'Pedidos recibidos',
             icon: const Icon(Icons.receipt_long_outlined),
             onPressed: () {
               Navigator.of(context).push(
@@ -933,7 +873,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                     borderRadius: BorderRadius.circular(22),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: primaryOrange.withValues(alpha: 0.22),
+                                        color: primaryOrange.withValues(
+                                          alpha: 0.22,
+                                        ),
                                         blurRadius: 18,
                                         offset: const Offset(0, 10),
                                       ),
@@ -1018,7 +960,8 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                               style: TextStyle(
                                                                 color: backgroundWhite
                                                                     .withValues(
-                                                                      alpha: 0.92,
+                                                                      alpha:
+                                                                          0.92,
                                                                     ),
                                                                 fontSize:
                                                                     subtitleSize,
@@ -1066,7 +1009,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                                                           primaryOrange,
                                                                       fontSize:
                                                                           buttonFontSize -
-                                                                              2,
+                                                                          2,
                                                                       fontWeight:
                                                                           FontWeight
                                                                               .w600,
@@ -1151,8 +1094,6 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                 color: textGray900,
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            _buildSearchBar(context),
                             _buildFilterChips(context, offers),
                           ],
                         ),
@@ -1171,7 +1112,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                   width: 76,
                                   height: 76,
                                   decoration: BoxDecoration(
-                                    color: primaryOrange.withValues(alpha: 0.12),
+                                    color: primaryOrange.withValues(
+                                      alpha: 0.12,
+                                    ),
                                     borderRadius: BorderRadius.circular(22),
                                   ),
                                   child: const Icon(
@@ -1215,7 +1158,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Icon(
-                                  Icons.search_off,
+                                  Icons.filter_alt_off,
                                   size: 58,
                                   color: textGray600,
                                 ),
@@ -1231,7 +1174,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                 ),
                                 const SizedBox(height: 6),
                                 const Text(
-                                  'Prueba cambiando el filtro o la búsqueda.',
+                                  'Prueba cambiando el filtro.',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -1242,7 +1185,6 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                                 const SizedBox(height: 14),
                                 TextButton(
                                   onPressed: () {
-                                    _searchController.clear();
                                     setState(() => _statusFilter = null);
                                   },
                                   child: const Text(

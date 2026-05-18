@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/offer.dart';
 import '../../../../domain/providers/favorites_providers.dart';
@@ -90,20 +91,20 @@ class ProductCard extends ConsumerWidget {
                   : const [],
             ),
             clipBehavior: Clip.none,
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // ── Imagen grande a la izquierda ──────────────────────────
-                  Stack(
-                    children: [
-                      SizedBox(
-                        width: imageSize,
-                        child: _ProductImage(
+                  SizedBox(
+                    width: imageSize,
+                    height: imageSize,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _ProductImage(
                           imageUrl: imageUrl,
                           targetCacheSize: targetCacheSize,
                         ),
-                      ),
                       if (moderationStatus != ModerationStatus.visible)
                         Positioned.fill(
                           child: Container(
@@ -158,7 +159,6 @@ class ProductCard extends ConsumerWidget {
                             _FavoriteButton(
                               offerId: offerId,
                               userId: userId,
-                              ref: ref,
                             ),
                             const SizedBox(width: 6),
                             _OverflowMenu(
@@ -170,7 +170,8 @@ class ProductCard extends ConsumerWidget {
                           ],
                         ),
                       ),
-                    ],
+                      ],
+                    ),
                   ),
 
                   // ── Contenido derecho ─────────────────────────────────────
@@ -328,7 +329,6 @@ class ProductCard extends ConsumerWidget {
                   ),
                 ],
               ), // Row
-            ), // IntrinsicHeight
           );
         },
       ),
@@ -387,6 +387,7 @@ class ProductCard extends ConsumerWidget {
 
     ref.read(cartProvider.notifier).addItem(
           offerId: offerId,
+          category: category,
           name: name,
           condition: condition,
           price: 0.0,
@@ -418,6 +419,7 @@ class _ProductImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolved = imageUrl?.trim() ?? '';
+    const fit = BoxFit.contain;
 
     Widget child;
     if (resolved.isEmpty) {
@@ -425,14 +427,34 @@ class _ProductImage extends StatelessWidget {
         child: Icon(Icons.image, color: textGray600, size: 44),
       );
     } else if (resolved.startsWith('assets/')) {
-      child = Image.asset(resolved, fit: BoxFit.cover);
-    } else {
-      child = Image.network(
+      child = Image.asset(
         resolved,
-        fit: BoxFit.cover,
-        cacheWidth: targetCacheSize,
-        cacheHeight: targetCacheSize,
-        errorBuilder: (_, __, ___) => const Center(
+        fit: fit,
+        alignment: Alignment.center,
+        filterQuality: FilterQuality.low,
+      );
+    } else {
+      child = CachedNetworkImage(
+        imageUrl: resolved,
+        fit: fit,
+        alignment: Alignment.center,
+        memCacheWidth: targetCacheSize,
+        memCacheHeight: targetCacheSize,
+        maxWidthDiskCache: targetCacheSize * 2,
+        maxHeightDiskCache: targetCacheSize * 2,
+        filterQuality: FilterQuality.low,
+        fadeInDuration: const Duration(milliseconds: 120),
+        placeholder: (_, __) => const Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.0,
+              color: primaryOrange,
+            ),
+          ),
+        ),
+        errorWidget: (_, __, ___) => const Center(
           child: Icon(
             Icons.image_not_supported_outlined,
             color: textGray600,
@@ -444,6 +466,7 @@ class _ProductImage extends StatelessWidget {
 
     return Container(
       color: borderGray100,
+      alignment: Alignment.center,
       child: child,
     );
   }
@@ -520,27 +543,50 @@ class _OverflowMenu extends StatelessWidget {
   }
 }
 
-class _FavoriteButton extends ConsumerWidget {
+class _FavoriteButton extends ConsumerStatefulWidget {
   final String offerId;
   final String? userId;
-  final WidgetRef ref;
 
   const _FavoriteButton({
     required this.offerId,
     required this.userId,
-    required this.ref,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_FavoriteButton> createState() => _FavoriteButtonState();
+}
+
+class _FavoriteButtonState extends ConsumerState<_FavoriteButton> {
+  bool? _optimisticFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = widget.userId;
+
     final favoriteIdsAsync = userId == null
         ? const AsyncValue<List<String>>.data(<String>[])
-        : ref.watch(favoriteOfferIdsProvider(userId!));
+        : ref.watch(favoriteOfferIdsProvider(userId));
 
-    final isFavorite = favoriteIdsAsync.maybeWhen(
-      data: (ids) => ids.contains(offerId),
+    final serverFavorite = favoriteIdsAsync.maybeWhen(
+      data: (ids) => ids.contains(widget.offerId),
       orElse: () => false,
     );
+
+    final pendingKey = userId == null ? null : '$userId::${widget.offerId}';
+    final isPending = pendingKey == null
+        ? false
+        : ref.watch(favoritesNotifierProvider).contains(pendingKey);
+
+    final isFavorite = _optimisticFavorite ?? serverFavorite;
+
+    if (_optimisticFavorite != null &&
+        !isPending &&
+        _optimisticFavorite == serverFavorite) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _optimisticFavorite = null);
+      });
+    }
 
     return Material(
       color: Colors.white.withValues(alpha: 0.92),
@@ -549,15 +595,26 @@ class _FavoriteButton extends ConsumerWidget {
       shadowColor: Colors.black12,
       child: InkWell(
         customBorder: const CircleBorder(),
-        onTap: userId == null
+        onTap: userId == null || isPending
             ? null
             : () async {
+                final nextFavorite = !isFavorite;
+                setState(() {
+                  _optimisticFavorite = nextFavorite;
+                });
                 try {
                   await ref
                       .read(favoritesNotifierProvider.notifier)
-                      .toggleFavorite(userId!, offerId);
+                      .setFavorite(
+                        userId: userId,
+                        offerId: widget.offerId,
+                        shouldBeFavorite: nextFavorite,
+                      );
                 } catch (_) {
                   if (!context.mounted) return;
+                  if (mounted) {
+                    setState(() => _optimisticFavorite = null);
+                  }
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('No se pudo actualizar favoritos'),

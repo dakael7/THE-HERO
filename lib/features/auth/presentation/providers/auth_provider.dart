@@ -147,6 +147,18 @@ class AuthNotifier extends Notifier<AuthState> {
 
     final storage = ref.read(firebaseStorageProvider);
     final db = ref.read(firebaseFirestoreProvider);
+    var previousPhotoUrl = '';
+
+    try {
+      final userDoc = await db
+          .collection('users')
+          .doc(uid)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      previousPhotoUrl = (userDoc.data()?['profilePhotoUrl'] as String? ?? '').trim();
+    } catch (e) {
+      _logAuth('_uploadProfilePhoto:read_previous_photo_warning uid=$uid error=$e');
+    }
 
     final trimmedName = fileName.trim();
     final safeName = trimmedName.isEmpty ? 'profile_photo.jpg' : trimmedName;
@@ -169,18 +181,87 @@ class AuthNotifier extends Notifier<AuthState> {
         .child('profile_photo')
         .child('${DateTime.now().millisecondsSinceEpoch}_$safeName');
 
-    await refPath.putData(
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      loadingMessage: 'Subiendo foto de perfil...',
+      uploadProgress: 0,
+    );
+
+    final uploadTask = refPath.putData(
       bytes,
       SettableMetadata(contentType: contentType),
     );
 
-    final url = await refPath.getDownloadURL();
-    await db.collection('users').doc(uid).set(
-      {
-        'profilePhotoUrl': url,
-      },
-      SetOptions(merge: true),
+    final progressSubscription = uploadTask.snapshotEvents.listen((snapshot) {
+      final totalBytes = snapshot.totalBytes;
+      if (totalBytes <= 0) {
+        return;
+      }
+
+      final progress = (snapshot.bytesTransferred / totalBytes).clamp(0.0, 1.0);
+      state = state.copyWith(
+        isLoading: true,
+        errorMessage: null,
+        loadingMessage: 'Subiendo foto de perfil...',
+        uploadProgress: progress,
+      );
+    });
+
+    TaskSnapshot taskSnapshot;
+    try {
+      taskSnapshot = await uploadTask.timeout(const Duration(seconds: 25));
+    } finally {
+      await progressSubscription.cancel();
+    }
+
+    final finalProgress = taskSnapshot.totalBytes > 0
+        ? (taskSnapshot.bytesTransferred / taskSnapshot.totalBytes).clamp(0.0, 1.0)
+        : 1.0;
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      loadingMessage: 'Procesando imagen...',
+      uploadProgress: finalProgress,
     );
+
+    final url = await refPath.getDownloadURL().timeout(
+      const Duration(seconds: 12),
+    );
+
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      loadingMessage: 'Guardando foto de perfil...',
+      uploadProgress: 1.0,
+    );
+
+    await db
+        .collection('users')
+        .doc(uid)
+        .set(
+          {
+            'profilePhotoUrl': url,
+          },
+          SetOptions(merge: true),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    final shouldDeletePrevious = previousPhotoUrl.isNotEmpty && previousPhotoUrl != url;
+    if (!shouldDeletePrevious) {
+      return;
+    }
+
+    try {
+      final previousRef = storage.refFromURL(previousPhotoUrl);
+      if (previousRef.fullPath != refPath.fullPath) {
+        await previousRef.delete().timeout(const Duration(seconds: 8));
+      }
+    } catch (e) {
+      _logAuth(
+        '_uploadProfilePhoto:delete_previous_photo_warning uid=$uid error=$e previousPhotoUrl=$previousPhotoUrl',
+      );
+    }
   }
 
   @override
@@ -351,7 +432,12 @@ class AuthNotifier extends Notifier<AuthState> {
     Uint8List? profilePhotoBytes,
     String? profilePhotoName,
   }) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      loadingMessage: 'Guardando datos de tu perfil...',
+      uploadProgress: null,
+    );
     try {
       await _registerHeroUseCase.execute(
         email: email,
@@ -376,12 +462,16 @@ class AuthNotifier extends Notifier<AuthState> {
         isLoading: false,
         isAuthenticated: true,
         errorMessage: null,
+        loadingMessage: null,
+        uploadProgress: null,
       );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: false,
         errorMessage: e.toString(),
+        loadingMessage: null,
+        uploadProgress: null,
       );
     }
   }
@@ -396,7 +486,12 @@ class AuthNotifier extends Notifier<AuthState> {
     Uint8List? profilePhotoBytes,
     String? profilePhotoName,
   }) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      loadingMessage: 'Guardando datos de tu perfil...',
+      uploadProgress: null,
+    );
     try {
       await _registerRiderUseCase.execute(
         email: email,
@@ -420,13 +515,67 @@ class AuthNotifier extends Notifier<AuthState> {
         isLoading: false,
         isAuthenticated: true,
         errorMessage: null,
+        loadingMessage: null,
+        uploadProgress: null,
       );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: false,
         errorMessage: e.toString(),
+        loadingMessage: null,
+        uploadProgress: null,
       );
+    }
+  }
+
+  Future<void> updateCurrentUserProfilePhoto({
+    required Uint8List profilePhotoBytes,
+    String? profilePhotoName,
+  }) async {
+    final uid = ref.read(firebaseAuthProvider).currentUser?.uid;
+    if (uid == null || uid.trim().isEmpty) {
+      const message = 'No hay una sesion activa para actualizar la foto.';
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: false,
+        errorMessage: message,
+        loadingMessage: null,
+        uploadProgress: null,
+      );
+      throw Exception(message);
+    }
+
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      loadingMessage: 'Actualizando foto de perfil...',
+      uploadProgress: null,
+    );
+
+    try {
+      await _uploadProfilePhoto(
+        uid: uid,
+        bytes: profilePhotoBytes,
+        fileName: profilePhotoName ?? 'profile_photo.jpg',
+      );
+
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: true,
+        errorMessage: null,
+        loadingMessage: null,
+        uploadProgress: null,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        isAuthenticated: _hasActiveFirebaseSession(),
+        errorMessage: _normalizeErrorMessage(e),
+        loadingMessage: null,
+        uploadProgress: null,
+      );
+      rethrow;
     }
   }
 
@@ -439,7 +588,12 @@ class AuthNotifier extends Notifier<AuthState> {
     Uint8List? profilePhotoBytes,
     String? profilePhotoName,
   }) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      loadingMessage: 'Actualizando tu perfil...',
+      uploadProgress: null,
+    );
     try {
       await _authRepository.upgradeToRider(
         uid: uid,
@@ -450,17 +604,23 @@ class AuthNotifier extends Notifier<AuthState> {
       );
 
       if (profilePhotoBytes != null) {
-        await _uploadProfilePhoto(
-          uid: uid,
-          bytes: profilePhotoBytes,
-          fileName: profilePhotoName ?? 'profile_photo.jpg',
-        );
+        try {
+          await _uploadProfilePhoto(
+            uid: uid,
+            bytes: profilePhotoBytes,
+            fileName: profilePhotoName ?? 'profile_photo.jpg',
+          );
+        } catch (e) {
+          _logAuth('upgradeToRider:profile_photo_upload_warning error=$e');
+        }
       }
 
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
         errorMessage: null,
+        loadingMessage: null,
+        uploadProgress: null,
       );
     } catch (e) {
       state = state.copyWith(
@@ -468,6 +628,8 @@ class AuthNotifier extends Notifier<AuthState> {
         isAuthenticated:
             true, // Still authenticated even if upgrade fails? No, show error.
         errorMessage: e.toString(),
+        loadingMessage: null,
+        uploadProgress: null,
       );
     }
   }
@@ -482,7 +644,12 @@ class AuthNotifier extends Notifier<AuthState> {
     Uint8List? profilePhotoBytes,
     String? profilePhotoName,
   }) async {
-    state = state.copyWith(isLoading: true, errorMessage: null);
+    state = state.copyWith(
+      isLoading: true,
+      errorMessage: null,
+      loadingMessage: 'Actualizando tu perfil...',
+      uploadProgress: null,
+    );
     try {
       await _authRepository.upgradeToHero(
         uid: uid,
@@ -494,23 +661,31 @@ class AuthNotifier extends Notifier<AuthState> {
       );
 
       if (profilePhotoBytes != null) {
-        await _uploadProfilePhoto(
-          uid: uid,
-          bytes: profilePhotoBytes,
-          fileName: profilePhotoName ?? 'profile_photo.jpg',
-        );
+        try {
+          await _uploadProfilePhoto(
+            uid: uid,
+            bytes: profilePhotoBytes,
+            fileName: profilePhotoName ?? 'profile_photo.jpg',
+          );
+        } catch (e) {
+          _logAuth('upgradeToHero:profile_photo_upload_warning error=$e');
+        }
       }
 
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
         errorMessage: null,
+        loadingMessage: null,
+        uploadProgress: null,
       );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: true,
         errorMessage: e.toString(),
+        loadingMessage: null,
+        uploadProgress: null,
       );
     }
   }
@@ -543,15 +718,13 @@ class AuthNotifier extends Notifier<AuthState> {
       errorMessage: null,
     );
 
-    Future(() async {
-      try {
-        await FCMService()
-            .cleanupBeforeSignOut()
-            .timeout(const Duration(seconds: 2));
-      } catch (e) {
-        print('FCM cleanupBeforeSignOut failed/timeout: $e');
-      }
-    });
+    try {
+      await FCMService()
+          .cleanupBeforeSignOut()
+          .timeout(const Duration(seconds: 2));
+    } catch (e) {
+      print('FCM cleanupBeforeSignOut failed/timeout: $e');
+    }
 
     try {
       await _signOutUseCase.execute();

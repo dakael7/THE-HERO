@@ -9,6 +9,7 @@ import '../features/auth/presentation/providers/session_provider.dart';
 import '../features/auth/presentation/views/unverified_email_screen.dart';
 import '../features/hero/presentation/views/hero_home_screen.dart';
 import '../features/rider/presentation/views/rider_home_screen.dart';
+import '../data/providers/network_providers.dart';
 
 class App extends ConsumerWidget {
   const App({super.key});
@@ -52,21 +53,22 @@ class App extends ConsumerWidget {
             );
           }
 
-          return _buildResolvedHome(
-            user: user,
-            lastRole: bootstrap.lastRole,
-          );
+          return _buildResolvedHome(user: user, lastRole: bootstrap.lastRole);
         },
         loading: _buildLoadingScreen,
-        error: (error, stackTrace) => const LoginPage(),
+        error: (error, stackTrace) {
+          final hasFirebaseSession =
+              ref.read(firebaseAuthProvider).currentUser != null;
+          if (hasFirebaseSession) {
+            return _buildLoadingScreen();
+          }
+          return const LoginPage();
+        },
       ),
     );
   }
 
-  Widget _buildResolvedHome({
-    required User user,
-    required String? lastRole,
-  }) {
+  Widget _buildResolvedHome({required User user, required String? lastRole}) {
     final hasRider = user.isRider;
     final hasHero = user.isHero;
 

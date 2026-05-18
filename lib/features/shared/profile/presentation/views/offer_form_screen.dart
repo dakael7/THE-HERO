@@ -540,9 +540,6 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       final user = userCached ??
           await ref
               .read(profileStreamProvider.future)
-              .timeout(const Duration(seconds: 3), onTimeout: () => null) ??
-          await ref
-              .read(profileProvider.future)
               .timeout(const Duration(seconds: 3), onTimeout: () => null);
 
       if (user == null) {
@@ -1569,7 +1566,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
   Widget _buildLocationSection() {
     final hasAddress = _addressController.text.trim().isNotEmpty;
-    final user = ref.watch(profileProvider).value;
+    final user = ref.watch(profileStreamProvider).value;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1847,7 +1844,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                     onTap: _isSaving
                         ? null
                         : () {
-                            final userAsync = ref.read(profileProvider);
+                            final userAsync = ref.read(profileStreamProvider);
                             final user = userAsync.value;
                             if (user == null) return;
 

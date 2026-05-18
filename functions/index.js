@@ -2579,6 +2579,16 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
       const reqRef = userRef
         .collection("license_verification_requests")
         .doc(requestId);
+      const reqSnap = await reqRef.get();
+      const reqData = reqSnap.exists ? reqSnap.data() || {} : {};
+      const requestedVehicleTypeRaw = reqData?.declared?.vehicleType;
+      const requestedVehicleType =
+        typeof requestedVehicleTypeRaw === "string" &&
+        ["bicycle", "motorcycle", "car", "truck"].includes(
+          requestedVehicleTypeRaw.trim().toLowerCase(),
+        )
+          ? requestedVehicleTypeRaw.trim().toLowerCase()
+          : null;
       const now = admin.firestore.FieldValue.serverTimestamp();
 
       await userRef.set(
@@ -2595,6 +2605,28 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
               errorCodes: ["pdf_not_allowed"],
             },
           },
+          ...(requestedVehicleType
+            ? {
+                riderProfile: {
+                  vehicles: {
+                    [requestedVehicleType]: {
+                      licenseVerification: {
+                        status: "rejected",
+                        requestId,
+                        mode: "ocr",
+                        updatedAt: now,
+                        ocr: {
+                          filePath,
+                          contentType,
+                          processedAt: now,
+                          errorCodes: ["pdf_not_allowed"],
+                        },
+                      },
+                    },
+                  },
+                },
+              }
+            : {}),
         },
         { merge: true },
       );
@@ -2629,6 +2661,42 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
     }
 
     const userData = userSnap.data() || {};
+    const reqRef = userRef
+      .collection("license_verification_requests")
+      .doc(requestId);
+    const reqSnap = await reqRef.get();
+    const reqData = reqSnap.exists ? reqSnap.data() || {} : {};
+
+    const normalizeVehicleType = (raw) => {
+      if (typeof raw !== "string") return null;
+      const value = raw.trim().toLowerCase();
+      return ["bicycle", "motorcycle", "car", "truck"].includes(value)
+        ? value
+        : null;
+    };
+
+    const requestedVehicleType = normalizeVehicleType(
+      reqData?.declared?.vehicleType,
+    );
+    const fallbackVehicleType = normalizeVehicleType(
+      userData?.riderProfile?.activeVehicleType ||
+        userData?.riderProfile?.vehicle?.type,
+    );
+    const vehicleType = requestedVehicleType || fallbackVehicleType;
+
+    const perVehicleLicensePatch = (payload) =>
+      vehicleType
+        ? {
+            riderProfile: {
+              vehicles: {
+                [vehicleType]: {
+                  licenseVerification: payload,
+                },
+              },
+            },
+          }
+        : {};
+
     const roles = Array.isArray(userData.roles) ? userData.roles : [];
     const isRider = roles.includes("rider");
     if (!isRider) {
@@ -2636,9 +2704,6 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
         userId,
         requestId,
       });
-      const reqRef = userRef
-        .collection("license_verification_requests")
-        .doc(requestId);
       const now = admin.firestore.FieldValue.serverTimestamp();
 
       await userRef.set(
@@ -2655,6 +2720,18 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
               errorCodes: ["not_rider"],
             },
           },
+          ...perVehicleLicensePatch({
+            status: "rejected",
+            requestId,
+            mode: "ocr",
+            updatedAt: now,
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              errorCodes: ["not_rider"],
+            },
+          }),
         },
         { merge: true },
       );
@@ -2680,11 +2757,6 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
       `${userData?.identity?.firstName || ""} ${userData?.identity?.lastName || ""}`.trim();
     const declaredFullNameNorm = normalizeNameForMatch(declaredFullName);
 
-    const vehicleType = userData?.riderProfile?.vehicle?.type || null;
-
-    const reqRef = userRef
-      .collection("license_verification_requests")
-      .doc(requestId);
     const gcsUri = `gs://${object.bucket}/${filePath}`;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -2697,6 +2769,12 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
           mode: "ocr",
           updatedAt: now,
         },
+        ...perVehicleLicensePatch({
+          status: "processing",
+          requestId,
+          mode: "ocr",
+          updatedAt: now,
+        }),
       },
       { merge: true },
     );
@@ -2879,6 +2957,40 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
               errorCodes: errors,
             },
           },
+          ...perVehicleLicensePatch({
+            status: verificationStatus,
+            requestId,
+            mode: "ocr",
+            verifiedAt: verificationStatus === "approved" ? now : null,
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              extractedRut,
+              dvValid,
+              matchDeclared,
+              keywordHits: keywordResult.hits,
+              keywordMatched: keywordResult.matched,
+              documentDetected,
+              extractedName,
+              nameMatchRatio: nameRatio,
+              licenseClass: extractedLicenseClass,
+              expiryDate: expiryIso,
+              vehicleType,
+              classOk: classCheck.ok,
+              antifraud: {
+                score,
+                suspiciousAttempt,
+                whiteRatio,
+                luminanceVariance: variance,
+                luminanceMin: antifraud.luminanceMin ?? null,
+                luminanceMax: antifraud.luminanceMax ?? null,
+                thresholds,
+                textureValid,
+              },
+              errorCodes: errors,
+            },
+          }),
         },
         { merge: true },
       );
@@ -2944,6 +3056,17 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
               errorCodes: ["ocr_error"],
             },
           },
+          ...perVehicleLicensePatch({
+            status: "failed",
+            requestId,
+            mode: "ocr",
+            ocr: {
+              filePath,
+              contentType,
+              processedAt: now,
+              errorCodes: ["ocr_error"],
+            },
+          }),
         },
         { merge: true },
       );

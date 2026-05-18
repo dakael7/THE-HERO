@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
@@ -12,6 +13,10 @@ class HelpCenterScreen extends ConsumerWidget {
 
   static final Uri _termsAndConditionsUri = Uri.parse(
     'https://theheroprojects.com/privacy-policy',
+  );
+
+  static final Uri _helpCenterUri = Uri.parse(
+    'https://theheroprojects.com/',
   );
 
   static final Uri _riderSiiManualUri = Uri.parse(
@@ -36,74 +41,68 @@ class HelpCenterScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: backgroundWhite,
+          Material(
+            color: backgroundWhite,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: borderGray100, width: 1),
-              boxShadow: [
-                BoxShadow(
-                  color: textGray900.withValues(alpha: 0.06),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6),
+              onTap: () async {
+                await launchUrl(
+                  _helpCenterUri,
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: backgroundWhite, width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: textGray900.withValues(alpha: 0.06),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: primaryOrange.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(Icons.support_agent, color: primaryOrange),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                child: const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Row(
                     children: [
-                      Text(
-                        '¿Necesitas ayuda?',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: textGray900,
+                      _HelpCardIcon(),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '¿Necesitas ayuda?',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: textGray900,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Encuentra respuestas rápidas o contáctanos.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: textGray600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Encuentra respuestas rápidas o contáctanos.',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: textGray600,
-                        ),
-                      ),
+                      Icon(Icons.open_in_new_rounded, color: textGray600, size: 18),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 12),
-          _HelpTile(
-            icon: Icons.local_shipping_outlined,
-            title: 'Envíos y entregas',
-            subtitle: 'Tiempos, estados y seguimiento.',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Ayuda sobre envíos próximamente'),
-                  duration: Duration(milliseconds: 1500),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
           if (isRiderProfile) ...[
             _HelpTile(
               icon: Icons.payments_outlined,
@@ -120,20 +119,6 @@ class HelpCenterScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
           ],
-          _HelpTile(
-            icon: Icons.verified_user_outlined,
-            title: 'Cuenta',
-            subtitle: 'Acceso, verificación y datos.',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Ayuda sobre cuenta próximamente'),
-                  duration: Duration(milliseconds: 1500),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 8),
           _HelpTile(
             icon: Icons.gavel_outlined,
             title: 'Términos y condiciones',
@@ -160,6 +145,23 @@ class HelpCenterScreen extends ConsumerWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _HelpCardIcon extends StatelessWidget {
+  const _HelpCardIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: primaryOrange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: const Icon(Icons.support_agent, color: primaryOrange),
     );
   }
 }

@@ -6,11 +6,15 @@ import '../../../../offers/presentation/widgets/star_rating_widget.dart';
 class ProfileHeader extends StatelessWidget {
   final User user;
   final bool isRiderProfile;
+  final VoidCallback? onPhotoTap;
+  final bool isPhotoUpdating;
 
   const ProfileHeader({
     super.key,
     required this.user,
     this.isRiderProfile = false,
+    this.onPhotoTap,
+    this.isPhotoUpdating = false,
   });
 
   @override
@@ -46,48 +50,85 @@ class ProfileHeader extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    primaryOrange.withValues(alpha: 0.25),
-                    primaryYellow.withValues(alpha: 0.55),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                border: Border.all(
-                  color: primaryOrange.withValues(alpha: 0.55),
-                  width: 2,
-                ),
-              ),
-              child: ClipOval(
-                child: hasPhoto
-                    ? Image.network(
-                        photoUrl,
-                        fit: BoxFit.cover,
-                        width: 64,
-                        height: 64,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Center(
-                            child: Icon(
-                              Icons.person,
-                              size: 30,
-                              color: primaryOrange,
-                            ),
-                          );
-                        },
-                      )
-                    : const Center(
-                        child: Icon(
-                          Icons.person,
-                          size: 30,
-                          color: primaryOrange,
-                        ),
+            GestureDetector(
+              onTap: onPhotoTap,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [
+                          primaryOrange.withValues(alpha: 0.25),
+                          primaryYellow.withValues(alpha: 0.55),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
+                      border: Border.all(
+                        color: primaryOrange.withValues(alpha: 0.55),
+                        width: 2,
+                      ),
+                    ),
+                    child: ClipOval(
+                      child: hasPhoto
+                          ? Image.network(
+                              photoUrl,
+                              fit: BoxFit.cover,
+                              width: 64,
+                              height: 64,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Center(
+                                  child: Icon(
+                                    Icons.person,
+                                    size: 30,
+                                    color: primaryOrange,
+                                  ),
+                                );
+                              },
+                            )
+                          : const Center(
+                              child: Icon(
+                                Icons.person,
+                                size: 30,
+                                color: primaryOrange,
+                              ),
+                            ),
+                    ),
+                  ),
+                  if (onPhotoTap != null)
+                    Positioned(
+                      right: -3,
+                      bottom: -3,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: primaryOrange,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: backgroundWhite, width: 2),
+                        ),
+                        child: isPhotoUpdating
+                            ? const Padding(
+                                padding: EdgeInsets.all(5),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.8,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    backgroundWhite,
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.edit_rounded,
+                                size: 12,
+                                color: backgroundWhite,
+                              ),
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(width: 12),
@@ -121,10 +162,10 @@ class ProfileHeader extends StatelessWidget {
                     children: [
                       StarRatingWidget(
                         rating: ratingValue.clamp(0.0, 5.0),
-                        size: 16,
+                        size: 18,
                         readonly: true,
-                        activeColor: primaryYellow,
-                        inactiveColor: borderGray100,
+                        activeColor: categoryTextYellow,
+                        inactiveColor: textGray600.withValues(alpha: 0.45),
                       ),
                       const SizedBox(width: 6),
                       Text(
@@ -133,8 +174,8 @@ class ProfileHeader extends StatelessWidget {
                             : '0.0 (0)',
                         style: const TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: textGray700,
+                          fontWeight: FontWeight.w800,
+                          color: textGray900,
                         ),
                       ),
                     ],

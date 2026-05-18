@@ -5,7 +5,11 @@ import 'package:the_hero/domain/entities/notification.dart';
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../data/providers/repository_providers.dart';
+import '../../../../auth/presentation/providers/auth_provider.dart';
+import '../../../../hero/presentation/views/hero_home_screen.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
+import '../../../../rider/presentation/views/rider_home_screen.dart';
+import '../../../profile/presentation/providers/profile_provider.dart';
 import '../providers/notifications_provider.dart';
 
 const _notificationsLastSeenKey = 'notifications_last_seen_at_ms';
@@ -98,6 +102,49 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     }
   }
 
+  void _handleBackNavigation() {
+    final heroNavState = ref.read(heroHomeViewModelProvider);
+    if (heroNavState.selectedNavIndex == 3) {
+      ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
+      return;
+    }
+
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    final lastRole = ref.read(lastRoleProvider).maybeWhen(
+      data: (role) => role,
+      orElse: () => null,
+    );
+    if (lastRole == 'rider') {
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+        (route) => false,
+      );
+      return;
+    }
+    if (lastRole == 'hero') {
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
+        (route) => false,
+      );
+      return;
+    }
+
+    final profile = ref.read(profileStreamProvider).value;
+    final goRiderHome = profile?.isRider == true && profile?.isHero != true;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) =>
+            goRiderHome ? const RiderHomeScreen() : const HeroHomeScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final asyncNotifications = ref.watch(notificationsProvider);
@@ -113,13 +160,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       appBar: HeroHeaderAppBar(
         title: 'Avisos',
         icon: Icons.notifications_rounded,
-        onBack: () {
-          if (Navigator.of(context).canPop()) {
-            Navigator.of(context).pop();
-            return;
-          }
-          ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
-        },
+        onBack: _handleBackNavigation,
         actions: [
           IconButton(
             tooltip: 'Limpiar',

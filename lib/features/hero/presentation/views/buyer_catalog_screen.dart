@@ -1,3 +1,5 @@
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -250,7 +252,7 @@ class BuyerCatalogScreen extends ConsumerWidget {
                                   offer.itemLocationSnapshot?.countryCode,
                               allowInPersonPickup: offer.allowInPersonPickup,
                               showShadow: false,
-                              imageUrl: offer.coverImageUrl,
+                              imageUrl: offer.displayImageUrl,
                               avgRating: offer.avgRating,
                               ratingCount: offer.ratingCount,
                               sellerName: sellerName,
@@ -537,8 +539,11 @@ class OfferDetailScreen extends ConsumerStatefulWidget {
 class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   bool _incremented = false;
   int _optimisticViewsDelta = 0;
-  PageController? _galleryController;
-  int _galleryIndex = 0;
+  late final PageController _galleryController;
+  late final ValueNotifier<int> _galleryIndexNotifier;
+  late List<String> _galleryImages;
+  late List<String> _thumbnailImages;
+  bool _hasCover = false;
 
   // ── Cart button state ──
   int _cartQuantity = 0;
@@ -546,24 +551,129 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _galleryController = PageController();
+    _galleryIndexNotifier = ValueNotifier<int>(0);
+    _prepareGalleryImages();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeIncrementView();
+      _precacheInitialImages();
     });
   }
 
   @override
+  void didUpdateWidget(covariant OfferDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.offer.offerId != widget.offer.offerId ||
+        oldWidget.offer.displayImageUrl != widget.offer.displayImageUrl ||
+        !listEquals(oldWidget.offer.imageUrls, widget.offer.imageUrls)) {
+      _prepareGalleryImages();
+      _galleryIndexNotifier.value = 0;
+      if (_galleryController.hasClients) {
+        _galleryController.jumpToPage(0);
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _precacheInitialImages();
+      });
+    }
+  }
+
+  @override
   void dispose() {
-    _galleryController?.dispose();
+    _galleryController.dispose();
+    _galleryIndexNotifier.dispose();
     super.dispose();
+  }
+
+  String _normalizeImageKey(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('assets/')) return trimmed;
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null || uri.scheme.isEmpty || uri.host.isEmpty) {
+      return trimmed;
+    }
+    return uri.replace(query: '', fragment: '').toString();
+  }
+
+  void _prepareGalleryImages() {
+    final offer = widget.offer;
+    final coverUrl = offer.displayImageUrl.trim();
+    final hasCover = coverUrl.isNotEmpty;
+
+    final galleryImages = <String>[];
+    final seen = <String>{};
+    final coverKey = hasCover ? _normalizeImageKey(coverUrl) : '';
+
+    if (hasCover && coverKey.isNotEmpty && seen.add(coverKey)) {
+      galleryImages.add(coverUrl);
+    }
+
+    for (final raw in offer.imageUrls) {
+      final url = raw.trim();
+      if (url.isEmpty) continue;
+
+      final key = _normalizeImageKey(url);
+      if (key.isEmpty) continue;
+      if (coverKey.isNotEmpty && key == coverKey) continue;
+
+      if (seen.add(key)) {
+        galleryImages.add(url);
+      }
+    }
+
+    _galleryImages = List<String>.unmodifiable(galleryImages);
+    _thumbnailImages = List<String>.unmodifiable(
+      hasCover && galleryImages.isNotEmpty
+          ? galleryImages.skip(1).toList(growable: false)
+          : galleryImages,
+    );
+    _hasCover = hasCover;
+
+    if (_galleryImages.isEmpty) {
+      _galleryIndexNotifier.value = 0;
+      return;
+    }
+
+    final maxIndex = _galleryImages.length - 1;
+    if (_galleryIndexNotifier.value > maxIndex) {
+      _galleryIndexNotifier.value = maxIndex;
+    }
+  }
+
+  void _precacheImage(String imageUrl) {
+    final trimmed = imageUrl.trim();
+    if (trimmed.isEmpty || !mounted) return;
+
+    try {
+      final provider = trimmed.startsWith('assets/')
+          ? AssetImage(trimmed) as ImageProvider
+          : CachedNetworkImageProvider(trimmed);
+      precacheImage(provider, context);
+    } catch (_) {
+      // Ignore warm-up failures, they should not block UI rendering.
+    }
+  }
+
+  void _precacheInitialImages() {
+    if (_galleryImages.isEmpty) return;
+    for (final imageUrl in _galleryImages.take(2)) {
+      _precacheImage(imageUrl);
+    }
+  }
+
+  void _precacheNeighborImages(int centerIndex) {
+    if (_galleryImages.isEmpty) return;
+    final neighborIndexes = <int>{centerIndex - 1, centerIndex + 1};
+    for (final index in neighborIndexes) {
+      if (index < 0 || index >= _galleryImages.length) continue;
+      _precacheImage(_galleryImages[index]);
+    }
   }
 
   Future<void> _maybeIncrementView() async {
     if (!mounted || _incremented) return;
-    final userAsync = ref.read(profileProvider);
-    final userId = userAsync.maybeWhen(
-          data: (user) => user?.id,
-          orElse: () => null,
-        );
+    final userId = ref.read(currentUserIdProvider);
 
     if (userId != null && userId == widget.offer.heroId) {
       _incremented = true;
@@ -581,19 +691,51 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     }
   }
 
-  Widget _buildOfferImage(String imageUrl, {BoxFit fit = BoxFit.cover}) {
+  Widget _buildOfferImage(
+    String imageUrl, {
+    BoxFit fit = BoxFit.cover,
+    int? cacheSize,
+  }) {
     final trimmed = imageUrl.trim();
     if (trimmed.isEmpty) {
-      return Image.asset('assets/logo_hero.png', fit: BoxFit.contain);
+      return Image.asset(
+        'assets/logo_hero.png',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.low,
+      );
     }
     if (trimmed.startsWith('assets/')) {
-      return Image.asset(trimmed, fit: fit);
+      return Image.asset(
+        trimmed,
+        fit: fit,
+        filterQuality: FilterQuality.low,
+      );
     }
-    return Image.network(
-      trimmed,
+    return CachedNetworkImage(
+      imageUrl: trimmed,
       fit: fit,
-      errorBuilder: (_, __, ___) =>
-          Image.asset('assets/logo_hero.png', fit: BoxFit.contain),
+      memCacheWidth: cacheSize,
+      memCacheHeight: cacheSize,
+      maxWidthDiskCache: cacheSize == null ? null : cacheSize * 2,
+      maxHeightDiskCache: cacheSize == null ? null : cacheSize * 2,
+      fadeInDuration: const Duration(milliseconds: 120),
+      placeholder: (_, _) => Container(
+        color: borderGray100,
+        alignment: Alignment.center,
+        child: const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: primaryOrange,
+          ),
+        ),
+      ),
+      errorWidget: (_, _, _) => Image.asset(
+        'assets/logo_hero.png',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.low,
+      ),
     );
   }
 
@@ -604,6 +746,10 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   }) {
     if (images.isEmpty) return;
     final controller = PageController(initialPage: initialIndex);
+    final fullScreenCacheSize =
+        (MediaQuery.sizeOf(context).longestSide *
+                MediaQuery.devicePixelRatioOf(context))
+            .round();
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.92),
@@ -622,7 +768,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                     maxScale: 4.0,
                     child: Center(
                       child: _buildOfferImage(images[index],
-                          fit: BoxFit.contain),
+                          fit: BoxFit.contain,
+                          cacheSize: fullScreenCacheSize),
                     ),
                   );
                 },
@@ -708,11 +855,12 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
 
     ref.read(cartProvider.notifier).addItem(
           offerId: offer.offerId,
+          category: offer.category,
           name: offer.title,
           condition: offer.condition.displayName,
           price: 0.0,
           weight: offer.weight,
-          imageUrl: offer.coverImageUrl,
+          imageUrl: offer.displayImageUrl,
           availableQty: offer.availableQty,
           pickupGeo: offer.itemLocationSnapshot?.geopoint,
           pickupAddressSnapshot:
@@ -740,48 +888,14 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     final offer = widget.offer;
     final badgeColor = _conditionColor(offer.condition);
     const priceText = 'Donación';
-    final coverUrl = offer.coverImageUrl.trim();
-    final hasCover = coverUrl.isNotEmpty;
+    final currentUserId = ref.watch(currentUserIdProvider);
 
-    final currentUserId = ref.watch(profileProvider).maybeWhen(
-          data: (user) => user?.id,
-          orElse: () => null,
-        );
-
-    String normalizeImageKey(String raw) {
-      final trimmed = raw.trim();
-      if (trimmed.isEmpty) return '';
-      if (trimmed.startsWith('assets/')) return trimmed;
-      Uri? uri;
-      try {
-        uri = Uri.parse(trimmed);
-      } catch (_) {
-        return trimmed;
-      }
-      if (uri.scheme.isEmpty || uri.host.isEmpty) return trimmed;
-      return uri.replace(query: '', fragment: '').toString();
-    }
-
-    final galleryImages = <String>[];
-    final seen = <String>{};
-    final coverKey = hasCover ? normalizeImageKey(coverUrl) : '';
-    if (hasCover && coverKey.isNotEmpty && seen.add(coverKey)) {
-      galleryImages.add(coverUrl);
-    }
-    for (final raw in offer.imageUrls) {
-      final url = raw.trim();
-      if (url.isEmpty) continue;
-      final key = normalizeImageKey(url);
-      if (key.isEmpty) continue;
-      if (coverKey.isNotEmpty && key == coverKey) continue;
-      if (seen.add(key)) galleryImages.add(url);
-    }
-
-    final thumbnailImages = hasCover && galleryImages.isNotEmpty
-        ? galleryImages.skip(1).toList()
-        : galleryImages;
-
-    _galleryController ??= PageController(initialPage: _galleryIndex);
+    final galleryImages = _galleryImages;
+    final thumbnailImages = _thumbnailImages;
+    final hasCover = _hasCover;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final headerImageCacheSize = (MediaQuery.sizeOf(context).width * dpr).round();
+    final thumbImageCacheSize = (120 * dpr).round();
 
     final showConditionChip = offer.condition != OfferCondition.newProduct;
     final soldCount = offer.orderCount;
@@ -810,21 +924,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
             actions: [
               Consumer(
                 builder: (context, ref, _) {
-                  final userAsync = ref.watch(profileProvider);
-                  final userId = userAsync.maybeWhen(
-                    data: (user) => user?.id,
-                    orElse: () => null,
-                  );
+                  final userId = ref.watch(currentUserIdProvider);
 
                   final canReport = userId != null && userId != widget.offer.heroId;
-                  final favoriteIdsAsync = userId == null
-                      ? const AsyncValue<List<String>>.data(<String>[])
-                      : ref.watch(favoriteOfferIdsProvider(userId));
-                  final isFavorite = favoriteIdsAsync.maybeWhen(
-                    data: (ids) => ids.contains(offer.offerId),
-                    orElse: () => false,
-                  );
-
                   return Row(
                     children: [
                       if (canReport)
@@ -849,42 +951,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                             ),
                           ),
                         ),
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: backgroundWhite.withValues(alpha: 0.85),
-                            shape: BoxShape.circle,
-                          ),
-                          child: IconButton(
-                            tooltip: isFavorite
-                                ? 'Quitar de favoritos'
-                                : 'Agregar a favoritos',
-                            onPressed: userId == null
-                                ? null
-                                : () async {
-                                    try {
-                                      await ref
-                                          .read(favoritesNotifierProvider.notifier)
-                                          .toggleFavorite(userId, offer.offerId);
-                                    } catch (_) {
-                                      if (!context.mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                              'No se pudo actualizar favoritos'),
-                                        ),
-                                      );
-                                    }
-                                  },
-                            icon: Icon(
-                              isFavorite
-                                  ? Icons.favorite_rounded
-                                  : Icons.favorite_border_rounded,
-                              color: isFavorite ? primaryOrange : textGray900,
-                            ),
-                          ),
-                        ),
+                      _OfferFavoriteActionButton(
+                        offerId: offer.offerId,
+                        userId: userId,
                       ),
                     ],
                   );
@@ -908,17 +977,20 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                           onTap: () => _openFullScreenGallery(
                             context,
                             images: galleryImages,
-                            initialIndex: _galleryIndex,
+                            initialIndex: _galleryIndexNotifier.value,
                           ),
                           child: PageView.builder(
                             controller: _galleryController,
                             itemCount: galleryImages.length,
                             onPageChanged: (index) {
-                              if (!mounted) return;
-                              setState(() => _galleryIndex = index);
+                              _galleryIndexNotifier.value = index;
+                              _precacheNeighborImages(index);
                             },
                             itemBuilder: (context, index) {
-                              return _buildOfferImage(galleryImages[index]);
+                              return _buildOfferImage(
+                                galleryImages[index],
+                                cacheSize: headerImageCacheSize,
+                              );
                             },
                           ),
                         ),
@@ -948,21 +1020,26 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                     Positioned(
                       top: 90,
                       left: 14,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '${_galleryIndex + 1} / ${galleryImages.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: _galleryIndexNotifier,
+                        builder: (context, currentIndex, _) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${currentIndex + 1} / ${galleryImages.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
 
@@ -972,24 +1049,29 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       bottom: 14,
                       left: 0,
                       right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(galleryImages.length, (i) {
-                          final active = i == _galleryIndex;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            margin:
-                                const EdgeInsets.symmetric(horizontal: 3),
-                            height: 6,
-                            width: active ? 20 : 6,
-                            decoration: BoxDecoration(
-                              color: active
-                                  ? primaryOrange
-                                  : backgroundWhite.withValues(alpha: 0.6),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: _galleryIndexNotifier,
+                        builder: (context, currentIndex, _) {
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(galleryImages.length, (i) {
+                              final active = i == currentIndex;
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 3),
+                                height: 6,
+                                width: active ? 20 : 6,
+                                decoration: BoxDecoration(
+                                  color: active
+                                      ? primaryOrange
+                                      : backgroundWhite.withValues(alpha: 0.6),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                              );
+                            }),
                           );
-                        }),
+                        },
                       ),
                     ),
 
@@ -1174,54 +1256,65 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   ),
                   SizedBox(
                     height: 100,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: thumbnailImages.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(width: 10),
-                      itemBuilder: (context, index) {
-                        final imageUrl = thumbnailImages[index];
-                        final targetIndex = hasCover ? (index + 1) : index;
-                        final selected = _galleryIndex == targetIndex;
-                        return GestureDetector(
-                          onTap: () {
-                            _galleryController?.animateToPage(
-                              targetIndex,
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOut,
-                            );
-                            if (!mounted) return;
-                            setState(() => _galleryIndex = targetIndex);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: 110,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: selected
-                                    ? primaryOrange
-                                    : Colors.transparent,
-                                width: selected ? 2.5 : 0,
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _galleryIndexNotifier,
+                      builder: (context, currentIndex, _) {
+                        return ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: thumbnailImages.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(width: 10),
+                          itemBuilder: (context, index) {
+                            final imageUrl = thumbnailImages[index];
+                            final targetIndex = hasCover ? (index + 1) : index;
+                            final selected = currentIndex == targetIndex;
+                            return GestureDetector(
+                              onTap: () {
+                                if (_galleryController.hasClients) {
+                                  _galleryController.animateToPage(
+                                    targetIndex,
+                                    duration: const Duration(milliseconds: 220),
+                                    curve: Curves.easeOut,
+                                  );
+                                }
+                                _galleryIndexNotifier.value = targetIndex;
+                                _precacheNeighborImages(targetIndex);
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                width: 110,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: selected
+                                        ? primaryOrange
+                                        : Colors.transparent,
+                                    width: selected ? 2.5 : 0,
+                                  ),
+                                  boxShadow: selected
+                                      ? [
+                                          BoxShadow(
+                                            color: primaryOrange
+                                                .withValues(alpha: 0.25),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 3),
+                                          ),
+                                        ]
+                                      : [],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                    selected ? 12 : 14,
+                                  ),
+                                  child: _buildOfferImage(
+                                    imageUrl,
+                                    cacheSize: thumbImageCacheSize,
+                                  ),
+                                ),
                               ),
-                              boxShadow: selected
-                                  ? [
-                                      BoxShadow(
-                                        color: primaryOrange
-                                            .withValues(alpha: 0.25),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 3),
-                                      ),
-                                    ]
-                                  : [],
-                            ),
-                            child: ClipRRect(
-                              borderRadius:
-                                  BorderRadius.circular(selected ? 12 : 14),
-                              child: _buildOfferImage(imageUrl),
-                            ),
-                          ),
+                            );
+                          },
                         );
                       },
                     ),
@@ -1787,9 +1880,18 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                     onIncrement: _incrementCart,
                     onDecrement: _decrementCart,
                     onCheckout: () {
+                      final cartItems = ref.read(cartProvider);
+                      final matching = cartItems
+                          .where((item) => item.offerId == widget.offer.offerId)
+                          .toList();
+                      final selectedItem =
+                          matching.isNotEmpty ? matching.first : null;
+
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => const CheckoutScreen(),
+                          builder: (_) => selectedItem == null
+                              ? const CheckoutScreen()
+                              : CheckoutScreen(item: selectedItem),
                         ),
                       );
                     },
@@ -1955,6 +2057,99 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
 // ─────────────────────────────────────────────
 //  ADD TO CART BUTTON
 // ─────────────────────────────────────────────
+class _OfferFavoriteActionButton extends ConsumerStatefulWidget {
+  const _OfferFavoriteActionButton({
+    required this.offerId,
+    required this.userId,
+  });
+
+  final String offerId;
+  final String? userId;
+
+  @override
+  ConsumerState<_OfferFavoriteActionButton> createState() =>
+      _OfferFavoriteActionButtonState();
+}
+
+class _OfferFavoriteActionButtonState
+    extends ConsumerState<_OfferFavoriteActionButton> {
+  bool? _optimisticFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = widget.userId;
+    final favoriteIdsAsync = userId == null
+        ? const AsyncValue<List<String>>.data(<String>[])
+        : ref.watch(favoriteOfferIdsProvider(userId));
+
+    final serverFavorite = favoriteIdsAsync.maybeWhen(
+      data: (ids) => ids.contains(widget.offerId),
+      orElse: () => false,
+    );
+
+    final pendingKey = userId == null ? null : '$userId::${widget.offerId}';
+    final isPending = pendingKey == null
+        ? false
+        : ref.watch(favoritesNotifierProvider).contains(pendingKey);
+
+    final isFavorite = _optimisticFavorite ?? serverFavorite;
+
+    if (_optimisticFavorite != null &&
+        !isPending &&
+        _optimisticFavorite == serverFavorite) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _optimisticFavorite = null);
+      });
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: backgroundWhite.withValues(alpha: 0.85),
+          shape: BoxShape.circle,
+        ),
+        child: IconButton(
+          tooltip: isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos',
+          onPressed: userId == null || isPending
+              ? null
+              : () async {
+                  final nextFavorite = !isFavorite;
+                  setState(() {
+                    _optimisticFavorite = nextFavorite;
+                  });
+
+                  try {
+                    await ref.read(favoritesNotifierProvider.notifier).setFavorite(
+                          userId: userId,
+                          offerId: widget.offerId,
+                          shouldBeFavorite: nextFavorite,
+                        );
+                  } catch (_) {
+                    if (!mounted) return;
+                    setState(() => _optimisticFavorite = null);
+
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('No se pudo actualizar favoritos'),
+                      ),
+                    );
+                  }
+                },
+          icon: Icon(
+            isFavorite
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            color: isFavorite ? primaryOrange : textGray900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AddToCartButton extends StatelessWidget {
   const _AddToCartButton({
     required this.quantity,

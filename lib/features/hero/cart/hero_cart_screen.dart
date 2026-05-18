@@ -270,6 +270,7 @@ class _CartItemTile extends ConsumerWidget {
                         .read(cartProvider.notifier)
                         .addItem(
                           offerId: item.offerId,
+                          category: item.category,
                           name: item.name,
                           condition: item.condition,
                           price: item.price,

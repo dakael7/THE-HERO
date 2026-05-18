@@ -64,38 +64,67 @@ class FavoriteParams {
 }
 
 // Favorites Notifier for actions
-class FavoritesNotifier extends Notifier<AsyncValue<void>> {
+class FavoritesNotifier extends Notifier<Set<String>> {
   @override
-  AsyncValue<void> build() {
-    return const AsyncValue.data(null);
+  Set<String> build() {
+    return <String>{};
   }
 
-  Future<void> toggleFavorite(String userId, String offerId) async {
-    state = const AsyncValue.loading();
+  String _pendingKey(String userId, String offerId) => '$userId::$offerId';
+
+  bool isPending(String userId, String offerId) {
+    return state.contains(_pendingKey(userId, offerId));
+  }
+
+  Future<void> setFavorite({
+    required String userId,
+    required String offerId,
+    required bool shouldBeFavorite,
+  }) async {
+    final pendingKey = _pendingKey(userId, offerId);
+    if (state.contains(pendingKey)) {
+      return;
+    }
+
+    state = {...state, pendingKey};
+
     try {
       final repository = ref.read(favoritesRepositoryProvider);
-      final isFav = await repository.isFavorite(userId, offerId);
-
-      if (isFav) {
-        await repository.removeFavorite(userId, offerId);
-      } else {
+      if (shouldBeFavorite) {
         await repository.addFavorite(userId, offerId);
+      } else {
+        await repository.removeFavorite(userId, offerId);
       }
 
       // Invalidate providers to refresh data
       ref.invalidate(favoriteOfferIdsProvider(userId));
       ref.invalidate(favoritesCountProvider(userId));
-      ref.invalidate(isFavoriteProvider(FavoriteParams(userId: userId, offerId: offerId)));
-
-      state = const AsyncValue.data(null);
+      ref.invalidate(
+        isFavoriteProvider(FavoriteParams(userId: userId, offerId: offerId)),
+      );
     } catch (e, stack) {
-      state = AsyncValue.error(e, stack);
-      rethrow;
+      Error.throwWithStackTrace(e, stack);
+    } finally {
+      final updated = {...state};
+      updated.remove(pendingKey);
+      state = updated;
     }
+  }
+
+  Future<void> toggleFavorite(
+    String userId,
+    String offerId, {
+    required bool isCurrentlyFavorite,
+  }) {
+    return setFavorite(
+      userId: userId,
+      offerId: offerId,
+      shouldBeFavorite: !isCurrentlyFavorite,
+    );
   }
 }
 
 final favoritesNotifierProvider =
-    NotifierProvider<FavoritesNotifier, AsyncValue<void>>(() {
+    NotifierProvider<FavoritesNotifier, Set<String>>(() {
       return FavoritesNotifier();
     });

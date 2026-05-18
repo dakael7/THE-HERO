@@ -12,7 +12,12 @@ import '../../../../domain/entities/vehicle.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
 class RiderLicenseVerificationScreen extends ConsumerStatefulWidget {
-  const RiderLicenseVerificationScreen({super.key});
+  final VehicleType vehicleType;
+
+  const RiderLicenseVerificationScreen({
+    super.key,
+    required this.vehicleType,
+  });
 
   @override
   ConsumerState<RiderLicenseVerificationScreen> createState() =>
@@ -55,6 +60,18 @@ class _RiderLicenseVerificationScreenState
       default:
         return false;
     }
+  }
+
+  String? _vehicleLicenseStatus(dynamic user) {
+    if (user == null) return null;
+    final vehicles = user.riderProfile?.vehicles;
+    final vehicleEntry = vehicles?[widget.vehicleType.name];
+    final vehicleEntryMap =
+        vehicleEntry is Map ? Map<String, dynamic>.from(vehicleEntry) : null;
+    final vehicleLicenseRaw = vehicleEntryMap?['licenseVerification'];
+    final vehicleLicenseMap =
+        vehicleLicenseRaw is Map ? Map<String, dynamic>.from(vehicleLicenseRaw) : null;
+    return vehicleLicenseMap?['status']?.toString() ?? user.licenseVerificationStatus;
   }
 
   void _showLockedSnackBar() {
@@ -314,7 +331,7 @@ class _RiderLicenseVerificationScreenState
     required void Function(Uint8List bytes, String name) onPicked,
   }) async {
     final profile = await ref.read(profileProvider.future);
-    final status = profile?.licenseVerificationStatus;
+    final status = _vehicleLicenseStatus(profile);
     if (!_canEditForStatus(status)) {
       _showLockedSnackBar();
       return;
@@ -403,7 +420,7 @@ class _RiderLicenseVerificationScreenState
     if (_saving) return;
 
     final profile = await ref.read(profileProvider.future);
-    final status = profile?.licenseVerificationStatus;
+    final status = _vehicleLicenseStatus(profile);
     if (!_canEditForStatus(status)) {
       _showLockedSnackBar();
       return;
@@ -430,16 +447,7 @@ class _RiderLicenseVerificationScreenState
       return;
     }
 
-    final vehicleType = user.riderProfile?.vehicle.type;
-    if (vehicleType == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Primero selecciona un vehículo'),
-          duration: Duration(milliseconds: 2200),
-        ),
-      );
-      return;
-    }
+    final vehicleType = widget.vehicleType;
 
     if (vehicleType == VehicleType.bicycle) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -546,11 +554,26 @@ class _RiderLicenseVerificationScreenState
       try {
         await db.collection('users').doc(user.id).set(
           {
-            'licenseVerification.requestId': requestId,
-            'licenseVerification.status': 'submitted',
-            'licenseVerification.submittedAt': now.toIso8601String(),
-            'licenseVerification.verifiedAt': null,
-            'licenseVerification.mode': null,
+            'licenseVerification': {
+              'requestId': requestId,
+              'status': 'submitted',
+              'submittedAt': now.toIso8601String(),
+              'verifiedAt': null,
+              'mode': null,
+            },
+            'riderProfile': {
+              'vehicles': {
+                vehicleType.name: {
+                  'licenseVerification': {
+                    'requestId': requestId,
+                    'status': 'submitted',
+                    'submittedAt': now.toIso8601String(),
+                    'verifiedAt': null,
+                    'mode': null,
+                  },
+                },
+              },
+            },
           },
           firestore.SetOptions(merge: true),
         );
@@ -588,7 +611,7 @@ class _RiderLicenseVerificationScreenState
   Widget build(BuildContext context) {
     final userAsync = ref.watch(profileStreamProvider);
     final user = userAsync.value;
-    final status = user?.licenseVerificationStatus;
+    final status = _vehicleLicenseStatus(user);
     final canEdit = _canEditForStatus(status);
 
     final accent = _statusAccentColor(status);

@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
+
 import '../../../../core/constants/app_colors.dart';
 import '../state/map_state.dart';
 
 class ProductListSheet extends StatelessWidget {
   final List<MapProduct> products;
-  final MapProduct? selectedProduct;
-  final Function(MapProduct) onProductTap;
+  final String? selectedProductId;
+  final void Function(MapProduct) onProductTap;
+  final ScrollController? scrollController;
 
   const ProductListSheet({
     super.key,
     required this.products,
-    required this.selectedProduct,
+    required this.selectedProductId,
     required this.onProductTap,
+    this.scrollController,
   });
 
   @override
@@ -34,7 +37,6 @@ class ProductListSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle bar
           Container(
             margin: const EdgeInsets.only(top: 12, bottom: 8),
             width: 40,
@@ -44,8 +46,6 @@ class ProductListSheet extends StatelessWidget {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
             child: Row(
@@ -92,18 +92,23 @@ class ProductListSheet extends StatelessWidget {
               ],
             ),
           ),
-
-          // Product List
           Expanded(
             child: products.isEmpty
-                ? _buildEmptyState()
+                ? ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                    children: [
+                      const SizedBox(height: 8),
+                      _buildEmptyState(),
+                    ],
+                  )
                 : ListView.builder(
+                    controller: scrollController,
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     itemCount: products.length,
                     itemBuilder: (context, index) {
                       final product = products[index];
-                      final isSelected = selectedProduct?.id == product.id;
-
+                      final isSelected = selectedProductId == product.id;
                       return _buildProductCard(
                         product: product,
                         isSelected: isSelected,
@@ -150,7 +155,6 @@ class ProductListSheet extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                // Product Image
                 Container(
                   width: 80,
                   height: 80,
@@ -194,10 +198,7 @@ class ProductListSheet extends StatelessWidget {
                     ],
                   ),
                 ),
-
                 const SizedBox(width: 14),
-
-                // Product Info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,21 +216,25 @@ class ProductListSheet extends StatelessWidget {
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _getCategoryColor(product.category),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              product.category,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _getCategoryColor(product.category),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                product.category,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ),
@@ -268,25 +273,18 @@ class ProductListSheet extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Text(
-                            'Donación',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: primaryOrange,
-                            ),
-                          ),
-                        ],
+                      const Text(
+                        'Donacion',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: primaryOrange,
+                        ),
                       ),
                     ],
                   ),
                 ),
-
                 const SizedBox(width: 8),
-
-                // Arrow icon
                 Icon(
                   Icons.arrow_forward_ios,
                   size: 16,
@@ -301,66 +299,58 @@ class ProductListSheet extends StatelessWidget {
   }
 
   Widget _buildEmptyState() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isTight = constraints.maxHeight > 0 && constraints.maxHeight < 170;
-        final boxSize = isTight ? 72.0 : 100.0;
-        final iconSize = isTight ? 40.0 : 50.0;
-        final gapAfterIcon = isTight ? 12.0 : 20.0;
-
-        return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: boxSize,
-                  height: boxSize,
-                  decoration: BoxDecoration(
-                    color: backgroundGray50,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Icon(
-                    Icons.search_off,
-                    size: iconSize,
-                    color: textGray600.withValues(alpha: 0.5),
-                  ),
-                ),
-                SizedBox(height: gapAfterIcon),
-                const Text(
-                  'No hay productos cercanos',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: textGray900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Intenta aumentar el radio de búsqueda',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: textGray600,
-                  ),
-                ),
-              ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: borderGray100),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 90,
+            height: 90,
+            decoration: BoxDecoration(
+              color: backgroundGray50,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Icon(
+              Icons.search_off_rounded,
+              size: 46,
+              color: textGray600.withValues(alpha: 0.5),
             ),
           ),
-        );
-      },
+          const SizedBox(height: 16),
+          const Text(
+            'No hay donaciones en esta zona',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: textGray900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Amplia el radio o prueba otra categoria para ver mas resultados.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: textGray600,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   IconData _getCategoryIcon(String category) {
     switch (category.toLowerCase()) {
-      case 'electrónica':
       case 'electronica':
+      case 'electrónica':
         return Icons.devices;
       case 'ropa':
       case 'moda':
@@ -383,8 +373,8 @@ class ProductListSheet extends StatelessWidget {
 
   Color _getCategoryColor(String category) {
     switch (category.toLowerCase()) {
-      case 'electrónica':
       case 'electronica':
+      case 'electrónica':
         return const Color(0xFF3B82F6);
       case 'ropa':
       case 'moda':
@@ -406,10 +396,7 @@ class ProductListSheet extends StatelessWidget {
   }
 
   String _formatDistance(double meters) {
-    if (meters < 1000) {
-      return '${meters.toStringAsFixed(0)}m';
-    } else {
-      return '${(meters / 1000).toStringAsFixed(1)}km';
-    }
+    if (meters < 1000) return '${meters.toStringAsFixed(0)}m';
+    return '${(meters / 1000).toStringAsFixed(1)}km';
   }
 }

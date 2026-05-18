@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
+import '../../../../core/config/env.dart';
+
 class DirectionsPoint {
   final double latitude;
   final double longitude;
@@ -24,21 +26,10 @@ class DirectionsRoute {
 
 /// Google Directions service (with stub fallback if API key is missing).
 class DirectionsService {
-  // Provide the API key via --dart-define=GOOGLE_MAPS_API_KEY=XXXX or inject your own source.
+  // Reads from Env (.env first, then --dart-define fallback) unless injected.
   final String apiKey;
 
-  DirectionsService({String? apiKey})
-      : apiKey = apiKey ??
-            (const String.fromEnvironment(
-                      'GOOGLE_DIRECTIONS_API_KEY',
-                      defaultValue: '',
-                    ).trim().isNotEmpty
-                ? const String.fromEnvironment('GOOGLE_DIRECTIONS_API_KEY')
-                : (const String.fromEnvironment('PLACES_API_KEY', defaultValue: '')
-                            .trim()
-                            .isNotEmpty
-                        ? const String.fromEnvironment('PLACES_API_KEY')
-                        : const String.fromEnvironment('GOOGLE_MAPS_API_KEY')));
+  DirectionsService({String? apiKey}) : apiKey = (apiKey ?? Env.directionsApiKey).trim();
 
   Future<DirectionsRoute> getRoute({
     required double pickupLat,

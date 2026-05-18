@@ -17,7 +17,7 @@ class RiderEarningsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(profileProvider);
+    final userAsync = ref.watch(profileStreamProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -73,7 +73,7 @@ class RiderEarningsScreen extends ConsumerWidget {
               return RefreshIndicator(
                 color: primaryOrange,
                 onRefresh: () async {
-                  ref.invalidate(profileProvider);
+                  ref.invalidate(profileStreamProvider);
                 },
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),

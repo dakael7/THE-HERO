@@ -204,6 +204,48 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     return sanitized;
   }
 
+  bool _hasNonEmptyString(dynamic value) {
+    return value is String && value.trim().isNotEmpty;
+  }
+
+  bool _hasCriticalProfileData(Map<String, dynamic> userData) {
+    final contact = _asStringDynamicMap(userData['contact']);
+    final identity = _asStringDynamicMap(userData['identity']);
+    return _hasNonEmptyString(contact['phoneNumber']) &&
+        _hasNonEmptyString(identity['documentId']);
+  }
+
+  Map<String, dynamic> _pickMoreCompleteGoogleData({
+    required Map<String, dynamic> primary,
+    Map<String, dynamic>? secondary,
+  }) {
+    if (secondary == null || secondary.isEmpty) {
+      return primary;
+    }
+    if (primary.isEmpty) {
+      return secondary;
+    }
+
+    final primaryHasCritical = _hasCriticalProfileData(primary);
+    final secondaryHasCritical = _hasCriticalProfileData(secondary);
+
+    if (secondaryHasCritical && !primaryHasCritical) {
+      return secondary;
+    }
+    if (primaryHasCritical && !secondaryHasCritical) {
+      return primary;
+    }
+
+    final primaryHasPhoto = !_isBlankValue(primary['profilePhotoUrl']);
+    final secondaryHasPhoto = !_isBlankValue(secondary['profilePhotoUrl']);
+
+    if (secondaryHasPhoto && !primaryHasPhoto) {
+      return secondary;
+    }
+
+    return primary;
+  }
+
   List<String> _mergeGoogleRoles(Map<String, dynamic> existingData, String role) {
     final roles = _mergeRole(existingData['roles'] as List<dynamic>?, role)
         .toSet();
@@ -223,6 +265,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     int attempts = 3,
     Duration timeout = const Duration(seconds: 15),
     bool rethrowOnFailure = true,
+    GetOptions? options,
   }) async {
     Object? lastError;
     for (int attempt = 1; attempt <= attempts; attempt++) {
@@ -230,10 +273,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'stage=$stage attempt=$attempt begin elapsedMs=${sw.elapsedMilliseconds} uid=$uid',
       );
       try {
-        final doc = await _firestore
-            .collection('users')
-            .doc(uid)
-            .get()
+        final docRef = _firestore.collection('users').doc(uid);
+        final docFuture = options == null ? docRef.get() : docRef.get(options);
+        final doc = await docFuture
             .timeout(timeout, onTimeout: () {
           throw TimeoutException('timeout_stage=$stage attempt=$attempt');
         });
@@ -329,6 +371,33 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     }
   }
 
+  Future<void> _writeGoogleProfilePhotoBestEffort({
+    required String uid,
+    required Map<String, dynamic> existingData,
+    required User user,
+    required Stopwatch sw,
+  }) async {
+    final photoUrl = (user.photoURL ?? '').trim();
+    if (photoUrl.isEmpty || !_isBlankValue(existingData['profilePhotoUrl'])) {
+      return;
+    }
+
+    try {
+      await _mergeGoogleUserDocWithRetry(
+        uid: uid,
+        data: {'profilePhotoUrl': photoUrl},
+        sw: sw,
+        stage: 'firestore_user_set_profile_photo_bg',
+        attempts: 1,
+        timeout: const Duration(seconds: 8),
+      );
+    } catch (e) {
+      _logRegGoogle(
+        'stage=firestore_user_set_profile_photo_bg failed elapsedMs=${sw.elapsedMilliseconds} uid=$uid error=$e',
+      );
+    }
+  }
+
   Map<String, dynamic> _buildGoogleUserPatch({
     required Map<String, dynamic> existingData,
     required User user,
@@ -347,11 +416,44 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         .toList();
     final firstName = nameParts.isNotEmpty ? nameParts.first : '';
     final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
-    final photoUrl = (user.photoURL ?? '').trim();
 
     final contact = _asStringDynamicMap(existingData['contact']);
     final identity = _asStringDynamicMap(existingData['identity']);
     final status = _asStringDynamicMap(existingData['status']);
+
+    final resolvedEmail = _isBlankValue(contact['email'])
+        ? normalizedEmail
+        : contact['email'];
+    final resolvedPhone = _isBlankValue(contact['phoneNumber'])
+        ? null
+        : contact['phoneNumber'];
+
+    final resolvedFirstName = _isBlankValue(identity['firstName'])
+        ? firstName
+        : identity['firstName'];
+    final resolvedLastName = _isBlankValue(identity['lastName'])
+        ? lastName
+        : identity['lastName'];
+    final resolvedDocumentType = _isBlankValue(identity['documentType'])
+        ? null
+        : identity['documentType'];
+    final resolvedDocumentId = _isBlankValue(identity['documentId'])
+        ? null
+        : identity['documentId'];
+
+    final contactPatch = <String, dynamic>{
+      if (!_isBlankValue(resolvedEmail)) 'email': resolvedEmail,
+      if (!_isBlankValue(resolvedPhone)) 'phoneNumber': resolvedPhone,
+      'emailVerified': isEmailVerified,
+    };
+
+    final identityPatch = <String, dynamic>{
+      if (!_isBlankValue(resolvedFirstName)) 'firstName': resolvedFirstName,
+      if (!_isBlankValue(resolvedLastName)) 'lastName': resolvedLastName,
+      if (!_isBlankValue(resolvedDocumentType))
+        'documentType': resolvedDocumentType,
+      if (!_isBlankValue(resolvedDocumentId)) 'documentId': resolvedDocumentId,
+    };
 
     final patch = <String, dynamic>{
       'authProvider': 'google',
@@ -363,29 +465,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'lastUpdated': now,
         'termsAccepted': status['termsAccepted'] ?? true,
       },
-      'contact': {
-        'email': _isBlankValue(contact['email'])
-            ? normalizedEmail
-            : contact['email'],
-        'phoneNumber': _isBlankValue(contact['phoneNumber'])
-            ? ''
-            : contact['phoneNumber'],
-        'emailVerified': isEmailVerified,
-      },
-      'identity': {
-        'firstName': _isBlankValue(identity['firstName'])
-            ? firstName
-            : identity['firstName'],
-        'lastName': _isBlankValue(identity['lastName'])
-            ? lastName
-            : identity['lastName'],
-        'documentType': _isBlankValue(identity['documentType'])
-            ? 'rut'
-            : identity['documentType'],
-        'documentId': _isBlankValue(identity['documentId'])
-            ? ''
-            : identity['documentId'],
-      },
+      'contact': contactPatch,
+      'identity': identityPatch,
     };
 
     if (existingData['rutVerification'] == null) {
@@ -396,10 +477,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'verifiedAt': null,
         'mode': null,
       };
-    }
-
-    if (_isBlankValue(existingData['profilePhotoUrl']) && photoUrl.isNotEmpty) {
-      patch['profilePhotoUrl'] = photoUrl;
     }
 
     if (role == 'hero' && existingData['heroProfile'] == null) {
@@ -843,11 +920,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       final user = _firebaseAuth.currentUser;
       if (user == null) return null;
 
-      await user.reload();
-      final refreshed = _firebaseAuth.currentUser;
-      if (refreshed != null) {
-        await _syncEmailVerified(refreshed);
-      }
+      // Avoid blocking the UI bootstrap path with a network reload.
+      // Keep emailVerified sync as best-effort in background.
+      unawaited(_syncEmailVerified(user));
 
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
@@ -923,7 +998,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         fallbackUserData: fallbackUserData,
         uid: refreshedUser.uid,
       );
-      if (validatedFallbackData != null) {
+      final fallbackHasCriticalData =
+          validatedFallbackData != null &&
+          _hasCriticalProfileData(validatedFallbackData);
+      if (validatedFallbackData != null && fallbackHasCriticalData) {
         _logRegGoogle(
           'stage=fast_path_cache hit elapsedMs=${sw.elapsedMilliseconds} uid=${refreshedUser.uid}',
         );
@@ -942,6 +1020,19 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
             sw: sw,
           ),
         );
+        unawaited(
+          _writeGoogleProfilePhotoBestEffort(
+            uid: refreshedUser.uid,
+            existingData: validatedFallbackData,
+            user: refreshedUser,
+            sw: sw,
+          ),
+        );
+        final photoUrl = (refreshedUser.photoURL ?? '').trim();
+        if (_isBlankValue(mergedFallbackData['profilePhotoUrl']) &&
+            photoUrl.isNotEmpty) {
+          mergedFallbackData['profilePhotoUrl'] = photoUrl;
+        }
         _logRegGoogle(
           'success_fast_path elapsedMs=${sw.elapsedMilliseconds} uid=${refreshedUser.uid}',
         );
@@ -951,19 +1042,34 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         });
       }
 
-      final existingDoc = await _getGoogleUserDocWithRetry(
+      final cachedDoc = await _getGoogleUserDocWithRetry(
+        uid: refreshedUser.uid,
+        sw: sw,
+        stage: 'firestore_user_get_cache_before_sync',
+        attempts: 1,
+        timeout: const Duration(milliseconds: 450),
+        rethrowOnFailure: false,
+        options: const GetOptions(source: Source.cache),
+      );
+
+      final remoteDoc = await _getGoogleUserDocWithRetry(
         uid: refreshedUser.uid,
         sw: sw,
         stage: 'firestore_user_get_before_sync',
         attempts: 1,
-        timeout: const Duration(seconds: 4),
+        timeout: const Duration(milliseconds: 2500),
         rethrowOnFailure: false,
       );
-      final existingData =
-          existingDoc?.data() ??
-          (fallbackUserData != null
-              ? Map<String, dynamic>.from(fallbackUserData)
-              : <String, dynamic>{});
+
+      final cachedData =
+          (cachedDoc != null && cachedDoc.exists) ? cachedDoc.data() : null;
+      final remoteData =
+          (remoteDoc != null && remoteDoc.exists) ? remoteDoc.data() : null;
+      final baseExistingData = remoteData ?? cachedData ?? <String, dynamic>{};
+      final existingData = _pickMoreCompleteGoogleData(
+        primary: baseExistingData,
+        secondary: validatedFallbackData,
+      );
 
       final patch = _buildGoogleUserPatch(
         existingData: existingData,
@@ -973,16 +1079,42 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         isEmailVerified: isEmailVerified,
       );
 
-      await _mergeGoogleUserDocWithRetry(
-        uid: refreshedUser.uid,
-        data: patch,
-        sw: sw,
-        stage: 'firestore_user_set_merge',
-        attempts: 1,
-        timeout: const Duration(seconds: 8),
-      );
+      try {
+        await _mergeGoogleUserDocWithRetry(
+          uid: refreshedUser.uid,
+          data: patch,
+          sw: sw,
+          stage: 'firestore_user_set_merge',
+          attempts: 1,
+          timeout: const Duration(milliseconds: 1200),
+        );
+      } on TimeoutException catch (e) {
+        _logRegGoogle(
+          'stage=firestore_user_set_merge timeout_fallback elapsedMs=${sw.elapsedMilliseconds} uid=${refreshedUser.uid} error=$e',
+        );
+        unawaited(
+          _writeGoogleUserPatchBestEffort(
+            uid: refreshedUser.uid,
+            patch: patch,
+            sw: sw,
+          ),
+        );
+      }
 
       final mergedFallbackData = _deepMergeJson(existingData, patch);
+      unawaited(
+        _writeGoogleProfilePhotoBestEffort(
+          uid: refreshedUser.uid,
+          existingData: existingData,
+          user: refreshedUser,
+          sw: sw,
+        ),
+      );
+      final photoUrl = (refreshedUser.photoURL ?? '').trim();
+      if (_isBlankValue(mergedFallbackData['profilePhotoUrl']) &&
+          photoUrl.isNotEmpty) {
+        mergedFallbackData['profilePhotoUrl'] = photoUrl;
+      }
       _logRegGoogle(
         'success elapsedMs=${sw.elapsedMilliseconds} uid=${refreshedUser.uid} path=write_ack_local_merge',
       );
@@ -991,6 +1123,19 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         ...mergedFallbackData,
       });
     } catch (e) {
+      final raw = e.toString().toLowerCase();
+      final isPermissionDenied =
+          (e is FirebaseException && e.code == 'permission-denied') ||
+          raw.contains('permission_denied') ||
+          raw.contains('permission-denied') ||
+          raw.contains('missing or insufficient permissions');
+
+      if (isPermissionDenied) {
+        throw Exception(
+          'Error al registrar usuario con Google: Firestore rechazo la escritura (permission-denied). Revisa reglas de users/{uid} y App Check (token/attestation). Error original: $e',
+        );
+      }
+
       throw Exception('Error al registrar usuario con Google: $e');
     }
   }
@@ -1079,6 +1224,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         return v == null || (v is String && v.trim().isEmpty);
       }
 
+      final canWriteIdentityDocument = _isEmptyString(
+        currentIdentity['documentId'],
+      );
+
       final updateData = <String, dynamic>{
         'rutVerification': {
           'status': 'pending',
@@ -1114,11 +1263,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (_isEmptyString(currentIdentity['lastName'])) {
         updateData['identity.lastName'] = lastName;
       }
-      if (_isEmptyString(currentIdentity['documentType'])) {
+
+      if (canWriteIdentityDocument) {
         updateData['identity.documentType'] = 'rut';
-      }
-      if (_isEmptyString(currentIdentity['documentId'])) {
         updateData['identity.documentId'] = normalizedRut;
+      } else if (_isEmptyString(currentIdentity['documentType'])) {
+        updateData['identity.documentType'] = 'rut';
       }
 
       await _firestore.collection('users').doc(uid).update(updateData);
@@ -1188,6 +1338,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         return v == null || (v is String && v.trim().isEmpty);
       }
 
+      final canWriteIdentityDocument = _isEmptyString(
+        currentIdentity['documentId'],
+      );
+
       final rutVerificationData = normalizedDocumentType == 'rut'
           ? {
               'status': 'pending',
@@ -1220,11 +1374,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (_isEmptyString(currentIdentity['lastName'])) {
         updateData['identity.lastName'] = lastName;
       }
-      if (_isEmptyString(currentIdentity['documentType'])) {
+
+      if (canWriteIdentityDocument) {
         updateData['identity.documentType'] = normalizedDocumentType;
-      }
-      if (_isEmptyString(currentIdentity['documentId'])) {
         updateData['identity.documentId'] = normalizedDocumentId;
+      } else if (_isEmptyString(currentIdentity['documentType'])) {
+        updateData['identity.documentType'] = normalizedDocumentType;
       }
 
       await _firestore.collection('users').doc(uid).update(updateData);

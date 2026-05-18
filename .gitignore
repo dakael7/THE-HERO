@@ -56,7 +56,9 @@ firebase.json
 *.local
 .runtimeconfig.json
 moderation-flutter.md
-Firebase.rules
+docs/
 storage.rules
 .windsurf
 
+Firebase.rules
+lib/.env

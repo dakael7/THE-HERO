@@ -21,6 +21,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
 
   void addItem({
     required String offerId,
+    String category = 'others',
     required String name,
     required String condition,
     required double price,
@@ -111,6 +112,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
         CartItem(
           offerId: offerId,
           sellerHeroId: sellerHeroId,
+          category: category,
           name: name,
           condition: condition,
           quantity: 1,
@@ -154,6 +156,7 @@ class CartNotifier extends Notifier<List<CartItem>> {
       final updated = CartItem(
         offerId: current.offerId,
         sellerHeroId: current.sellerHeroId ?? sellerHeroId,
+        category: current.category.isNotEmpty ? current.category : category,
         name: current.name,
         condition: current.condition,
         quantity: current.quantity + 1,

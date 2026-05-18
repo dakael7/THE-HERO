@@ -79,7 +79,9 @@ class _RiderVehicleSequentialVerificationFlowScreenState
     try {
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => const RiderLicenseVerificationScreen(),
+          builder: (_) => RiderLicenseVerificationScreen(
+            vehicleType: widget.vehicleType,
+          ),
         ),
       );
       ref.invalidate(profileProvider);
@@ -140,8 +142,24 @@ class _RiderVehicleSequentialVerificationFlowScreenState
           }
 
           final licenseRequired = _licenseRequired();
-          final licenseStatus = user.licenseVerificationStatus;
-          final licenseApproved = user.isLicenseVerified;
+          final vehicles = user.riderProfile?.vehicles;
+          final vehicleEntry = vehicles?[widget.vehicleType.name];
+          final vehicleEntryMap =
+              vehicleEntry is Map ? Map<String, dynamic>.from(vehicleEntry) : null;
+          final vehicleLicenseVerificationRaw =
+              vehicleEntryMap?['licenseVerification'];
+          final vehicleLicenseVerification =
+              vehicleLicenseVerificationRaw is Map
+              ? Map<String, dynamic>.from(vehicleLicenseVerificationRaw)
+              : null;
+          final vehicleLicenseStatus = vehicleLicenseVerification?['status']
+              ?.toString();
+
+          final licenseStatus = licenseRequired
+              ? (vehicleLicenseStatus ?? user.licenseVerificationStatus)
+              : null;
+          final licenseApproved =
+              !licenseRequired || (licenseStatus?.trim().toLowerCase() == 'approved');
 
           final canStartLicense = _canStartLicenseForStatus(licenseStatus);
 

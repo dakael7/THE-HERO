@@ -22,6 +22,69 @@ exports.createPaymentPreference = onCall(
 
   let orderIdForLogs = null;
   let heroIdForLogs = null;
+  let shouldRollbackReservationOnFailure = false;
+
+  const releaseReservedStock = async (orderId, reason) => {
+    if (!orderId) return;
+
+    const reservationRef = admin
+      .firestore()
+      .collection("stockReservations")
+      .doc(String(orderId));
+
+    await admin.firestore().runTransaction(async (transaction) => {
+      const reservationDoc = await transaction.get(reservationRef);
+      if (!reservationDoc.exists) return;
+
+      const reservation = reservationDoc.data() || {};
+      if (reservation.status !== "reserved") return;
+
+      const items = Array.isArray(reservation.items) ? reservation.items : [];
+      const offerQtyDeltas = new Map();
+
+      for (const item of items) {
+        const offerId = item?.offerId;
+        if (!offerId) continue;
+        const qty = Number(item?.qty ?? 1);
+        const qtyInt = Number.isFinite(qty) ? Math.max(1, Math.round(qty)) : 1;
+        const key = String(offerId);
+        offerQtyDeltas.set(key, (offerQtyDeltas.get(key) ?? 0) + qtyInt);
+      }
+
+      const offerDocs = new Map();
+      for (const [offerId] of offerQtyDeltas) {
+        const offerRef = admin.firestore().collection("offers").doc(offerId);
+        const offerDoc = await transaction.get(offerRef);
+        offerDocs.set(offerId, {ref: offerRef, doc: offerDoc});
+      }
+
+      for (const [offerId, delta] of offerQtyDeltas) {
+        const entry = offerDocs.get(offerId);
+        if (!entry?.doc?.exists) continue;
+
+        const data = entry.doc.data() || {};
+        const currentQty = Number(data.availableQty ?? 0);
+        const newQty = currentQty + Number(delta ?? 0);
+
+        const updateData = {
+          availableQty: newQty,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        if (data.status === "sold_out" && newQty > 0) {
+          updateData.status = "active";
+        }
+
+        transaction.update(entry.ref, updateData);
+      }
+
+      transaction.update(reservationRef, {
+        status: "released",
+        releasedAt: admin.firestore.FieldValue.serverTimestamp(),
+        releasedReason: reason || "preference_creation_failed",
+      });
+    });
+  };
 
   try {
     // Get MercadoPago Access Token from environment
@@ -100,6 +163,15 @@ exports.createPaymentPreference = onCall(
       );
     }
 
+    const requestUid = String(request.auth.uid ?? "").trim();
+    const requestHeroId = String(heroId ?? "").trim();
+    if (!requestHeroId || requestHeroId !== requestUid) {
+      throw new HttpsError(
+        "permission-denied",
+        "heroId must match the authenticated user",
+      );
+    }
+
     const requestedSandbox = false;
     const isTestToken =
       typeof accessToken === "string" && accessToken.startsWith("TEST-");
@@ -109,14 +181,21 @@ exports.createPaymentPreference = onCall(
     const userData = userDoc.data();
 
     const reservationsRef = admin.firestore().collection("stockReservations").doc(orderId);
+    const orderDocAtStart = await admin
+      .firestore()
+      .collection("orders")
+      .doc(String(orderId))
+      .get();
+    const orderExistedAtStart = orderDocAtStart.exists;
 
     const reserveStock = async () => {
       const existing = await reservationsRef.get();
       if (existing.exists) {
         // Idempotent: if reservation already exists for this orderId, keep going.
-        return;
+        return false;
       }
 
+      let createdInThisCall = false;
       await admin.firestore().runTransaction(async (transaction) => {
         const existingTx = await transaction.get(reservationsRef);
         if (existingTx.exists) return;
@@ -204,10 +283,58 @@ exports.createPaymentPreference = onCall(
             new Date(Date.now() + 30 * 60 * 1000),
           ),
         });
+        createdInThisCall = true;
       });
+
+      return createdInThisCall;
     };
 
-    await reserveStock();
+    const reservationCreatedInThisCall = await reserveStock();
+    shouldRollbackReservationOnFailure =
+      reservationCreatedInThisCall && !orderExistedAtStart;
+
+    const offerCategoryById = new Map();
+    try {
+      const unresolvedOfferIds = Array.from(
+        new Set(
+          (Array.isArray(items) ? items : [])
+              .filter((item) => {
+                const localCategory =
+                  item?.category_id ??
+                  item?.categoryId ??
+                  item?.categorySnapshot ??
+                  item?.category;
+                return String(localCategory ?? "").trim().length === 0;
+              })
+              .map((item) => item?.offerId ?? item?.id ?? "")
+              .map((rawId) => String(rawId).trim())
+              .filter((offerId) => offerId.length > 0),
+        ),
+      );
+
+      if (unresolvedOfferIds.length > 0) {
+        const offerDocs = await Promise.all(
+          unresolvedOfferIds.map((offerId) =>
+            admin.firestore().collection("offers").doc(offerId).get(),
+          ),
+        );
+
+        for (const offerDoc of offerDocs) {
+          if (!offerDoc.exists) continue;
+          const data = offerDoc.data() || {};
+          const rawCategory =
+            data.category ?? data.categoryId ?? data.category_id ?? "";
+          const category = String(rawCategory).trim();
+          if (!category) continue;
+          offerCategoryById.set(offerDoc.id, category);
+        }
+      }
+    } catch (categoryError) {
+      console.warn(
+        `Unable to enrich items with offer category_id for order ${orderId}:`,
+        categoryError?.message ?? categoryError,
+      );
+    }
 
     const toInt = (value) => {
       const n = Number(value);
@@ -222,6 +349,11 @@ exports.createPaymentPreference = onCall(
       return q > 0 ? q : 1;
     };
 
+    const resolveCategoryId = (value) => {
+      const category = String(value ?? "").trim();
+      return category.length > 0 ? category : "others";
+    };
+
     // Prepare items for MercadoPago
     // NOTE: This project supports a donation model where product items may have unit_price = 0.
     // MercadoPago requires at least one payable item (> 0), so we skip zero-priced items and
@@ -233,6 +365,13 @@ exports.createPaymentPreference = onCall(
       const resolvedId = item.offerId || item.id;
       const resolvedTitle = item.titleSnapshot || item.title || "Producto";
       const resolvedUnitPrice = toInt(item.unitPriceSnapshot ?? item.price ?? 0);
+      const categorySource =
+        item.category_id ??
+        item.categoryId ??
+        item.categorySnapshot ??
+        item.category ??
+        offerCategoryById.get(String(resolvedId ?? "").trim());
+      const resolvedCategoryId = resolveCategoryId(categorySource);
 
       if (resolvedUnitPrice <= 0) {
         skippedZeroPricedItems.push({id: resolvedId, title: resolvedTitle});
@@ -243,6 +382,7 @@ exports.createPaymentPreference = onCall(
         id: resolvedId,
         title: resolvedTitle,
         description: item.description || "",
+        category_id: resolvedCategoryId,
         quantity: toQtyInt(item.qty ?? item.quantity ?? 1),
         unit_price: resolvedUnitPrice,
         currency_id: "CLP",
@@ -253,6 +393,7 @@ exports.createPaymentPreference = onCall(
     if (deliveryFee && deliveryFee > 0) {
       mpItems.push({
         id: "delivery_fee",
+        category_id: "others",
         title: "Costo de envío",
         description: "Tarifa de entrega",
         quantity: 1,
@@ -265,6 +406,7 @@ exports.createPaymentPreference = onCall(
     if (serviceFee && serviceFee > 0) {
       mpItems.push({
         id: "service_fee",
+        category_id: "others",
         title: "Tarifa de servicio",
         description: "Comisión de plataforma",
         quantity: 1,
@@ -277,6 +419,7 @@ exports.createPaymentPreference = onCall(
     if (tax && tax > 0) {
       mpItems.push({
         id: "tax",
+        category_id: "others",
         title: "Impuestos",
         description: "IVA y otros impuestos",
         quantity: 1,
@@ -372,6 +515,23 @@ exports.createPaymentPreference = onCall(
       expiresAt: preferenceData.expiration_date_to,
     };
   } catch (error) {
+    if (shouldRollbackReservationOnFailure && orderIdForLogs) {
+      try {
+        await releaseReservedStock(
+          orderIdForLogs,
+          "preference_creation_failed_before_order_creation",
+        );
+        console.warn(
+          `Stock reservation released after preference failure for order ${orderIdForLogs}`,
+        );
+      } catch (rollbackError) {
+        console.error(
+          `Failed to release reserved stock for order ${orderIdForLogs}:`,
+          rollbackError?.message ?? rollbackError,
+        );
+      }
+    }
+
     const errorDetails = {
       message: error?.message,
       name: error?.name,
@@ -412,6 +572,10 @@ exports.createPaymentPreference = onCall(
         "Failed to persist payment preference error:",
         persistError?.message ?? persistError,
       );
+    }
+
+    if (error instanceof HttpsError) {
+      throw error;
     }
 
     throw new HttpsError(

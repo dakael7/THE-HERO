@@ -228,7 +228,7 @@ class _PaymentProcessingScreenState
             onPressed: _openInExternalBrowser,
             tooltip: 'Abrir en navegador',
           ),
-          if (_canSimulatePayment)
+          if (_canSimulatePayment && widget.preferenceId.trim().isNotEmpty)
             IconButton(
               icon: _isSimulating
                   ? const SizedBox(
@@ -289,7 +289,7 @@ class _PaymentProcessingScreenState
           style: TextStyle(fontWeight: FontWeight.w800, color: textGray900),
         ),
         content: const Text(
-          'Si cancelas ahora, tu orden no será procesada.',
+          'Si cancelas ahora, tu orden quedará pendiente de pago y podrás retomarla desde "Mis pedidos".',
           style: TextStyle(color: textGray700),
         ),
         actions: [
@@ -319,3 +319,4 @@ class _PaymentProcessingScreenState
     }
   }
 }
+

@@ -15,6 +15,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/config/env.dart';
 import '../../../core/config/mercadopago_config.dart';
 import '../../../core/utils/validators.dart';
+import '../../../core/utils/map_camera_utils.dart';
 import '../../../core/utils/price_formatter.dart';
 import '../../../core/utils/weight_utils.dart';
 import '../../../domain/config/pricing_config_provider.dart';
@@ -257,6 +258,20 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final selected = widget.item;
     if (selected != null) return <CartItem>[selected];
     return ref.read(cartProvider);
+  }
+
+  void _removeProcessedCartItems(List<CartItem> items) {
+    if (items.isEmpty) return;
+    final cartNotifier = ref.read(cartProvider.notifier);
+    final removedOfferIds = <String>{};
+
+    for (final item in items) {
+      final offerId = item.offerId.trim();
+      if (offerId.isEmpty) continue;
+      if (removedOfferIds.contains(offerId)) continue;
+      removedOfferIds.add(offerId);
+      cartNotifier.removeItem(item);
+    }
   }
 
   ({firestore.GeoPoint? geo, String address}) _resolvePickupFromCart(
@@ -861,7 +876,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             order,
             currentUser: user,
           );
-          ref.read(cartProvider.notifier).removeItem(cartItems.first);
+          _removeProcessedCartItems(cartItems);
 
           if (mounted) {
             Navigator.of(context).pushReplacement(
@@ -880,7 +895,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             order,
             currentUser: user,
           );
-          ref.read(cartProvider.notifier).removeItem(cartItems.first);
+          _removeProcessedCartItems(cartItems);
 
           if (mounted) {
             await _showPaymentResult(
@@ -1129,7 +1144,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           currentUser: user,
         );
 
-        ref.read(cartProvider.notifier).removeItem(cartItems.first);
+        _removeProcessedCartItems(cartItems);
 
         if (mounted) {
           await showDialog(
@@ -1197,7 +1212,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           await paymentRepo.savePayment(cashPayment);
         }
 
-        ref.read(cartProvider.notifier).removeItem(cartItems.first);
+        _removeProcessedCartItems(cartItems);
         if (mounted) {
           await _showPaymentResult(
             success: true,
@@ -3915,10 +3930,16 @@ class _CheckoutItemsRouteMap extends StatelessWidget {
                   ];
                   if (boundsPoints.length < 2) return;
                   final b = boundsFromPoints(boundsPoints);
-                  controller.animateCamera(
-                    gmap.CameraUpdate.newLatLngBounds(
-                        b, 42),
-                  );
+                  unawaited(() async {
+                    final moved = await animateCameraWhenMapReady(
+                      controller: controller,
+                      cameraUpdateBuilder: () =>
+                          gmap.CameraUpdate.newLatLngBounds(b, 42),
+                    );
+                    if (!moved) {
+                      debugPrint('[Checkout] Could not fit map bounds');
+                    }
+                  }());
                 },
               ),
             ),

@@ -2,23 +2,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_hero/domain/entities/notification.dart';
 
-import '../../../../auth/presentation/providers/auth_provider.dart';
-import '../../domain/providers/get_user_notifications_usecase_provider.dart';
+import '../../../../../data/providers/repository_providers.dart';
+import '../../../profile/presentation/providers/profile_provider.dart';
 
 const _notificationsLastSeenKey = 'notifications_last_seen_at_ms';
 
-final notificationsProvider =
-    FutureProvider<List<AppNotification>>((ref) async {
-  final isAuthenticated = ref.watch(
-    authNotifierProvider.select((state) => state.isAuthenticated),
-  );
-
-  if (!isAuthenticated) {
-    return [];
+final notificationsProvider = StreamProvider<List<AppNotification>>((ref) {
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null || userId.trim().isEmpty) {
+    return Stream.value(const <AppNotification>[]);
   }
 
-  final useCase = ref.read(getUserNotificationsUseCaseProvider);
-  return useCase.execute();
+  final repo = ref.read(notificationRepositoryProvider);
+  return repo.watchUserNotifications();
 });
 
 final notificationsLastSeenProvider = FutureProvider<DateTime?>((ref) async {

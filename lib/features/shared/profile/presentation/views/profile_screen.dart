@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../auth/presentation/providers/auth_provider.dart';
@@ -63,15 +64,168 @@ class ProfileScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _pickAndUploadProfilePhoto(
+    BuildContext context,
+    WidgetRef ref,
+    ImageSource source,
+  ) async {
+    final picker = ImagePicker();
+    try {
+      final picked = source == ImageSource.camera
+          ? await picker.pickImage(
+              source: ImageSource.camera,
+              preferredCameraDevice: CameraDevice.front,
+              imageQuality: 85,
+              maxWidth: 2000,
+            )
+          : await picker.pickImage(
+              source: source,
+              imageQuality: 85,
+              maxWidth: 2000,
+            );
+      if (picked == null || !context.mounted) return;
+
+      final bytes = await picked.readAsBytes();
+      if (!context.mounted) return;
+
+      await ref.read(authNotifierProvider.notifier).updateCurrentUserProfilePhoto(
+            profilePhotoBytes: bytes,
+            profilePhotoName: picked.name,
+          );
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Foto de perfil actualizada.'),
+          duration: Duration(milliseconds: 1600),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      final providerMessage = ref.read(authNotifierProvider).errorMessage;
+      final message = (providerMessage != null && providerMessage.trim().isNotEmpty)
+          ? providerMessage
+          : 'No se pudo actualizar la foto: $e';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 2200),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showProfilePhotoOptions(BuildContext context, WidgetRef ref) async {
+    if (ref.read(authNotifierProvider).isLoading) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: backgroundWhite,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text(
+                    'Cambiar foto de perfil',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: textGray900,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Elige una opcion',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: textGray600,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined),
+                  title: const Text('Camara'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _pickAndUploadProfilePhoto(context, ref, ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Galeria'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _pickAndUploadProfilePhoto(context, ref, ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsyncValue = ref.watch(profileStreamProvider);
+    final currentUserId = ref.watch(currentUserIdProvider);
+    final authState = ref.watch(authNotifierProvider);
+    final isPhotoUploadInProgress = authState.isLoading &&
+        (authState.uploadProgress != null ||
+            (authState.loadingMessage?.toLowerCase().contains('foto de perfil') ??
+                false));
 
     return Scaffold(
       backgroundColor: backgroundGray50,
       body: userAsyncValue.when(
         data: (user) {
           if (user == null) {
+            final hasActiveSession =
+                currentUserId != null && currentUserId.trim().isNotEmpty;
+
+            if (hasActiveSession) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.person_search, size: 60, color: textGray600),
+                    const SizedBox(height: 16),
+                    const Text('No encontramos tu perfil todavía'),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Tu sesión sigue activa. Reintentemos cargar tus datos.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: textGray600),
+                    ),
+                    const SizedBox(height: 14),
+                    TextButton(
+                      onPressed: () {
+                        ref.invalidate(profileStreamProvider);
+                      },
+                      child: const Text('Reintentar'),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(authNotifierProvider.notifier).signOut();
+                        if (!context.mounted) return;
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(builder: (_) => const LoginPage()),
+                          (_) => false,
+                        );
+                      },
+                      child: const Text('Cerrar sesión'),
+                    ),
+                  ],
+                ),
+              );
+            }
+
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -81,9 +235,7 @@ class ProfileScreen extends ConsumerWidget {
                   const Text('No hay datos de usuario'),
                   const SizedBox(height: 32),
                   ElevatedButton(
-                    onPressed: () async {
-                      await ref.read(authNotifierProvider.notifier).signOut();
-                      if (!context.mounted) return;
+                    onPressed: () {
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(builder: (_) => const LoginPage()),
@@ -101,7 +253,7 @@ class ProfileScreen extends ConsumerWidget {
           return RefreshIndicator(
             color: primaryOrange,
             onRefresh: () async {
-              ref.invalidate(profileProvider);
+              ref.invalidate(profileStreamProvider);
             },
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -175,6 +327,8 @@ class ProfileScreen extends ConsumerWidget {
                         ProfileHeader(
                           user: user,
                           isRiderProfile: isRiderProfile,
+                          onPhotoTap: () => _showProfilePhotoOptions(context, ref),
+                          isPhotoUpdating: isPhotoUploadInProgress,
                         ),
                         const SizedBox(height: 12),
                         if (!isRiderProfile) ...[
@@ -387,7 +541,7 @@ class ProfileScreen extends ConsumerWidget {
                 const SizedBox(height: 32),
                 ElevatedButton(
                   onPressed: () {
-                    ref.invalidate(profileProvider);
+                    ref.invalidate(profileStreamProvider);
                   },
                   child: const Text('Reintentar'),
                 ),
@@ -481,7 +635,7 @@ class ProfileScreen extends ConsumerWidget {
                                   .collection('users')
                                   .doc(uid)
                                   .update({'riderProfile.isActive': value});
-                              ref.invalidate(profileProvider);
+                              ref.invalidate(profileStreamProvider);
                             } catch (e) {
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -623,7 +777,7 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: 8),
             ProfileMenuTile(
               icon: Icons.volunteer_activism_outlined,
-              title: 'Pedidos de mis donaciones',
+              title: 'Pedidos recibidos',
               trailingText: () {
                 final ordersAsync = ref.watch(myDonationOrdersProvider(user.id));
                 return ordersAsync.maybeWhen(
@@ -914,7 +1068,7 @@ class _PersonalDataScreenState extends ConsumerState<PersonalDataScreen> {
         'contact.phoneNumber': newPhone,
       });
 
-      ref.invalidate(profileProvider);
+      ref.invalidate(profileStreamProvider);
 
       if (!mounted) return;
       setState(() => _isEditing = false);

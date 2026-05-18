@@ -23,6 +23,19 @@ if (hasReleaseKeystore) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+val libEnvFile = rootProject.file("../lib/.env")
+val envFileValues: Map<String, String> = if (libEnvFile.exists()) {
+    libEnvFile.readLines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+        .associate { line ->
+            val parts = line.split("=", limit = 2)
+            parts[0].trim() to parts.getOrElse(1) { "" }.trim()
+        }
+} else {
+    emptyMap()
+}
+
 android {
     namespace = "com.theheroprojects.thehero"
     compileSdk = flutter.compileSdkVersion
@@ -58,10 +71,14 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        manifestPlaceholders["MAPS_API_KEY"] =
-            dartDefines["GOOGLE_MAPS_API_KEY"]
-                ?: (project.findProperty("MAPS_API_KEY") as? String)
+        val mapsApiKey =
+            dartDefines["GOOGLE_MAPS_API_KEY"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: envFileValues["GOOGLE_MAPS_API_KEY"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: envFileValues["PLACES_API_KEY"]?.trim()?.takeIf { it.isNotEmpty() }
+                ?: (project.findProperty("MAPS_API_KEY") as? String)?.trim()
                 ?: ""
+
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
     signingConfigs {

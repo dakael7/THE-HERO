@@ -3,6 +3,7 @@ import '../../domain/entities/order_item.dart';
 class OrderItemModel {
   final String offerId;
   final String sellerHeroIdSnapshot;
+  final String categorySnapshot;
   final String titleSnapshot;
   final double unitPriceSnapshot;
   final int qty;
@@ -12,6 +13,7 @@ class OrderItemModel {
   OrderItemModel({
     required this.offerId,
     this.sellerHeroIdSnapshot = '',
+    this.categorySnapshot = '',
     required this.titleSnapshot,
     required this.unitPriceSnapshot,
     required this.qty,
@@ -23,6 +25,7 @@ class OrderItemModel {
     return OrderItemModel(
       offerId: json['offerId'] as String? ?? '',
       sellerHeroIdSnapshot: json['sellerHeroIdSnapshot'] as String? ?? '',
+      categorySnapshot: json['categorySnapshot'] as String? ?? '',
       titleSnapshot: json['titleSnapshot'] as String? ?? '',
       unitPriceSnapshot: (json['unitPriceSnapshot'] as num?)?.toDouble() ?? 0.0,
       qty: json['qty'] as int? ?? 0,
@@ -35,6 +38,7 @@ class OrderItemModel {
     return {
       'offerId': offerId,
       'sellerHeroIdSnapshot': sellerHeroIdSnapshot,
+      'categorySnapshot': categorySnapshot,
       'titleSnapshot': titleSnapshot,
       'unitPriceSnapshot': unitPriceSnapshot,
       'qty': qty,
@@ -47,6 +51,7 @@ class OrderItemModel {
     return OrderItem(
       offerId: offerId,
       sellerHeroIdSnapshot: sellerHeroIdSnapshot,
+      categorySnapshot: categorySnapshot,
       titleSnapshot: titleSnapshot,
       unitPriceSnapshot: unitPriceSnapshot,
       qty: qty,
@@ -59,6 +64,7 @@ class OrderItemModel {
     return OrderItemModel(
       offerId: entity.offerId,
       sellerHeroIdSnapshot: entity.sellerHeroIdSnapshot,
+      categorySnapshot: entity.categorySnapshot,
       titleSnapshot: entity.titleSnapshot,
       unitPriceSnapshot: entity.unitPriceSnapshot,
       qty: entity.qty,

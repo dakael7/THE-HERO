@@ -88,6 +88,15 @@ class Offer {
   bool get canBeEdited => status.canBeEdited;
   bool get isAvailable => availableQty > 0 && status == OfferStatus.active;
   bool get isSoldOut => availableQty == 0;
+  String get displayImageUrl {
+    final cover = coverImageUrl.trim();
+    if (cover.isNotEmpty) return cover;
+    for (final raw in imageUrls) {
+      final url = raw.trim();
+      if (url.isNotEmpty) return url;
+    }
+    return '';
+  }
 
   Offer copyWith({
     String? offerId,

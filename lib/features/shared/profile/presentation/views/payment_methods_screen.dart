@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:flutter/services.dart';
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../domain/entities/user.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
 import '../../../../../data/providers/network_providers.dart';
 import '../providers/profile_provider.dart';
@@ -47,9 +48,17 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
     super.dispose();
   }
 
+  Future<User?> _resolveCurrentUser() async {
+    final cached = ref.read(profileStreamProvider).value;
+    if (cached != null) return cached;
+    return ref
+        .read(profileStreamProvider.future)
+        .timeout(const Duration(seconds: 8), onTimeout: () => null);
+  }
+
   Future<void> _loadExisting() async {
     try {
-      final user = await ref.read(profileProvider.future);
+      final user = await _resolveCurrentUser();
       if (user == null) {
         if (mounted) setState(() => _loading = false);
         return;
@@ -149,7 +158,7 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
     if (_saving) return;
     if (!_formKey.currentState!.validate()) return;
 
-    final user = await ref.read(profileProvider.future);
+    final user = await _resolveCurrentUser();
     if (user == null) return;
     if (!user.isRider) return;
 
@@ -198,7 +207,7 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final userAsync = ref.watch(profileProvider);
+    final userAsync = ref.watch(profileStreamProvider);
     return Scaffold(
       backgroundColor: backgroundGray50,
       appBar: _buildAppBar(),

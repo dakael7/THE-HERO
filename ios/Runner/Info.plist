@@ -49,5 +49,9 @@
 	<string>Necesitamos tu ubicación para mostrar productos cercanos en el mapa</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Necesitamos tu ubicación para mostrar productos cercanos</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

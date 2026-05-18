@@ -159,7 +159,7 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
       }
 
       final isActive = riderProfile.isActive == true;
-      final isVerified = riderProfile.isVerified == true;
+      final isActiveVehicleVerified = riderProfile.isActiveVehicleVerified;
 
       // Business rule: bicycle riders can accept without full verification flow.
       if (riderVehicleType == VehicleType.bicycle) {
@@ -175,8 +175,10 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
           );
         }
 
-        if (!isVerified) {
-          throw Exception('Rider no verificado para aceptar pedidos');
+        if (!isActiveVehicleVerified) {
+          throw Exception(
+            'Tu vehículo activo no está verificado para aceptar este pedido',
+          );
         }
       }
 

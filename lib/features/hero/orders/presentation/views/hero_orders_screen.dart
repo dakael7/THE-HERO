@@ -1,16 +1,17 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
+import 'package:intl/intl.dart';
 
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
-import '../../../../../domain/entities/payment.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../payment/payment_processing_screen.dart';
 import '../../../payment/providers/payment_providers.dart';
+import '../../../presentation/views/hero_home_screen.dart';
 import 'order_receipt_screen.dart';
 import 'hero_order_status_screen.dart';
 
@@ -19,89 +20,84 @@ class HeroOrdersScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profileAsync = ref.watch(profileProvider);
+    final userId = ref.watch(currentUserIdProvider);
 
     return Scaffold(
       backgroundColor: backgroundGray50,
-      appBar: const HeroHeaderAppBar(
+      appBar: HeroHeaderAppBar(
         title: 'Mis pedidos',
         icon: Icons.receipt_long_rounded,
-      ),
-      body: profileAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: primaryOrange),
-        ),
-        error: (err, _) => _EmptyState(
-          icon: Icons.error_outline,
-          title: 'No pudimos cargar tu perfil',
-          message: err.toString(),
-        ),
-        data: (user) {
-          if (user == null) {
-            return const _EmptyState(
-              icon: Icons.login,
-              title: 'Inicia sesión',
-              message: 'Necesitas iniciar sesión para ver tus pedidos.',
-            );
+        onBack: () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+            return;
           }
-
-          final ordersAsync = ref.watch(myOrdersProvider(user.id));
-          return ordersAsync.when(
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: primaryOrange),
-            ),
-            error: (err, _) => _EmptyState(
-              icon: Icons.error_outline,
-              title: 'No pudimos cargar tus pedidos',
-              message: err.toString(),
-            ),
-            data: (orders) {
-              if (orders.isEmpty) {
-                return const _EmptyState(
-                  icon: Icons.receipt_long,
-                  title: 'Aún no tienes pedidos',
-                  message: 'Cuando compres, podrás seguirlos desde aquí.',
-                );
-              }
-
-              final sorted = [...orders]
-                ..sort((a, b) => b.timestamps.createdAt.compareTo(a.timestamps.createdAt));
-
-              final active = sorted
-                  .where((o) => !o.status.isCompleted)
-                  .toList();
-              final completed = sorted
-                  .where((o) => o.status.isCompleted)
-                  .toList();
-
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                children: [
-                  if (active.isNotEmpty) ...[
-                    _SectionHeader(
-                      label: 'Activos',
-                      count: active.length,
-                      color: primaryOrange,
-                    ),
-                    const SizedBox(height: 10),
-                    ...active.map((o) => _OrderTile(order: o)),
-                    const SizedBox(height: 22),
-                  ],
-                  if (completed.isNotEmpty) ...[
-                    _SectionHeader(
-                      label: 'Completados',
-                      count: completed.length,
-                      color: textGray600,
-                    ),
-                    const SizedBox(height: 10),
-                    ...completed.map((o) => _OrderTile(order: o)),
-                  ],
-                ],
-              );
-            },
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
+            (route) => false,
           );
         },
       ),
+      body: userId == null
+          ? const _EmptyState(
+              icon: Icons.login,
+              title: 'Inicia sesión',
+              message: 'Necesitas iniciar sesión para ver tus pedidos.',
+            )
+          : Builder(
+              builder: (context) {
+                final uid = userId!;
+                final ordersAsync = ref.watch(myOrdersProvider(uid));
+                return ordersAsync.when(
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(color: primaryOrange),
+                  ),
+                  error: (err, _) => _EmptyState(
+                    icon: Icons.error_outline,
+                    title: 'No pudimos cargar tus pedidos',
+                    message: err.toString(),
+                  ),
+                  data: (orders) {
+                    if (orders.isEmpty) {
+                      return const _EmptyState(
+                        icon: Icons.receipt_long,
+                        title: 'Aún no tienes pedidos',
+                        message: 'Cuando compres, podrás seguirlos desde aquí.',
+                      );
+                    }
+
+                    final sorted = [...orders]
+                      ..sort(
+                        (a, b) {
+                          final byDate = b.timestamps.createdAt.compareTo(
+                            a.timestamps.createdAt,
+                          );
+                          if (byDate != 0) return byDate;
+                          return b.orderId.compareTo(a.orderId);
+                        },
+                      );
+
+                    return RefreshIndicator(
+                      color: primaryOrange,
+                      onRefresh: () async {
+                        ref.invalidate(myOrdersProvider(uid));
+                        await Future<void>.delayed(
+                          const Duration(milliseconds: 250),
+                        );
+                      },
+                      child: ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                        itemCount: sorted.length,
+                        itemBuilder: (context, index) {
+                          return _OrderTile(order: sorted[index]);
+                        },
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
     );
   }
 }
@@ -113,18 +109,19 @@ class _OrderTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final paymentAsync = ref.watch(watchPaymentByOrderIdProvider(order.orderId));
-    final payment = paymentAsync.asData?.value;
-    final isPaymentApproved = payment?.status == PaymentStatus.approved;
-    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
-        (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
-        (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
+    final paymentState = ref.watch(paymentNotifierProvider);
+    final isPayingOrder = paymentState.isProcessing;
+    final canShowReceipt = order.status != OrderStatus.created &&
+        order.status != OrderStatus.pendingPayment &&
+        order.status != OrderStatus.canceled &&
+        order.status != OrderStatus.failed;
 
     final statusColor = _statusColor(order.status);
     final statusBg = _statusBg(order.status);
     final shortId = order.orderId.length > 8
         ? order.orderId.substring(0, 8)
         : order.orderId;
+    final createdAtText = _formatCreatedAt(order.timestamps.createdAt);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -171,6 +168,12 @@ class _OrderTile extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _InfoRow(
+                    icon: Icons.calendar_today_rounded,
+                    iconColor: textGray600,
+                    text: 'Fecha: $createdAtText',
+                  ),
+                  const SizedBox(height: 6),
                   if (order.delivery.addressSnapshot.isNotEmpty) ...[
                     _InfoRow(
                       icon: Icons.location_on_rounded,
@@ -211,7 +214,7 @@ class _OrderTile extends ConsumerWidget {
                         Expanded(
                           flex: 2,
                           child: ElevatedButton.icon(
-                            onPressed: () async {
+                            onPressed: isPayingOrder ? null : () async {
                               try {
                                 // Create payment preference
                                 final paymentNotifier = ref.read(
@@ -224,12 +227,25 @@ class _OrderTile extends ConsumerWidget {
                                 );
 
                                 if (paymentState.error != null) {
+                                  final errorCode =
+                                      (paymentState.errorCode ?? '').toLowerCase();
+                                  final raw = paymentState.error ?? '';
+                                  final message = raw.toLowerCase();
+                                  String userMessage = 'Error: $raw';
+
+                                  if (errorCode == 'resource-exhausted') {
+                                    userMessage =
+                                        'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.';
+                                  } else if (message.contains('stock insuficiente') ||
+                                      message.contains('failed-precondition')) {
+                                    userMessage =
+                                        'Este servicio ya no está disponible. Intenta con otro.';
+                                  }
+
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text(
-                                          'Error: ${paymentState.error}',
-                                        ),
+                                        content: Text(userMessage),
                                         backgroundColor: Colors.red,
                                       ),
                                     );
@@ -250,6 +266,15 @@ class _OrderTile extends ConsumerWidget {
                                       ),
                                     ),
                                   );
+                                } else if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'No se pudo obtener el link de pago',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
                                 }
                               } catch (e) {
                                 if (context.mounted) {
@@ -265,8 +290,8 @@ class _OrderTile extends ConsumerWidget {
                               }
                             },
                             icon: const Icon(Icons.payment, size: 18),
-                            label: const Text(
-                              'Pagar',
+                            label: Text(
+                              isPayingOrder ? 'Procesando...' : 'Pagar',
                               style: TextStyle(fontWeight: FontWeight.w800),
                             ),
                             style: ElevatedButton.styleFrom(
@@ -495,8 +520,7 @@ class _OrderTile extends ConsumerWidget {
                     ),
                   ],
 
-                  if (order.status != OrderStatus.pendingPayment &&
-                      (isPaymentApproved || isCashPayment)) ...[
+                  if (canShowReceipt) ...[
                     const SizedBox(height: 12),
                     _ReceiptButton(orderId: order.orderId),
                   ],
@@ -507,6 +531,11 @@ class _OrderTile extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  static String _formatCreatedAt(DateTime createdAt) {
+    final local = createdAt.toLocal();
+    return DateFormat('dd/MM/yyyy HH:mm').format(local);
   }
 
   static IconData _statusIcon(OrderStatus status) {

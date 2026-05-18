@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, kReleaseMode;
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../firebase_options.dart';
 
@@ -18,23 +21,34 @@ class FirebaseConfig {
         options: DefaultFirebaseOptions.currentPlatform,
       );
 
+      final useDebugAppCheck = !kReleaseMode;
       await FirebaseAppCheck.instance.activate(
-        providerAndroid: kDebugMode
+        providerAndroid: useDebugAppCheck
             ? AndroidDebugProvider()
             : AndroidPlayIntegrityProvider(),
-        providerApple:
-            kDebugMode ? AppleDebugProvider() : AppleAppAttestProvider(),
+        providerApple: useDebugAppCheck
+            ? AppleDebugProvider()
+            : AppleAppAttestProvider(),
       );
 
       await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
 
       if (kDebugMode) {
-        try {
-          final token = await FirebaseAppCheck.instance.getToken(true);
-          debugPrint('[APP_CHECK_TOKEN] ${token ?? 'null'}');
-        } catch (e) {
-          debugPrint('[APP_CHECK_TOKEN_ERROR] $e');
-        }
+        debugPrint(
+          '[FIREBASE_INIT] appId=${Firebase.app().options.appId} appCheckProvider=${useDebugAppCheck ? 'debug' : 'release'}',
+        );
+        unawaited(() async {
+          try {
+            final token = await FirebaseAppCheck.instance
+                .getToken(true)
+                .timeout(const Duration(seconds: 3));
+            debugPrint('[APP_CHECK_TOKEN] ${token ?? 'null'}');
+          } catch (e) {
+            debugPrint(
+              '[APP_CHECK_TOKEN_ERROR] $e. If this is Android debug/profile, register the debug App Check token in Firebase Console.',
+            );
+          }
+        }());
       }
 
       await GoogleSignIn.instance.initialize(

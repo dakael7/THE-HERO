@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -80,18 +81,43 @@ class SellerOfferDetailScreen extends ConsumerWidget {
     }
   }
 
-  Widget _buildImage(String url, {BoxFit fit = BoxFit.cover}) {
+  Widget _buildImage(
+    String url, {
+    BoxFit fit = BoxFit.cover,
+    int? cacheSize,
+  }) {
     final trimmed = url.trim();
     if (trimmed.isEmpty) {
       return _PlaceholderImage();
     }
     if (trimmed.startsWith('assets/')) {
-      return Image.asset(trimmed, fit: fit);
+      return Image.asset(
+        trimmed,
+        fit: fit,
+        filterQuality: FilterQuality.low,
+      );
     }
-    return Image.network(
-      trimmed,
+    return CachedNetworkImage(
+      imageUrl: trimmed,
       fit: fit,
-      errorBuilder: (_, _, _) => _PlaceholderImage(),
+      memCacheWidth: cacheSize,
+      memCacheHeight: cacheSize,
+      maxWidthDiskCache: cacheSize == null ? null : cacheSize * 2,
+      maxHeightDiskCache: cacheSize == null ? null : cacheSize * 2,
+      fadeInDuration: const Duration(milliseconds: 120),
+      placeholder: (_, __) => Container(
+        color: borderGray100,
+        alignment: Alignment.center,
+        child: const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: primaryOrange,
+          ),
+        ),
+      ),
+      errorWidget: (_, __, ___) => _PlaceholderImage(),
     );
   }
 
@@ -128,13 +154,9 @@ class SellerOfferDetailScreen extends ConsumerWidget {
 
     final showConditionChip = offer.condition != OfferCondition.newProduct;
     final location = offer.itemLocationSnapshot;
-
-    final commentsAsync = ref.watch(offerCommentsProvider(offer.offerId));
-    final unansweredCount = commentsAsync.maybeWhen(
-      data: (comments) =>
-          comments.where((c) => c.reply == null || c.reply!.isEmpty).length,
-      orElse: () => 0,
-    );
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final coverImageCacheSize = (MediaQuery.sizeOf(context).width * dpr).round();
+    final galleryImageCacheSize = (140 * dpr).round();
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -178,7 +200,10 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                 children: [
                   // Cover image
                   hasCover
-                      ? _buildImage(coverUrl)
+                      ? _buildImage(
+                          coverUrl,
+                          cacheSize: coverImageCacheSize,
+                        )
                       : Container(
                           color: primaryOrangeLight,
                           child: const Center(
@@ -274,43 +299,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                       ),
                     ),
 
-                  // Unanswered questions badge
-                  if (unansweredCount > 0)
-                    Positioned(
-                      top: 90,
-                      right: 16,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: primaryYellow,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.help_outline_rounded,
-                                size: 14, color: textGray900),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$unansweredCount sin responder',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: textGray900,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  _UnansweredQuestionsBadge(offerId: offer.offerId),
                 ],
               ),
             ),
@@ -419,14 +408,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                             value: '${offer.viewCount}',
                             color: categoryTextBlue,
                           ),
-                          _StatCard(
-                            icon: Icons.help_outline_rounded,
-                            label: 'Sin responder',
-                            value: '$unansweredCount',
-                            color: unansweredCount > 0
-                                ? primaryYellow
-                                : categoryTextGreen,
-                          ),
+                          _UnansweredStatCard(offerId: offer.offerId),
                           _StatCard(
                             icon: Icons.inventory_2_outlined,
                             label: 'Disponibles',
@@ -465,7 +447,10 @@ class SellerOfferDetailScreen extends ConsumerWidget {
                           borderRadius: BorderRadius.circular(14),
                           child: SizedBox(
                             width: 140,
-                            child: _buildImage(extraGalleryImages[index]),
+                            child: _buildImage(
+                              extraGalleryImages[index],
+                              cacheSize: galleryImageCacheSize,
+                            ),
                           ),
                         );
                       },
@@ -1163,7 +1148,10 @@ class SellerOfferDetailScreen extends ConsumerWidget {
             onPressed: () async {
               final text = textController.text.trim();
               if (text.isEmpty) return;
-              final user = ref.read(profileProvider).value;
+              final user = ref.read(profileStreamProvider).value ??
+                  await ref
+                      .read(profileStreamProvider.future)
+                      .timeout(const Duration(seconds: 6), onTimeout: () => null);
               if (user == null) return;
               await ref
                   .read(addCommentProvider.notifier)
@@ -1285,6 +1273,79 @@ class SellerOfferDetailScreen extends ConsumerWidget {
 // ─────────────────────────────────────────────
 //  PLACEHOLDER IMAGE
 // ─────────────────────────────────────────────
+class _UnansweredQuestionsBadge extends ConsumerWidget {
+  const _UnansweredQuestionsBadge({required this.offerId});
+
+  final String offerId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unansweredCount = ref.watch(offerCommentsProvider(offerId)).maybeWhen(
+      data: (comments) =>
+          comments.where((c) => c.reply == null || c.reply!.isEmpty).length,
+      orElse: () => 0,
+    );
+
+    if (unansweredCount <= 0) return const SizedBox.shrink();
+
+    return Positioned(
+      top: 90,
+      right: 16,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: primaryYellow,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.help_outline_rounded, size: 14, color: textGray900),
+            const SizedBox(width: 4),
+            Text(
+              '$unansweredCount sin responder',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: textGray900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UnansweredStatCard extends ConsumerWidget {
+  const _UnansweredStatCard({required this.offerId});
+
+  final String offerId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unansweredCount = ref.watch(offerCommentsProvider(offerId)).maybeWhen(
+      data: (comments) =>
+          comments.where((c) => c.reply == null || c.reply!.isEmpty).length,
+      orElse: () => 0,
+    );
+
+    return _StatCard(
+      icon: Icons.help_outline_rounded,
+      label: 'Sin responder',
+      value: '$unansweredCount',
+      color: unansweredCount > 0 ? primaryYellow : categoryTextGreen,
+    );
+  }
+}
+
 class _PlaceholderImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {

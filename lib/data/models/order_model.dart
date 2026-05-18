@@ -327,6 +327,13 @@ class OrderModel {
       case 'pending_payment':
       case 'pendingpayment':
         return OrderStatus.pendingPayment;
+      case 'payment_failed':
+      case 'paymentfailed':
+        return OrderStatus.failed;
+      case 'refunded':
+      case 'charged_back':
+      case 'chargedback':
+        return OrderStatus.canceled;
       case 'paid':
         return OrderStatus.paid;
       case 'queued':
