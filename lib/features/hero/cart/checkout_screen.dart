@@ -2257,25 +2257,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     const SizedBox(height: 12),
                     _StyledField(
                       controller: _invoiceEmailController,
-                      label: 'Correo',
+                      label: 'Correo (opcional)',
                       icon: Icons.email_rounded,
                       keyboardType: TextInputType.emailAddress,
                       validator: (v) {
                         if (_selectedDocumentType != 'factura') return null;
-                        return Validators.email(v);
+                        final value = v?.trim() ?? '';
+                        if (value.isEmpty) return null;
+                        return Validators.email(value);
                       },
                     ),
                     const SizedBox(height: 12),
                     _StyledField(
                       controller: _invoicePhoneController,
-                      label: 'Teléfono',
+                      label: 'Teléfono (opcional)',
                       icon: Icons.phone_rounded,
                       keyboardType: TextInputType.phone,
                       validator: (v) {
                         if (_selectedDocumentType != 'factura') return null;
-                        return (v == null || v.trim().isEmpty)
-                            ? 'Ingresa el teléfono'
-                            : null;
+                        return null;
                       },
                     ),
                   ],

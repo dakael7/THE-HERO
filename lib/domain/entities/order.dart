@@ -28,6 +28,8 @@ class Order {
   final String? invoiceAddress;
   final String? invoiceEmail;
   final String? invoicePhone;
+  final String? billingInvoiceId;
+  final String? billingInvoiceStatus;
   final OrderPickup pickup;
   final List<OrderPickupStop>? pickupStops;
   final int? pickupProgressCurrentStopIndex;
@@ -67,6 +69,8 @@ class Order {
     this.invoiceAddress,
     this.invoiceEmail,
     this.invoicePhone,
+    this.billingInvoiceId,
+    this.billingInvoiceStatus,
     required this.pickup,
     this.pickupStops,
     this.pickupProgressCurrentStopIndex,
@@ -92,6 +96,19 @@ class Order {
   bool get isActive => status.isActive;
   bool get isCompleted => status.isCompleted;
   bool get canBeCanceled => status.canBeCanceled;
+  String get effectiveDocumentType {
+    final normalized = documentType.trim().toLowerCase();
+    if (normalized == 'factura' || normalized == 'boleta') {
+      return normalized;
+    }
+
+    final hasBillingInvoiceData =
+        (billingInvoiceId?.trim().isNotEmpty ?? false) ||
+        (billingInvoiceStatus?.trim().isNotEmpty ?? false);
+    return hasBillingInvoiceData ? 'factura' : 'boleta';
+  }
+
+  bool get isFactura => effectiveDocumentType == 'factura';
 
   int get totalItems => items.fold(0, (sum, item) => sum + item.qty);
 
@@ -114,6 +131,8 @@ class Order {
     String? invoiceAddress,
     String? invoiceEmail,
     String? invoicePhone,
+    String? billingInvoiceId,
+    String? billingInvoiceStatus,
     OrderPickup? pickup,
     List<OrderPickupStop>? pickupStops,
     OrderDelivery? delivery,
@@ -152,6 +171,8 @@ class Order {
       invoiceAddress: invoiceAddress ?? this.invoiceAddress,
       invoiceEmail: invoiceEmail ?? this.invoiceEmail,
       invoicePhone: invoicePhone ?? this.invoicePhone,
+      billingInvoiceId: billingInvoiceId ?? this.billingInvoiceId,
+      billingInvoiceStatus: billingInvoiceStatus ?? this.billingInvoiceStatus,
       pickup: pickup ?? this.pickup,
       pickupStops: pickupStops ?? this.pickupStops,
       delivery: delivery ?? this.delivery,

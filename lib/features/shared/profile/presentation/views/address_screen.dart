@@ -362,16 +362,6 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
     }
   }
 
-  bool _isSlotEmpty(AddressSlot s) {
-    final loc = _slotLocations[s];
-    final name = (_nameControllers[s]?.text ?? '').trim();
-    final unit = (_unitControllers[s]?.text ?? '').trim();
-    final postal = (_postalCodeControllers[s]?.text ?? '').trim();
-    final hasAddress = (loc?.address ?? '').trim().isNotEmpty;
-    final hasCoords = loc?.lat != null && loc?.lng != null;
-    return !hasAddress && !hasCoords && name.isEmpty && unit.isEmpty && postal.isEmpty;
-  }
-
   bool _isComplete(AddressSlot s) {
     final loc = _slotLocations[s];
     final name = (_nameControllers[s]?.text ?? '').trim();
@@ -425,25 +415,10 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
   }
 
   Future<void> _saveAddress() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    final startedSlots = AddressSlot.values.where((s) => !_isSlotEmpty(s));
-    if (startedSlots.isEmpty) {
+    final completeSlots = AddressSlot.values.where(_isComplete).toList();
+    if (completeSlots.isEmpty) {
       _showSnackBar(
-        message: 'No hay direcciones para guardar',
-        icon: Icons.warning_amber_rounded,
-        color: categoryTextYellow,
-      );
-      return;
-    }
-
-    final firstIncomplete = startedSlots.cast<AddressSlot?>().firstWhere(
-          (s) => s != null && !_isComplete(s),
-          orElse: () => null,
-        );
-    if (firstIncomplete != null) {
-      _showSnackBar(
-        message: 'Completa ${firstIncomplete.displayName} para guardar',
+        message: 'Completa al menos una direccion para guardar',
         icon: Icons.warning_amber_rounded,
         color: categoryTextYellow,
       );
@@ -472,7 +447,6 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
         };
       }
 
-      final completeSlots = startedSlots.toList();
       AddressSlot primarySlot = _primarySlot;
       if (!completeSlots.contains(primarySlot)) {
         primarySlot = completeSlots.first;
@@ -506,7 +480,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
 
       if (mounted) {
         _showSnackBar(
-          message: 'Dirección guardada exitosamente',
+          message: 'Direccion guardada exitosamente',
           icon: Icons.check_circle_rounded,
           color: categoryTextGreen,
         );
@@ -657,6 +631,15 @@ class _ProgressHeader extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 4),
+          const Text(
+            'Puedes guardar una direccion por vez. Las otras son opcionales.',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: textGray600,
+            ),
+          ),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
@@ -777,7 +760,7 @@ class _SaveButton extends StatelessWidget {
                     Icon(Icons.save_rounded, size: 18),
                     SizedBox(width: 8),
                     Text(
-                      'Guardar Direcciones',
+                      'Guardar Direccion',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w900,

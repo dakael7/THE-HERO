@@ -2,11 +2,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
+import '../../../../billing/domain/entities/invoice_entity.dart';
+import '../../../../billing/presentation/providers/billing_providers.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../payment/payment_processing_screen.dart';
@@ -111,6 +114,7 @@ class _OrderTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final paymentState = ref.watch(paymentNotifierProvider);
     final isPayingOrder = paymentState.isProcessing;
+    final isFactura = order.isFactura;
     final canShowReceipt = order.status != OrderStatus.created &&
         order.status != OrderStatus.pendingPayment &&
         order.status != OrderStatus.canceled &&
@@ -520,9 +524,13 @@ class _OrderTile extends ConsumerWidget {
                     ),
                   ],
 
-                  if (canShowReceipt) ...[
+                  if (canShowReceipt && !isFactura) ...[
                     const SizedBox(height: 12),
                     _ReceiptButton(orderId: order.orderId),
+                  ],
+                  if (canShowReceipt && isFactura) ...[
+                    const SizedBox(height: 12),
+                    _InvoiceAction(order: order),
                   ],
                 ],
               ),
@@ -871,6 +879,332 @@ class _ReceiptButton extends StatelessWidget {
                 fontWeight: FontWeight.w800,
                 fontSize: 13,
                 color: primaryOrange,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InvoiceAction extends ConsumerWidget {
+  final Order order;
+
+  const _InvoiceAction({required this.order});
+
+  String _statusLabel(BillingInvoiceStatus status) {
+    switch (status) {
+      case BillingInvoiceStatus.pending:
+        return 'Factura en proceso';
+      case BillingInvoiceStatus.issued:
+        return 'Factura emitida';
+      case BillingInvoiceStatus.failed:
+        return 'Error al emitir factura';
+      case BillingInvoiceStatus.canceled:
+        return 'Factura anulada';
+      case BillingInvoiceStatus.unknown:
+        return 'Factura pendiente';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final invoiceAsync = ref.watch(invoiceByOrderIdProvider(order.orderId));
+
+    return invoiceAsync.when(
+      loading: () => const _InfoInvoiceBanner(
+        icon: Icons.hourglass_top_rounded,
+        text: 'Buscando factura de este pedido...',
+      ),
+      error: (_, _) => const _InfoInvoiceBanner(
+        icon: Icons.receipt_long_rounded,
+        text: 'Factura pendiente de emisión',
+      ),
+      data: (invoice) {
+        if (invoice == null) {
+          return const _InfoInvoiceBanner(
+            icon: Icons.receipt_long_rounded,
+            text: 'Factura pendiente de emisión',
+          );
+        }
+
+        if (!invoice.isIssued || !invoice.hasPdf) {
+          final banner = _InfoInvoiceBanner(
+            icon: invoice.status == BillingInvoiceStatus.failed
+                ? Icons.error_outline_rounded
+                : Icons.receipt_long_rounded,
+            text: _statusLabel(invoice.status),
+            color: invoice.status == BillingInvoiceStatus.failed
+                ? const Color(0xFFB91C1C)
+                : textGray700,
+          );
+
+          if (invoice.status == BillingInvoiceStatus.failed) {
+            return Column(
+              children: [
+                banner,
+                const SizedBox(height: 8),
+                _RetryInvoiceButton(invoiceId: invoice.invoiceId),
+              ],
+            );
+          }
+
+          return banner;
+        }
+
+        return _InvoiceButton(invoiceId: invoice.invoiceId);
+      },
+    );
+  }
+}
+
+class _InfoInvoiceBanner extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  const _InfoInvoiceBanner({
+    required this.icon,
+    required this.text,
+    this.color = textGray700,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: backgroundGray50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderGray100),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InvoiceButton extends ConsumerStatefulWidget {
+  final String invoiceId;
+
+  const _InvoiceButton({required this.invoiceId});
+
+  @override
+  ConsumerState<_InvoiceButton> createState() => _InvoiceButtonState();
+}
+
+class _InvoiceButtonState extends ConsumerState<_InvoiceButton> {
+  bool _isLoading = false;
+
+  Future<void> _openInvoice() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    String? url;
+    String? errorMessage;
+    try {
+      final useCase = ref.read(getInvoicePdfUrlUseCaseProvider);
+      url = await useCase.execute(widget.invoiceId);
+    } catch (e) {
+      errorMessage = e.toString();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+
+    if (!mounted) return;
+    if (url == null || url.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            errorMessage?.trim().isNotEmpty == true
+                ? 'No se pudo abrir la factura: $errorMessage'
+                : 'No se pudo abrir la factura',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('URL de factura invalida'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final opened = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir el PDF de factura'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLoading = _isLoading;
+
+    return GestureDetector(
+      onTap: isLoading ? null : _openInvoice,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          color: backgroundGray50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: primaryOrange.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (isLoading) ...[
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: primaryOrange,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ] else ...[
+              const Icon(
+                Icons.picture_as_pdf_rounded,
+                size: 15,
+                color: primaryOrange,
+              ),
+              const SizedBox(width: 7),
+            ],
+            Text(
+              isLoading ? 'Abriendo factura...' : 'Ver factura',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+                color: primaryOrange,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RetryInvoiceButton extends ConsumerStatefulWidget {
+  final String invoiceId;
+
+  const _RetryInvoiceButton({required this.invoiceId});
+
+  @override
+  ConsumerState<_RetryInvoiceButton> createState() => _RetryInvoiceButtonState();
+}
+
+class _RetryInvoiceButtonState extends ConsumerState<_RetryInvoiceButton> {
+  bool _isRetrying = false;
+
+  Future<void> _retry() async {
+    if (_isRetrying) return;
+    setState(() => _isRetrying = true);
+
+    String? errorMessage;
+    try {
+      final useCase = ref.read(retryInvoiceEmissionUseCaseProvider);
+      await useCase.execute(widget.invoiceId);
+    } catch (e) {
+      errorMessage = e.toString();
+    } finally {
+      if (mounted) {
+        setState(() => _isRetrying = false);
+      }
+    }
+
+    if (!mounted) return;
+    if (errorMessage != null && errorMessage.trim().isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo reintentar: $errorMessage'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Reintento solicitado. Estamos generando la factura.'),
+        backgroundColor: categoryTextGreen,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _isRetrying ? null : _retry,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_isRetrying) ...[
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFFF59E0B),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ] else ...[
+              const Icon(
+                Icons.refresh_rounded,
+                size: 15,
+                color: Color(0xFFB45309),
+              ),
+              const SizedBox(width: 7),
+            ],
+            Text(
+              _isRetrying ? 'Reintentando...' : 'Reintentar generar',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+                color: Color(0xFFB45309),
               ),
             ),
           ],

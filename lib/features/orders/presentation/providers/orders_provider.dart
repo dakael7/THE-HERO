@@ -7,6 +7,7 @@ import '../../../../data/providers/repository_providers.dart';
 import '../../../../data/models/order_model.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../../domain/config/pricing_config_provider.dart';
+import '../../../../core/utils/stream_first_event_timeout.dart';
 
 final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   ref,
@@ -18,7 +19,11 @@ final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   }
 
   final useCase = ref.read(getOrdersByHeroUseCaseProvider);
-  return useCase.execute(heroId);
+  return withFirstEventTimeout(
+    useCase.execute(heroId),
+    message:
+        'No pudimos cargar tus pedidos a tiempo. Revisa tu conexion e intentalo nuevamente.',
+  );
 });
 
 final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
@@ -31,7 +36,7 @@ final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
   }
 
   final firestore = ref.watch(firebaseFirestoreProvider);
-  return firestore
+  final stream = firestore
       .collection('user_orders')
       .doc(heroId)
       .collection('orders')
@@ -47,6 +52,11 @@ final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
             .whereType<Order>()
             .toList();
       });
+  return withFirstEventTimeout(
+    stream,
+    message:
+        'No pudimos cargar los pedidos recibidos a tiempo. Revisa tu conexion e intentalo nuevamente.',
+  );
 });
 
 final riderOrdersProvider = StreamProvider.autoDispose

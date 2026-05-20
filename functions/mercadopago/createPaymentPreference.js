@@ -87,7 +87,6 @@ exports.createPaymentPreference = onCall(
   };
 
   try {
-    // Get MercadoPago Access Token from environment
     const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
     if (!accessToken) {
       throw new HttpsError(

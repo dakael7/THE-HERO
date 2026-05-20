@@ -2,18 +2,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../domain/entities/offer.dart';
 import '../../../../domain/providers/offers_usecase_providers.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../../../core/utils/stream_first_event_timeout.dart';
 
 final myOffersProvider = StreamProvider.family<List<Offer>, String>((ref, heroId) {
   final useCase = ref.read(getOffersByHeroUseCaseProvider);
-  return useCase.execute(heroId);
+  return withFirstEventTimeout(
+    useCase.execute(heroId),
+    message:
+        'No pudimos cargar tus donaciones a tiempo. Revisa tu conexion e intentalo nuevamente.',
+  );
 });
 
 final activeOffersProvider =
     StreamProvider.family<List<Offer>, OffersFilter>((ref, filter) {
   final useCase = ref.read(getActiveOffersUseCaseProvider);
-  return useCase.execute(
-    category: filter.category,
-    limit: filter.limit,
+  return withFirstEventTimeout(
+    useCase.execute(
+      category: filter.category,
+      limit: filter.limit,
+    ),
+    message:
+        'No pudimos cargar las ofertas activas a tiempo. Revisa tu conexion e intentalo nuevamente.',
   );
 });
 

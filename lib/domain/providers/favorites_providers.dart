@@ -3,6 +3,7 @@ import '../../data/datasources/favorites_remote_data_source.dart';
 import '../../data/repositories/favorites_repository_impl.dart';
 import '../../data/providers/network_providers.dart';
 import '../repositories/favorites_repository.dart';
+import '../../core/utils/stream_first_event_timeout.dart';
 
 // Data Source Provider
 final favoritesRemoteDataSourceProvider = Provider<FavoritesRemoteDataSource>((
@@ -24,7 +25,11 @@ final favoriteOfferIdsProvider = StreamProvider.family<List<String>, String>((
   userId,
 ) {
   final repository = ref.watch(favoritesRepositoryProvider);
-  return repository.getFavoriteOfferIds(userId);
+  return withFirstEventTimeout(
+    repository.getFavoriteOfferIds(userId),
+    message:
+        'No pudimos cargar tus favoritos a tiempo. Revisa tu conexion e intentalo nuevamente.',
+  );
 });
 
 // Favorites Count Provider

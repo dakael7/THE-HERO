@@ -7,6 +7,10 @@ import 'package:the_hero/data/providers/network_providers.dart';
 import 'package:the_hero/domain/entities/user.dart';
 import 'package:the_hero/data/models/user_model.dart';
 import 'package:the_hero/data/mappers/user_mapper.dart';
+import 'package:the_hero/core/utils/stream_first_event_timeout.dart';
+
+const _profileInitialServerTimeout = Duration(seconds: 8);
+const _profileInitialCacheTimeout = Duration(milliseconds: 900);
 
 User _mapUserSnapshot({
   required String userId,
@@ -17,6 +21,24 @@ User _mapUserSnapshot({
   }
   final model = UserModel.fromJson({'id': userId, ...data});
   return UserMapper.toEntity(model);
+}
+
+Future<DocumentSnapshot<Map<String, dynamic>>?> _loadInitialUserDoc(
+  DocumentReference<Map<String, dynamic>> userDoc,
+) async {
+  try {
+    return await userDoc
+        .get(const GetOptions(source: Source.serverAndCache))
+        .timeout(_profileInitialServerTimeout);
+  } on TimeoutException {
+    try {
+      return await userDoc
+          .get(const GetOptions(source: Source.cache))
+          .timeout(_profileInitialCacheTimeout);
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 final currentUserIdProvider = Provider<String?>((ref) {
@@ -40,12 +62,10 @@ final profileProvider = FutureProvider<User?>((ref) async {
 
   try {
     final firestore = ref.read(firebaseFirestoreProvider);
-    final doc = await firestore
-        .collection('users')
-        .doc(uid)
-        .get(const GetOptions(source: Source.server))
-        .timeout(const Duration(seconds: 4));
-    if (!doc.exists) return null;
+    final doc = await _loadInitialUserDoc(
+      firestore.collection('users').doc(uid),
+    );
+    if (doc == null || !doc.exists) return null;
     return _mapUserSnapshot(userId: uid, data: doc.data());
   } catch (e) {
     print('Error al cargar perfil: $e');
@@ -65,10 +85,11 @@ final profileStreamProvider = StreamProvider<User?>((ref) {
 
   Future<void> emitInitialUser() async {
     try {
-      final firstDoc = await userDoc
-          .get(const GetOptions(source: Source.server))
-          .timeout(const Duration(seconds: 2));
+      final firstDoc = await _loadInitialUserDoc(userDoc);
       if (!controller.isClosed) {
+        if (firstDoc == null) {
+          return;
+        }
         if (!firstDoc.exists) {
           controller.add(null);
         } else {
@@ -77,9 +98,6 @@ final profileStreamProvider = StreamProvider<User?>((ref) {
       }
     } catch (e) {
       print('Error al obtener perfil inicial: $e');
-      if (!controller.isClosed) {
-        controller.addError(e);
-      }
     }
   }
 
@@ -111,7 +129,11 @@ final profileStreamProvider = StreamProvider<User?>((ref) {
     controller.close();
   });
 
-  return controller.stream;
+  return withFirstEventTimeout(
+    controller.stream,
+    message:
+        'No pudimos cargar tu perfil a tiempo. Revisa tu conexion e intentalo nuevamente.',
+  );
 });
 
 final userByIdStreamProvider =

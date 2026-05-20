@@ -23,12 +23,22 @@ const { verifyPayment } = require("./mercadopago/verifyPayment");
 const {
   simulatePaymentApproved,
 } = require("./mercadopago/simulatePaymentApproved");
+const {
+  onOrderPaidCreateInvoice,
+  retryInvoiceEmission,
+} = require("./billing/onOrderPaidCreateInvoice");
+const {
+  getInvoiceDownloadLink,
+} = require("./billing/getInvoiceDownloadLink");
 
 // Export MercadoPago functions
 exports.createPaymentPreference = createPaymentPreference;
 exports.mercadopagoWebhook = mercadopagoWebhook;
 exports.verifyPayment = verifyPayment;
 exports.simulatePaymentApproved = simulatePaymentApproved;
+exports.onOrderPaidCreateInvoice = onOrderPaidCreateInvoice;
+exports.retryInvoiceEmission = retryInvoiceEmission;
+exports.getInvoiceDownloadLink = getInvoiceDownloadLink;
 
 const STORAGE_REGION = "southamerica-west1";
 

@@ -1666,14 +1666,14 @@ class _ReceiptButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.white.withOpacity(0.9)),
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.receipt_long_rounded, size: 16, color: primaryOrange),
-            SizedBox(width: 7),
+            const Icon(Icons.receipt_long_rounded, size: 16, color: primaryOrange),
+            const SizedBox(width: 7),
             Text(
-              'Ver boleta',
-              style: TextStyle(
+              order.isFactura ? 'Ver factura' : 'Ver boleta',
+              style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 13,
                 color: primaryOrange,
