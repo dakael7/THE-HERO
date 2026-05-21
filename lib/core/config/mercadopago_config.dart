@@ -6,7 +6,7 @@ class MercadoPagoConfig {
       'APP_USR-ad68e92c-e71f-4c0a-b531-3575d71b5ed6';
 
   // Environment - use 'sandbox' for testing, 'production' for live
-  static const String environment = 'production';
+  static const String environment = 'sandbox';
 
   static bool get isSandbox => environment.toLowerCase() == 'sandbox';
   static bool get isProduction => environment.toLowerCase() == 'production';

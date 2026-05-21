@@ -357,16 +357,19 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     if (cleaned.isEmpty) return '';
 
-    final withDash = cleaned.contains('-')
-        ? cleaned
-        : cleaned.length >= 2
-            ? '${cleaned.substring(0, cleaned.length - 1)}-${cleaned.substring(cleaned.length - 1)}'
-            : cleaned;
+    // Normalize to a canonical RUT shape so any misplaced '-' is corrected.
+    final compact = cleaned.replaceAll('-', '');
+    final bounded = compact.length > 9 ? compact.substring(0, 9) : compact;
+    if (bounded.isEmpty) return '';
+    if (bounded.length == 1) return bounded;
 
-    final parts = withDash.split('-');
-    if (parts.isEmpty) return withDash;
-    final body = parts.first.replaceAll(RegExp(r'\D'), '');
-    final dv = parts.length > 1 ? parts[1].toUpperCase() : '';
+    final body = bounded
+        .substring(0, bounded.length - 1)
+        .replaceAll(RegExp(r'[^0-9]'), '');
+    final dv = bounded
+        .substring(bounded.length - 1)
+        .replaceAll(RegExp(r'[^0-9K]'), '');
+    if (body.isEmpty) return dv;
 
     final reversed = body.split('').reversed.join();
     final groupedReversed = <String>[];

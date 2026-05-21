@@ -202,6 +202,32 @@ function _isValidRutShape(rut) {
   return /^\d{7,8}-[0-9K]$/.test(rut);
 }
 
+function _computeRutDv(body) {
+  let sum = 0;
+  let multiplier = 2;
+
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += Number(body[i]) * multiplier;
+    multiplier = multiplier === 7 ? 2 : multiplier + 1;
+  }
+
+  const remainder = 11 - (sum % 11);
+  if (remainder === 11) return "0";
+  if (remainder === 10) return "K";
+  return String(remainder);
+}
+
+function _hasValidRutDv(rut) {
+  if (!_isValidRutShape(rut)) return false;
+
+  const parts = rut.split("-");
+  const body = parts[0];
+  const dv = parts[1];
+  if (!body || !dv) return false;
+
+  return _computeRutDv(body) === dv;
+}
+
 function _canAccessInvoice(auth, invoiceData) {
   if (!auth) return false;
   if (auth.token?.admin === true || auth.token?.support === true) {
@@ -460,6 +486,9 @@ function _buildDteInput({order, folio, sellerLabel = ""}) {
   if (!_isValidRutShape(receiverRut)) {
     throw new Error("Invalid RUT format for factura receptor");
   }
+  if (!_hasValidRutDv(receiverRut)) {
+    throw new Error("Invalid RUT DV for factura receptor");
+  }
   const receiverAddress = _requireFacturaField(
     order,
     "invoiceAddress",
@@ -476,8 +505,14 @@ function _buildDteInput({order, folio, sellerLabel = ""}) {
   if (!_isValidRutShape(emisorRut)) {
     throw new Error("Invalid SIMPLEAPI_EMISOR_RUT format");
   }
+  if (!_hasValidRutDv(emisorRut)) {
+    throw new Error("Invalid SIMPLEAPI_EMISOR_RUT DV");
+  }
   if (!_isValidRutShape(certRut)) {
     throw new Error("Invalid SIMPLEAPI_CERT_RUT format");
+  }
+  if (!_hasValidRutDv(certRut)) {
+    throw new Error("Invalid SIMPLEAPI_CERT_RUT DV");
   }
   const emisorActivityCodes = _parseNumericCsv(process.env.SIMPLEAPI_EMISOR_ACTIVITY_CODES);
 

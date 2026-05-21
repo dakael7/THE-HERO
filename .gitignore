@@ -62,4 +62,6 @@ storage.rules
 
 Firebase.rules
 lib/.env
-docs/
+
+docs/DTE.md
+docs/INSTRUCCIONES_MODULO_FACTURACION_FLUTTER_FIREBASE.md
