@@ -30,6 +30,13 @@ const {
 const {
   getInvoiceDownloadLink,
 } = require("./billing/getInvoiceDownloadLink");
+const {
+  emitFiscalDocument,
+  runSiiCertificationSet,
+} = require("./billing/emitFiscalDocument");
+const {
+  generateFiscalBooksDraft,
+} = require("./billing/generateFiscalBooks");
 
 // Export MercadoPago functions
 exports.createPaymentPreference = createPaymentPreference;
@@ -39,6 +46,9 @@ exports.simulatePaymentApproved = simulatePaymentApproved;
 exports.onOrderPaidCreateInvoice = onOrderPaidCreateInvoice;
 exports.retryInvoiceEmission = retryInvoiceEmission;
 exports.getInvoiceDownloadLink = getInvoiceDownloadLink;
+exports.emitFiscalDocument = emitFiscalDocument;
+exports.runSiiCertificationSet = runSiiCertificationSet;
+exports.generateFiscalBooksDraft = generateFiscalBooksDraft;
 
 const STORAGE_REGION = "southamerica-west1";
 
