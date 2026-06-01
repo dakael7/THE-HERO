@@ -146,19 +146,46 @@ exports.createPaymentPreference = onCall(
       deliveryFee,
       serviceFee,
       tax,
+      tip,
       heroId,
       delivery,
-      payerEmailOverride,
-      isSandbox,
-    } = request.data;
+    } = request.data || {};
 
     orderIdForLogs = orderId ?? null;
     heroIdForLogs = heroId ?? null;
 
-    if (!orderId || !items || !amountTotal) {
+    const toInt = (value) => {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return 0;
+      return Math.round(n);
+    };
+
+    const toQtyInt = (value) => {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return 1;
+      const q = Math.round(n);
+      return q > 0 ? q : 1;
+    };
+
+    const resolveCategoryId = (value) => {
+      const category = String(value ?? "").trim();
+      return category.length > 0 ? category : "others";
+    };
+
+    const toOfferId = (value) => String(value ?? "").trim();
+
+    if (!orderId) {
       throw new HttpsError(
           "invalid-argument",
-          "Missing required order data",
+          "Missing required orderId",
+      );
+    }
+
+    const orderIdStr = String(orderId).trim();
+    if (!orderIdStr) {
+      throw new HttpsError(
+          "invalid-argument",
+          "Invalid orderId",
       );
     }
 
@@ -179,13 +206,89 @@ exports.createPaymentPreference = onCall(
     const userDoc = await admin.firestore().collection("users").doc(heroId).get();
     const userData = userDoc.data();
 
-    const reservationsRef = admin.firestore().collection("stockReservations").doc(orderId);
+    const reservationsRef = admin
+      .firestore()
+      .collection("stockReservations")
+      .doc(orderIdStr);
     const orderDocAtStart = await admin
       .firestore()
       .collection("orders")
-      .doc(String(orderId))
+      .doc(orderIdStr)
       .get();
+    const orderDataAtStart = orderDocAtStart.exists ? (orderDocAtStart.data() || {}) : {};
     const orderExistedAtStart = orderDocAtStart.exists;
+
+    if (orderExistedAtStart) {
+      const orderHeroId = String(orderDataAtStart.heroId ?? "").trim();
+      if (orderHeroId && orderHeroId !== requestHeroId) {
+        throw new HttpsError(
+          "permission-denied",
+          "Order does not belong to authenticated user",
+        );
+      }
+    }
+
+    const buildNormalizedItems = (rawItems, sourceLabel) => {
+      if (!Array.isArray(rawItems) || rawItems.length === 0) {
+        throw new HttpsError(
+          "invalid-argument",
+          `Items are required in ${sourceLabel}`,
+        );
+      }
+
+      return rawItems.map((rawItem) => {
+        const offerId = toOfferId(rawItem?.offerId ?? rawItem?.id);
+        if (!offerId) {
+          throw new HttpsError("invalid-argument", "Item missing offerId");
+        }
+
+        return {
+          offerId,
+          qty: toQtyInt(rawItem?.qty ?? rawItem?.quantity ?? 1),
+        };
+      });
+    };
+
+    const requestItems = Array.isArray(items) ? items : [];
+    const orderItemsFromDoc = Array.isArray(orderDataAtStart.items)
+      ? orderDataAtStart.items
+      : [];
+    const rawItemsForReservation =
+      orderItemsFromDoc.length > 0 ? orderItemsFromDoc : requestItems;
+
+    const normalizedItemsForReservation = buildNormalizedItems(
+      rawItemsForReservation,
+      orderItemsFromDoc.length > 0 ? "order document" : "request",
+    );
+
+    const itemSnapshotByOfferId = new Map();
+    const collectSnapshotMetadata = (rawItems) => {
+      if (!Array.isArray(rawItems)) return;
+      for (const rawItem of rawItems) {
+        const offerId = toOfferId(rawItem?.offerId ?? rawItem?.id);
+        if (!offerId) continue;
+
+        const existing = itemSnapshotByOfferId.get(offerId) || {};
+        const title = String(rawItem?.titleSnapshot ?? rawItem?.title ?? "").trim();
+        const description = String(rawItem?.description ?? "").trim();
+        const category = String(
+          rawItem?.category_id ??
+            rawItem?.categoryId ??
+            rawItem?.categorySnapshot ??
+            rawItem?.category ??
+            "",
+        ).trim();
+
+        if (!existing.title && title) existing.title = title;
+        if (!existing.description && description) existing.description = description;
+        if (!existing.category && category) existing.category = category;
+
+        itemSnapshotByOfferId.set(offerId, existing);
+      }
+    };
+
+    collectSnapshotMetadata(orderItemsFromDoc);
+    collectSnapshotMetadata(requestItems);
 
     const reserveStock = async () => {
       const existing = await reservationsRef.get();
@@ -199,27 +302,24 @@ exports.createPaymentPreference = onCall(
         const existingTx = await transaction.get(reservationsRef);
         if (existingTx.exists) return;
 
-        if (!Array.isArray(items) || items.length === 0) {
-          throw new HttpsError("invalid-argument", "Items are required to reserve stock");
-        }
-
         // IMPORTANT: Firestore requires all reads to happen before all writes.
         // So we first read & validate everything, then apply updates.
+        const qtyByOfferId = new Map();
+        for (const item of normalizedItemsForReservation) {
+          qtyByOfferId.set(
+            item.offerId,
+            (qtyByOfferId.get(item.offerId) ?? 0) + toQtyInt(item.qty),
+          );
+        }
 
-        const normalizedItems = items.map((i) => {
-          const offerId = i.offerId || i.id;
-          const qty = Number(i.qty ?? i.quantity ?? 1);
-          const qtyInt = Number.isFinite(qty) ? Math.max(1, Math.round(qty)) : 1;
-          if (!offerId) {
-            throw new HttpsError("invalid-argument", "Item missing offerId");
-          }
-          return {
-            offerId: String(offerId),
-            qty: qtyInt,
-          };
-        });
+        const aggregatedItems = Array.from(qtyByOfferId.entries()).map(
+          ([offerId, qty]) => ({
+            offerId,
+            qty,
+          }),
+        );
 
-        const offerRefs = normalizedItems.map((it) =>
+        const offerRefs = aggregatedItems.map((it) =>
           admin.firestore().collection("offers").doc(it.offerId),
         );
 
@@ -229,8 +329,8 @@ exports.createPaymentPreference = onCall(
 
         const updates = [];
 
-        for (let idx = 0; idx < normalizedItems.length; idx++) {
-          const it = normalizedItems[idx];
+        for (let idx = 0; idx < aggregatedItems.length; idx++) {
+          const it = aggregatedItems[idx];
           const offerRef = offerRefs[idx];
           const offerDoc = offerDocs[idx];
 
@@ -273,9 +373,9 @@ exports.createPaymentPreference = onCall(
         }
 
         transaction.set(reservationsRef, {
-          orderId,
-          heroId,
-          items: normalizedItems,
+          orderId: orderIdStr,
+          heroId: requestHeroId,
+          items: aggregatedItems,
           status: "reserved",
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           expiresAt: admin.firestore.Timestamp.fromDate(
@@ -292,137 +392,169 @@ exports.createPaymentPreference = onCall(
     shouldRollbackReservationOnFailure =
       reservationCreatedInThisCall && !orderExistedAtStart;
 
-    const offerCategoryById = new Map();
-    try {
-      const unresolvedOfferIds = Array.from(
-        new Set(
-          (Array.isArray(items) ? items : [])
-              .filter((item) => {
-                const localCategory =
-                  item?.category_id ??
-                  item?.categoryId ??
-                  item?.categorySnapshot ??
-                  item?.category;
-                return String(localCategory ?? "").trim().length === 0;
-              })
-              .map((item) => item?.offerId ?? item?.id ?? "")
-              .map((rawId) => String(rawId).trim())
-              .filter((offerId) => offerId.length > 0),
-        ),
+    const reservationAfterStock = await reservationsRef.get();
+    const reservationItems = Array.isArray(reservationAfterStock.data()?.items)
+      ? reservationAfterStock.data().items
+      : normalizedItemsForReservation;
+    const reservedItemsForPricing = buildNormalizedItems(
+      reservationItems,
+      "stock reservation",
+    );
+
+    const offerDocsForPricing = await Promise.all(
+      reservedItemsForPricing.map((item) =>
+        admin.firestore().collection("offers").doc(item.offerId).get(),
+      ),
+    );
+
+    const offerDocsById = new Map();
+    for (let idx = 0; idx < reservedItemsForPricing.length; idx++) {
+      offerDocsById.set(reservedItemsForPricing[idx].offerId, offerDocsForPricing[idx]);
+    }
+
+    const pricedItems = [];
+    let serverSubtotal = 0;
+    for (const reservedItem of reservedItemsForPricing) {
+      const offerDoc = offerDocsById.get(reservedItem.offerId);
+      if (!offerDoc?.exists) {
+        throw new HttpsError("not-found", `Offer not found: ${reservedItem.offerId}`);
+      }
+
+      const offerData = offerDoc.data() || {};
+      const unitPrice = toInt(offerData.price ?? 0);
+      const qty = toQtyInt(reservedItem.qty);
+      const snapshot = itemSnapshotByOfferId.get(reservedItem.offerId) || {};
+
+      const title = String(snapshot.title ?? offerData.title ?? "Producto").trim() || "Producto";
+      const description = String(snapshot.description ?? "").trim();
+      const categoryId = resolveCategoryId(
+        snapshot.category ??
+          offerData.category ??
+          offerData.categoryId ??
+          offerData.category_id,
       );
 
-      if (unresolvedOfferIds.length > 0) {
-        const offerDocs = await Promise.all(
-          unresolvedOfferIds.map((offerId) =>
-            admin.firestore().collection("offers").doc(offerId).get(),
-          ),
-        );
+      pricedItems.push({
+        offerId: reservedItem.offerId,
+        title,
+        description,
+        categoryId,
+        qty,
+        unitPrice,
+      });
 
-        for (const offerDoc of offerDocs) {
-          if (!offerDoc.exists) continue;
-          const data = offerDoc.data() || {};
-          const rawCategory =
-            data.category ?? data.categoryId ?? data.category_id ?? "";
-          const category = String(rawCategory).trim();
-          if (!category) continue;
-          offerCategoryById.set(offerDoc.id, category);
-        }
-      }
-    } catch (categoryError) {
+      serverSubtotal += unitPrice * qty;
+    }
+
+    const requestedSubtotal = toInt(subtotal);
+    const requestedDeliveryFee = toInt(deliveryFee);
+    const requestedServiceFee = toInt(serviceFee);
+    const requestedTax = toInt(tax);
+    const requestedTip = toInt(tip);
+    const requestedAmountTotal = toInt(amountTotal);
+
+    const serverDeliveryFee = toInt(
+      orderDataAtStart.deliveryFee ?? requestedDeliveryFee,
+    );
+    const serverServiceFee = toInt(
+      orderDataAtStart.serviceFee ?? requestedServiceFee,
+    );
+    const serverTax = toInt(orderDataAtStart.tax ?? requestedTax);
+    const serverTip = toInt(orderDataAtStart.tip ?? requestedTip);
+    const serverAmountTotal = toInt(
+      serverSubtotal + serverDeliveryFee + serverServiceFee + serverTax + serverTip,
+    );
+
+    if (requestedAmountTotal > 0 && requestedAmountTotal !== serverAmountTotal) {
       console.warn(
-        `Unable to enrich items with offer category_id for order ${orderId}:`,
-        categoryError?.message ?? categoryError,
+        `Client amount mismatch for order ${orderIdStr}: client=${requestedAmountTotal}, server=${serverAmountTotal}`,
       );
     }
 
-    const toInt = (value) => {
-      const n = Number(value);
-      if (!Number.isFinite(n)) return 0;
-      return Math.round(n);
-    };
-
-    const toQtyInt = (value) => {
-      const n = Number(value);
-      if (!Number.isFinite(n)) return 1;
-      const q = Math.round(n);
-      return q > 0 ? q : 1;
-    };
-
-    const resolveCategoryId = (value) => {
-      const category = String(value ?? "").trim();
-      return category.length > 0 ? category : "others";
-    };
+    if (
+      requestedSubtotal > 0 &&
+      Math.abs(requestedSubtotal - serverSubtotal) > 0
+    ) {
+      console.warn(
+        `Client subtotal mismatch for order ${orderIdStr}: client=${requestedSubtotal}, server=${serverSubtotal}`,
+      );
+    }
 
     // Prepare items for MercadoPago
     // NOTE: This project supports a donation model where product items may have unit_price = 0.
     // MercadoPago requires at least one payable item (> 0), so we skip zero-priced items and
-    // rely on delivery/service/tax items to represent the payable amount.
+    // rely on delivery/service/tax/tip items to represent the payable amount.
     const skippedZeroPricedItems = [];
     const mpItems = [];
 
-    for (const item of items) {
-      const resolvedId = item.offerId || item.id;
-      const resolvedTitle = item.titleSnapshot || item.title || "Producto";
-      const resolvedUnitPrice = toInt(item.unitPriceSnapshot ?? item.price ?? 0);
-      const categorySource =
-        item.category_id ??
-        item.categoryId ??
-        item.categorySnapshot ??
-        item.category ??
-        offerCategoryById.get(String(resolvedId ?? "").trim());
-      const resolvedCategoryId = resolveCategoryId(categorySource);
-
-      if (resolvedUnitPrice <= 0) {
-        skippedZeroPricedItems.push({id: resolvedId, title: resolvedTitle});
+    for (const pricedItem of pricedItems) {
+      if (pricedItem.unitPrice <= 0) {
+        skippedZeroPricedItems.push({
+          id: pricedItem.offerId,
+          title: pricedItem.title,
+        });
         continue;
       }
 
       mpItems.push({
-        id: resolvedId,
-        title: resolvedTitle,
-        description: item.description || "",
-        category_id: resolvedCategoryId,
-        quantity: toQtyInt(item.qty ?? item.quantity ?? 1),
-        unit_price: resolvedUnitPrice,
+        id: pricedItem.offerId,
+        title: pricedItem.title,
+        description: pricedItem.description,
+        category_id: pricedItem.categoryId,
+        quantity: pricedItem.qty,
+        unit_price: pricedItem.unitPrice,
         currency_id: "CLP",
       });
     }
 
     // Add delivery fee as a separate item
-    if (deliveryFee && deliveryFee > 0) {
+    if (serverDeliveryFee > 0) {
       mpItems.push({
         id: "delivery_fee",
         category_id: "others",
-        title: "Costo de envío",
+        title: "Costo de envio",
         description: "Tarifa de entrega",
         quantity: 1,
-        unit_price: toInt(deliveryFee),
+        unit_price: serverDeliveryFee,
         currency_id: "CLP",
       });
     }
 
     // Add service fee as a separate item
-    if (serviceFee && serviceFee > 0) {
+    if (serverServiceFee > 0) {
       mpItems.push({
         id: "service_fee",
         category_id: "others",
         title: "Tarifa de servicio",
-        description: "Comisión de plataforma",
+        description: "Comision de plataforma",
         quantity: 1,
-        unit_price: toInt(serviceFee),
+        unit_price: serverServiceFee,
         currency_id: "CLP",
       });
     }
 
     // Add tax as a separate item
-    if (tax && tax > 0) {
+    if (serverTax > 0) {
       mpItems.push({
         id: "tax",
         category_id: "others",
         title: "Impuestos",
         description: "IVA y otros impuestos",
         quantity: 1,
-        unit_price: toInt(tax),
+        unit_price: serverTax,
+        currency_id: "CLP",
+      });
+    }
+
+    // Add tip as a separate item
+    if (serverTip > 0) {
+      mpItems.push({
+        id: "tip",
+        category_id: "others",
+        title: "Propina",
+        description: "Propina del comprador",
+        quantity: 1,
+        unit_price: serverTip,
         currency_id: "CLP",
       });
     }
@@ -435,7 +567,7 @@ exports.createPaymentPreference = onCall(
     }
 
     console.log(
-      `Creating preference for order ${orderId} (sandbox=${requestedSandbox}) with ${mpItems.length} payable items (skippedZeroPricedItems=${skippedZeroPricedItems.length}), total: ${amountTotal}, tokenPrefix=${tokenPrefix}`,
+      `Creating preference for order ${orderIdStr} (sandbox=${requestedSandbox}) with ${mpItems.length} payable items (skippedZeroPricedItems=${skippedZeroPricedItems.length}), total: ${serverAmountTotal}, tokenPrefix=${tokenPrefix}, isTestToken=${isTestToken}`,
     );
 
     const resolvedPayerEmail = (() => {
@@ -464,13 +596,13 @@ exports.createPaymentPreference = onCall(
         ...(payerIdentification ? {identification: payerIdentification} : {}),
       },
       back_urls: {
-        success: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/success?orderId=${orderId}`,
-        failure: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/failure?orderId=${orderId}`,
-        pending: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/pending?orderId=${orderId}`,
+        success: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/success?orderId=${orderIdStr}`,
+        failure: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/failure?orderId=${orderIdStr}`,
+        pending: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/pending?orderId=${orderIdStr}`,
       },
       auto_return: "approved",
       notification_url: resolvedNotificationUrl,
-      external_reference: orderId,
+      external_reference: orderIdStr,
       statement_descriptor: "THE HERO",
       expires: true,
       expiration_date_from: new Date().toISOString(),
@@ -480,17 +612,17 @@ exports.createPaymentPreference = onCall(
     // Create preference
     const result = await preference.create({body: preferenceData});
 
-    console.log(`Payment preference created: ${result.id} for order ${orderId}`);
+    console.log(`Payment preference created: ${result.id} for order ${orderIdStr}`);
 
     try {
       const paymentsCollection = admin.firestore().collection("payments");
       const paymentRef = paymentsCollection.doc(String(result.id));
       await paymentRef.set(
         {
-          orderId: String(orderId),
+          orderId: orderIdStr,
           preferenceId: String(result.id),
           status: "pending",
-          amount: Number(amountTotal) || 0,
+          amount: serverAmountTotal,
           currency: "CLP",
           heroId: String(heroId),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -509,7 +641,7 @@ exports.createPaymentPreference = onCall(
       preferenceId: result.id,
       initPoint: result.init_point,
       sandboxInitPoint: result.init_point,
-      orderId: orderId,
+      orderId: orderIdStr,
       createdAt: new Date().toISOString(),
       expiresAt: preferenceData.expiration_date_to,
     };

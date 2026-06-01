@@ -159,11 +159,13 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       }
 
       final coverTrimmed = offer.coverImageUrl.trim();
+      final coverKey = _normalizeImageKey(coverTrimmed);
       final extras = <String>[];
       for (final raw in offer.imageUrls) {
         final url = raw.trim();
         if (url.isEmpty) continue;
-        if (coverTrimmed.isNotEmpty && url == coverTrimmed) continue;
+        final key = _normalizeImageKey(url);
+        if (coverKey.isNotEmpty && key == coverKey) continue;
         extras.add(url);
       }
       _existingAdditionalImageUrls
@@ -353,22 +355,96 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
     );
   }
 
+  Future<ImageSource?> _pickImageSource() async {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_rounded),
+                  title: const Text('Tomar foto'),
+                  onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_rounded),
+                  title: const Text('Elegir de galería'),
+                  onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _pickAdditionalImages() async {
     try {
-      final remaining = 4 - _additionalImageBytes.length;
-      if (remaining <= 0) return;
-      final picked = await _imagePicker.pickImage(
-        source: ImageSource.camera,
+      final currentCount =
+          _additionalImageBytes.length + _existingAdditionalImageUrls.length;
+      final remaining = 4 - currentCount;
+      if (remaining <= 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ya alcanzaste el máximo de 4 imágenes adicionales'),
+          ),
+        );
+        return;
+      }
+
+      final source = await _pickImageSource();
+      if (source == null) return;
+
+      if (source == ImageSource.camera) {
+        final picked = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 85,
+          maxWidth: 1600,
+        );
+        if (picked == null) return;
+        final bytes = await picked.readAsBytes();
+        if (!mounted) return;
+        setState(() {
+          _additionalImageBytes.add(bytes);
+          _additionalImageFileNames.add(picked.name);
+        });
+        return;
+      }
+
+      final picked = await _imagePicker.pickMultiImage(
         imageQuality: 85,
         maxWidth: 1600,
       );
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
+      if (picked.isEmpty) return;
+
+      final selected = picked.take(remaining).toList();
+      final newBytes = <Uint8List>[];
+      final newNames = <String>[];
+      for (final image in selected) {
+        newBytes.add(await image.readAsBytes());
+        newNames.add(image.name);
+      }
       if (!mounted) return;
       setState(() {
-        _additionalImageBytes.add(bytes);
-        _additionalImageFileNames.add(picked.name);
+        _additionalImageBytes.addAll(newBytes);
+        _additionalImageFileNames.addAll(newNames);
       });
+      if (picked.length > selected.length) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Solo se agregaron ${selected.length} imágenes (máximo 4 adicionales).',
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -379,8 +455,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
   Future<void> _pickCoverImage() async {
     try {
+      final source = await _pickImageSource();
+      if (source == null) return;
       final picked = await _imagePicker.pickImage(
-        source: ImageSource.camera,
+        source: source,
         imageQuality: 85,
         maxWidth: 1600,
       );
@@ -429,7 +507,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       setState(() {
         _addressController.text = result.address;
         _unitIdentifierController.text = result.unitIdentifier?.trim() ?? '';
-        _postalCodeController.text = result.postalCode?.trim() ?? '';
+        final mappedPostal = result.postalCode?.trim();
+        if (mappedPostal != null && mappedPostal.isNotEmpty) {
+          _postalCodeController.text = mappedPostal;
+        }
         _latController.text = result.latitude.toStringAsFixed(6);
         _lngController.text = result.longitude.toStringAsFixed(6);
         _countryCode = result.countryCode;
@@ -502,7 +583,6 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       if (lat == null || lng == null) return null;
       if (normalizedCountry == null || normalizedCountry.isEmpty) return null;
       if (unitId.isEmpty) return null;
-      if (postalCode.isEmpty) return null;
 
       return Address(
         fullAddress: addressText,
@@ -707,18 +787,18 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       );
 
       if (isEdit) {
-        final updated = await notifier.updateOffer(offer);
+        var latest = await notifier.updateOffer(offer);
         if (hasNewCover) {
           final repo = ref.read(offersRepositoryProvider);
           final url = await repo.uploadOfferImage(
             heroId: heroUid,
-            offerId: updated.offerId,
+            offerId: latest.offerId,
             bytes: _coverImageBytes!,
             fileName: _coverImageFileName ?? 'cover.jpg',
           );
           final normalized = url.trim();
           final nextByKey = <String, String>{};
-          for (final raw in updated.imageUrls) {
+          for (final raw in latest.imageUrls) {
             final u = raw.trim();
             if (u.isEmpty) continue;
             final k = _normalizeImageKey(u);
@@ -734,9 +814,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
           if (oldCover.isNotEmpty) {
             nextImageUrls.removeWhere((e) => e.trim() == oldCover);
           }
-          await notifier.updateOffer(
-            updated.copyWith(
-                coverImageUrl: normalized, imageUrls: nextImageUrls),
+          latest = await notifier.updateOffer(
+            latest.copyWith(coverImageUrl: normalized, imageUrls: nextImageUrls),
           );
         }
         if (hasNewAdditional) {
@@ -745,14 +824,14 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
           for (var i = 0; i < _additionalImageBytes.length; i++) {
             final url = await repo.uploadOfferImage(
               heroId: heroUid,
-              offerId: updated.offerId,
+              offerId: latest.offerId,
               bytes: _additionalImageBytes[i],
               fileName: _additionalImageFileNames.elementAt(i),
             );
             urls.add(url);
           }
           final nextByKey = <String, String>{};
-          for (final raw in updated.imageUrls) {
+          for (final raw in latest.imageUrls) {
             final u = raw.trim();
             if (u.isEmpty) continue;
             final k = _normalizeImageKey(u);
@@ -766,17 +845,18 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             if (k.isEmpty) continue;
             nextByKey.putIfAbsent(k, () => u);
           }
-          await notifier.updateOffer(
-              updated.copyWith(imageUrls: nextByKey.values.toList()));
+          latest = await notifier.updateOffer(
+            latest.copyWith(imageUrls: nextByKey.values.toList()),
+          );
         }
       } else {
-        final created = await notifier.createOffer(offer);
-        var currentImageUrls = <String>[...preservedImageUrls];
+        var latest = await notifier.createOffer(offer);
+        var currentImageUrls = <String>[...latest.imageUrls];
         if (hasNewCover) {
           final repo = ref.read(offersRepositoryProvider);
           final url = await repo.uploadOfferImage(
             heroId: heroUid,
-            offerId: created.offerId,
+            offerId: latest.offerId,
             bytes: _coverImageBytes!,
             fileName: _coverImageFileName ?? 'cover.jpg',
           );
@@ -794,7 +874,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             if (k.isNotEmpty) nextByKey[k] = normalized;
           }
           currentImageUrls = nextByKey.values.toList();
-          await notifier.updateOffer(created.copyWith(
+          latest = await notifier.updateOffer(latest.copyWith(
             coverImageUrl: normalized,
             imageUrls: currentImageUrls,
           ));
@@ -805,7 +885,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
           for (var i = 0; i < _additionalImageBytes.length; i++) {
             final url = await repo.uploadOfferImage(
               heroId: heroUid,
-              offerId: created.offerId,
+              offerId: latest.offerId,
               bytes: _additionalImageBytes[i],
               fileName: _additionalImageFileNames.elementAt(i),
             );
@@ -827,8 +907,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             nextByKey.putIfAbsent(k, () => u);
           }
           currentImageUrls = nextByKey.values.toList();
-          await notifier.updateOffer(
-              created.copyWith(imageUrls: currentImageUrls));
+          latest = await notifier.updateOffer(
+            latest.copyWith(imageUrls: currentImageUrls),
+          );
         }
       }
 
@@ -908,7 +989,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                         label: 'Título',
                         child: TextFormField(
                           controller: _titleController,
+                          keyboardType: TextInputType.text,
                           textInputAction: TextInputAction.next,
+                          textCapitalization: TextCapitalization.sentences,
+                          enableSuggestions: true,
+                          autocorrect: true,
                           style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
@@ -934,7 +1019,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                         child: TextFormField(
                           controller: _descriptionController,
                           maxLines: 4,
+                          keyboardType: TextInputType.multiline,
                           textInputAction: TextInputAction.newline,
+                          textCapitalization: TextCapitalization.sentences,
+                          enableSuggestions: true,
+                          autocorrect: true,
                           style: const TextStyle(
                               fontSize: 14,
                               color: Color(0xFF333333),
@@ -1505,7 +1594,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                             color: Colors.white, size: 18),
                         SizedBox(width: 8),
                         Text(
-                          'Tomar portada',
+                          'Elegir portada',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
@@ -1553,7 +1642,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
           ),
           const SizedBox(height: 6),
           const Text(
-            'Mantén presionado una imagen adicional para eliminarla',
+            'Toca + para agregar desde cámara o galería. Mantén presionado para eliminar.',
             style: TextStyle(
                 fontSize: 11,
                 color: textGray600,
@@ -1963,16 +2052,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             style: const TextStyle(fontSize: 13, color: textGray600),
             decoration: _inputDeco(
               hint: 'Código Postal',
-              helper: 'Requerido',
+              helper: 'Opcional (se autocompleta desde mapa cuando disponible)',
             ),
-            validator: (value) {
-              final needs = _addressController.text.trim().isNotEmpty;
-              if (!needs) return null;
-              if (value == null || value.trim().isEmpty) {
-                return 'Requerido';
-              }
-              return null;
-            },
           ),
         ],
       ),
@@ -2008,9 +2089,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                 if (_publishNow) _acceptedTerms = false;
               });
             },
-            title: const Text(
-              'Publicar al guardar',
-              style: TextStyle(
+            title: Text(
+              _publishNow ? 'Publicar al guardar' : 'Guardar como borrador',
+              style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: textGray900,
                 fontSize: 15,

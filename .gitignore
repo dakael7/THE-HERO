@@ -63,3 +63,4 @@ storage.rules
 Firebase.rules
 lib/.env
 docs
+functions/billing/Nota.md

@@ -46,8 +46,18 @@ function parseStringFlag(args, name, fallback = '') {
   const includeGuias = parseBoolFlag(args, 'guias', true);
   const onlyCertificationSource = parseBoolFlag(args, 'cert_only', true);
   const signXml = parseBoolFlag(args, 'sign', true);
+  const tipoEnvio = parseStringFlag(args, 'tipo_envio', 'TOTAL').toUpperCase();
+  const comprasTipoLibro = parseStringFlag(args, 'compras_tipo_libro', 'MENSUAL').toUpperCase();
+  const comprasFolioNotif = parseStringFlag(args, 'compras_folio', '') || '';
+  const comprasCodReemplazo = parseStringFlag(args, 'compras_cod_reemplazo', '') || '';
   const ventasRunIds = parseStringFlag(args, 'ventas_run_ids', '');
   const guiasRunIds = parseStringFlag(args, 'guias_run_ids', '');
+  const ventasSetNumbers = parseStringFlag(args, 'ventas_set_numbers', '');
+  const guiasSetNumbers = parseStringFlag(args, 'guias_set_numbers', '');
+  const guiasTipoEnvio = parseStringFlag(args, 'guias_tipo_envio', '');
+  const guiasFolioNotif = parseStringFlag(args, 'guias_folio_notif', '');
+  const ventasTipoLibro = parseStringFlag(args, 'ventas_tipo_libro', '');
+  const ventasFolioNotif = parseStringFlag(args, 'ventas_folio_notif', '');
 
   const fallbackAdcPath = 'C:/Users/Luisg/AppData/Roaming/firebase/luisgpetit11_gmail_com_application_default_credentials.json';
   const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || fallbackAdcPath;
@@ -85,8 +95,18 @@ function parseStringFlag(args, name, fallback = '') {
       includeGuias,
       onlyCertificationSource,
       signXml,
+      tipoEnvio,
+      comprasTipoLibro: comprasTipoLibro,
+      comprasFolioNotificacion: comprasFolioNotif,
+      comprasCodReemplazo: comprasCodReemplazo,
       ventasRunIds,
       guiasRunIds,
+      ventasSetNumbers,
+      guiasSetNumbers,
+      ...(guiasTipoEnvio ? {guiasTipoEnvio} : {}),
+      ...(guiasFolioNotif ? {folioNotificacionGuias: guiasFolioNotif} : {}),
+      ...(ventasTipoLibro ? {ventasTipoLibro} : {}),
+      ...(ventasFolioNotif ? {folioNotificacionVentas: ventasFolioNotif} : {}),
     },
   };
 
@@ -103,6 +123,10 @@ function parseStringFlag(args, name, fallback = '') {
     signXml,
     ventasRunIds,
     guiasRunIds,
+    ventasSetNumbers,
+    guiasSetNumbers,
+    guiasTipoEnvio: guiasTipoEnvio || null,
+    guiasFolioNotif: guiasFolioNotif || null,
     outputPath,
     files: result?.files || null,
   }, null, 2));

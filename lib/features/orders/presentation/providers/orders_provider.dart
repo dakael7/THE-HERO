@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import '../../../../domain/entities/order.dart';
+import '../../../../domain/entities/order_status.dart';
 import '../../../../domain/entities/vehicle.dart';
 import '../../../../domain/providers/orders_usecase_providers.dart';
 import '../../../../data/providers/network_providers.dart';
@@ -37,17 +39,39 @@ final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
 
   final firestore = ref.watch(firebaseFirestoreProvider);
   final stream = firestore
-      .collection('user_orders')
-      .doc(heroId)
       .collection('orders')
-      .orderBy('timestamps.createdAt', descending: true)
+      .where('sellerHeroIds', arrayContains: heroId)
       .snapshots()
       .map((snapshot) {
         return snapshot.docs
-            .map((doc) {
+            .map<Order?>((doc) {
               final data = doc.data();
-              if (data['role'] != 'seller') return null;
-              return OrderModel.fromJson(data).toEntity();
+              final orderId = (data['orderId'] as String?)?.trim();
+              final normalizedData = (orderId != null && orderId.isNotEmpty)
+                  ? data
+                  : <String, dynamic>{...data, 'orderId': doc.id};
+              final order = OrderModel.fromJson(normalizedData).toEntity();
+
+              // Seller should only see orders that have been paid
+              // and are actionable/traceable.
+              final isVisibleForSeller = switch (order.status) {
+                OrderStatus.queued ||
+                OrderStatus.assigned ||
+                OrderStatus.pickedUp ||
+                OrderStatus.inTransit ||
+                OrderStatus.delivered ||
+                OrderStatus.canceled ||
+                OrderStatus.paid => true,
+                OrderStatus.created ||
+                OrderStatus.pendingPayment ||
+                OrderStatus.failed => false,
+              };
+
+              if (!isVisibleForSeller) {
+                return null;
+              }
+
+              return order;
             })
             .whereType<Order>()
             .toList();
@@ -107,11 +131,11 @@ final availableOrdersProvider = StreamProvider.autoDispose
     .family<List<Order>, VehicleType>((ref, riderVehicleType) {
       final currentUid = ref.watch(currentUserIdProvider);
       if (currentUid == null) {
-        print('⚠️ [AvailableOrders] No authenticated user');
+        debugPrint('⚠️ [AvailableOrders] No authenticated user');
         return Stream.value(const []);
       }
 
-      print(
+      debugPrint(
         '🔍 [AvailableOrders] Fetching orders for vehicle type: ${riderVehicleType.name}',
       );
       final useCase = ref.read(getAvailableOrdersUseCaseProvider);
@@ -119,11 +143,11 @@ final availableOrdersProvider = StreamProvider.autoDispose
         orders,
       ) {
         final filtered = orders.where((o) => !o.inPersonPickup).toList();
-        print(
+        debugPrint(
           '📦 [AvailableOrders] Received ${filtered.length} orders from stream',
         );
         for (var order in filtered) {
-          print(
+          debugPrint(
             '   - Order ${order.orderId}: status=${order.status.name}, vehicle=${order.requirements.requiredVehicle.name}',
           );
         }
@@ -286,15 +310,21 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
         throw Exception('No rider assigned to this order');
       }
 
-      // Update order with confirmation and rating
-      await firestore.collection('orders').doc(orderId).update({
+      final updatePayload = <String, dynamic>{
         'confirmedByHero': true,
         'heroRating': rating,
         'heroRatingComment': comment,
-        if (sellerRating != null) 'sellerRating': sellerRating,
-        if (sellerComment != null) 'sellerRatingComment': sellerComment,
         'updatedAt': DateTime.now(),
-      });
+      };
+      if (sellerRating != null) {
+        updatePayload['sellerRating'] = sellerRating;
+      }
+      if (sellerComment != null) {
+        updatePayload['sellerRatingComment'] = sellerComment;
+      }
+
+      // Update order with confirmation and rating
+      await firestore.collection('orders').doc(orderId).update(updatePayload);
 
       state = const AsyncValue.data(null);
     } catch (e, stack) {

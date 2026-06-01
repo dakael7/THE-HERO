@@ -59,9 +59,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   bool _isResolvingAddress = false;
   Future<void>? _initialLocateFuture;
   String? _selectedCountryCode;
+  String? _selectedPostalCode;
   Timer? _resolveDebounce;
   int _resolveSeq = 0;
-  final Map<String, ({String address, String? countryCode})> _addressCache = {};
+  final Map<String, ({String address, String? countryCode, String? postalCode})>
+      _addressCache = {};
 
   @override
   void initState() {
@@ -89,6 +91,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   void _onTap(LatLng pos) {
     setState(() {
       _selected = pos;
+      _selectedCountryCode = null;
+      _selectedPostalCode = null;
       _addressController.text = _formatLatLng(pos);
     });
 
@@ -126,6 +130,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       if (!mounted) return;
       setState(() {
         _selectedCountryCode = cached.countryCode;
+        _selectedPostalCode = cached.postalCode;
         if (_addressController.text.trim().startsWith('Lat:')) {
           _addressController.text = cached.address;
         }
@@ -176,19 +181,30 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       if (first is! Map<String, dynamic>) return;
 
       String? countryCode;
-      final addressComponents = first['address_components'];
-      if (addressComponents is List) {
-        for (final c in addressComponents) {
+      String? postalCode;
+      for (final entry in results) {
+        if (entry is! Map<String, dynamic>) continue;
+        final components = entry['address_components'];
+        if (components is! List) continue;
+        for (final c in components) {
           if (c is! Map<String, dynamic>) continue;
           final types = c['types'];
-          final shortName = c['short_name'];
-          if (types is List && types.contains('country')) {
+          if (types is! List) continue;
+          if (countryCode == null && types.contains('country')) {
+            final shortName = c['short_name'];
             if (shortName is String && shortName.trim().isNotEmpty) {
               countryCode = shortName.trim().toUpperCase();
-              break;
             }
           }
+          if (postalCode == null && types.contains('postal_code')) {
+            final longName = c['long_name'];
+            if (longName is String && longName.trim().isNotEmpty) {
+              postalCode = longName.trim();
+            }
+          }
+          if (countryCode != null && postalCode != null) break;
         }
+        if (countryCode != null && postalCode != null) break;
       }
 
       final formatted = first['formatted_address'];
@@ -203,7 +219,12 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       if (!mounted) return;
       setState(() {
         _selectedCountryCode = countryCode;
-        _addressCache[cacheKey] = (address: resolved, countryCode: countryCode);
+        _selectedPostalCode = postalCode;
+        _addressCache[cacheKey] = (
+          address: resolved,
+          countryCode: countryCode,
+          postalCode: postalCode,
+        );
         if (compoundPlusCode != null) {
           _addressController.text = resolved;
           return;
@@ -237,7 +258,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         address: _sanitizeAddress(resolvedAddress),
         countryCode: _selectedCountryCode,
         unitIdentifier: null,
-        postalCode: null,
+        postalCode: _selectedPostalCode,
       ),
     );
   }
@@ -339,6 +360,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   final latLng = LatLng(double.parse(p.lat!), double.parse(p.lng!));
                   setState(() {
                     _selected = latLng;
+                    _selectedCountryCode = null;
+                    _selectedPostalCode = null;
                     final desc = p.description;
                     _addressController.text = desc != null
                         ? _sanitizeAddress(desc)

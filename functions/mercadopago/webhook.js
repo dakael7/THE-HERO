@@ -1,6 +1,100 @@
 const {onRequest} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const {MercadoPagoConfig, Payment} = require("mercadopago");
+const crypto = require("crypto");
+
+const _getHeader = (req, key) => {
+  const value =
+    req.get?.(key) ??
+    req.headers?.[key] ??
+    req.headers?.[key.toLowerCase()] ??
+    req.headers?.[key.toUpperCase()];
+  return value != null ? String(value) : "";
+};
+
+const _parseSignatureHeader = (signatureHeader) => {
+  const pairs = String(signatureHeader || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const values = {};
+  for (const pair of pairs) {
+    const idx = pair.indexOf("=");
+    if (idx <= 0) continue;
+    const key = pair.slice(0, idx).trim().toLowerCase();
+    const value = pair.slice(idx + 1).trim();
+    if (!key || !value) continue;
+    values[key] = value;
+  }
+
+  return {
+    ts: values.ts || "",
+    v1: values.v1 || "",
+  };
+};
+
+const _safeEqual = (left, right) => {
+  const a = String(left || "");
+  const b = String(right || "");
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+
+  const aBuf = Buffer.from(a, "utf8");
+  const bBuf = Buffer.from(b, "utf8");
+  if (aBuf.length !== bBuf.length) return false;
+
+  return crypto.timingSafeEqual(aBuf, bBuf);
+};
+
+const _resolveDataIdForSignature = (query, body) => {
+  const raw =
+    query?.["data.id"] ??
+    query?.data_id ??
+    body?.data?.id ??
+    query?.id ??
+    body?.id ??
+    "";
+
+  return String(raw || "").trim().toLowerCase();
+};
+
+const _validateWebhookSignature = ({req, query, body, webhookSecret}) => {
+  const signatureHeader = _getHeader(req, "x-signature");
+  const requestId = _getHeader(req, "x-request-id");
+  const {ts, v1} = _parseSignatureHeader(signatureHeader);
+  const dataId = _resolveDataIdForSignature(query, body);
+
+  if (!signatureHeader || !requestId || !ts || !v1 || !dataId) {
+    return {
+      valid: false,
+      reason: "missing_fields",
+      details: {
+        hasSignatureHeader: Boolean(signatureHeader),
+        hasRequestId: Boolean(requestId),
+        hasTs: Boolean(ts),
+        hasV1: Boolean(v1),
+        hasDataId: Boolean(dataId),
+      },
+    };
+  }
+
+  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  const expectedV1 = crypto
+    .createHmac("sha256", webhookSecret)
+    .update(manifest)
+    .digest("hex");
+
+  return {
+    valid: _safeEqual(expectedV1.toLowerCase(), v1.toLowerCase()),
+    reason: "computed",
+    details: {
+      requestId,
+      dataId,
+      ts,
+    },
+  };
+};
 
 /**
  * Webhook handler for MercadoPago payment notifications
@@ -8,7 +102,7 @@ const {MercadoPagoConfig, Payment} = require("mercadopago");
  */
 exports.mercadopagoWebhook = onRequest(
   {
-    secrets: ["MERCADOPAGO_ACCESS_TOKEN"],
+    secrets: ["MERCADOPAGO_ACCESS_TOKEN", "MERCADOPAGO_WEBHOOK_SECRET"],
   },
   async (req, res) => {
     try {
@@ -19,6 +113,30 @@ exports.mercadopagoWebhook = onRequest(
         .toString()
         .toLowerCase();
       const queryId = (query.id || body.id || body?.data?.id || "").toString();
+
+      const webhookSecret = String(process.env.MERCADOPAGO_WEBHOOK_SECRET || "").trim();
+      if (!webhookSecret) {
+        console.error("MercadoPago webhook secret not configured");
+        res.status(500).send("Server configuration error");
+        return;
+      }
+
+      const signatureValidation = _validateWebhookSignature({
+        req,
+        query,
+        body,
+        webhookSecret,
+      });
+      if (!signatureValidation.valid) {
+        console.warn("MercadoPago webhook rejected: invalid signature", {
+          topic,
+          queryId,
+          reason: signatureValidation.reason,
+          details: signatureValidation.details,
+        });
+        res.status(401).send("Invalid webhook signature");
+        return;
+      }
 
       console.log("MercadoPago webhook received:", {
         topic,
@@ -553,14 +671,35 @@ exports.mercadopagoWebhook = onRequest(
       if (!preferenceIdForDoc && orderId) {
         const candidateSnap = await paymentsCollection
           .where("orderId", "==", String(orderId))
-          .limit(1)
           .get();
 
-        if (!candidateSnap.empty) {
-          const candidateRef = candidateSnap.docs[0].ref;
-          if (candidateRef.id !== primaryPaymentDocId && candidateRef.id !== mpPaymentIdForDoc) {
-            await candidateRef.set(paymentUpdate, {merge: true});
-          }
+        const tsToMillis = (value) => {
+          if (!value) return 0;
+          if (typeof value.toMillis === "function") return value.toMillis();
+          const asDate = new Date(value);
+          const ms = asDate.getTime();
+          return Number.isFinite(ms) ? ms : 0;
+        };
+
+        const candidates = candidateSnap.docs
+          .filter((doc) => doc.id !== primaryPaymentDocId && doc.id !== mpPaymentIdForDoc)
+          .map((doc) => {
+            const data = doc.data() || {};
+            return {
+              ref: doc.ref,
+              updatedAtMs: tsToMillis(data.updatedAt),
+              createdAtMs: tsToMillis(data.createdAt),
+              id: doc.id,
+            };
+          })
+          .sort((a, b) => {
+            if (b.updatedAtMs !== a.updatedAtMs) return b.updatedAtMs - a.updatedAtMs;
+            if (b.createdAtMs !== a.createdAtMs) return b.createdAtMs - a.createdAtMs;
+            return a.id.localeCompare(b.id);
+          });
+
+        if (candidates.length > 0) {
+          await candidates[0].ref.set(paymentUpdate, {merge: true});
         }
       }
 

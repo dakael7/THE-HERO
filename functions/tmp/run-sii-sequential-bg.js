@@ -17,9 +17,9 @@ function loadEnv(filePath) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function resolveModesFromArgs(args) {
-  const ordered = ['basic', 'guia', 'factura_compra'];
+  const ordered = ['basic', 'guia', 'factura_compra', 'simulacion'];
   const allowed = new Set(['all', ...ordered]);
-  const raw = (args[0] || 'factura_compra').toString().trim().toLowerCase();
+  const raw = (args[0] || 'simulacion').toString().trim().toLowerCase();
 
   // Shorthand por fraccion de 3 modos.
   // 1/3 => basic | 2/3 => basic,guia | 3/3 => basic,guia,factura_compra
@@ -38,17 +38,30 @@ function resolveModesFromArgs(args) {
     }
     for (const mode of parts) {
       if (!allowed.has(mode) || mode === 'all') {
-        throw new Error(`Modo invalido "${mode}" en lista. Usa: basic, guia, factura_compra`);
+        throw new Error(`Modo invalido "${mode}" en lista. Usa: basic, guia, factura_compra, simulacion`);
       }
     }
     return [...new Set(parts)];
   }
 
   if (!allowed.has(raw)) {
-    throw new Error(`Modo invalido "${raw}". Usa: all, 1/3, 2/3, 3/3, basic, guia, factura_compra o lista separada por comas`);
+    throw new Error(
+      `Modo invalido "${raw}". Usa: all, basic, guia, factura_compra, simulacion o lista separada por comas`,
+    );
   }
   if (raw === 'all') return ordered;
   return [raw];
+}
+
+function resolveEmitDateFromArgs(args) {
+  const explicit = (args[1] || '').toString().trim();
+  if (explicit) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(explicit)) {
+      throw new Error(`Fecha invalida "${explicit}". Usa formato AAAA-MM-DD`);
+    }
+    return explicit;
+  }
+  return new Date().toISOString().slice(0, 10);
 }
 
 function buildRequest(mode, emitDate) {
@@ -121,8 +134,9 @@ async function runModeUntilOk(runSiiCertificationSet, mode, emitDate) {
   }
   const { runSiiCertificationSet } = require('../billing/emitFiscalDocument');
 
-  const emitDate = '2026-05-23';
-  const modes = resolveModesFromArgs(process.argv.slice(2));
+  const cliArgs = process.argv.slice(2);
+  const emitDate = resolveEmitDateFromArgs(cliArgs);
+  const modes = resolveModesFromArgs(cliArgs);
   const all = [];
 
   for (const mode of modes) {
