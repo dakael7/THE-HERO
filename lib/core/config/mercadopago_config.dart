@@ -1,7 +1,7 @@
 /// MercadoPago configuration for the application
 class MercadoPagoConfig {
   // Public Key - safe to include in frontend code
-  // This is your TEST public key from MercadoPago
+  // Production public key from MercadoPago
   static const String publicKey =
       'APP_USR-ad68e92c-e71f-4c0a-b531-3575d71b5ed6';
 

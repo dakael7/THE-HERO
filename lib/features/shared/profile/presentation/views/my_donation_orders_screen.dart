@@ -9,7 +9,6 @@ import '../../../../../domain/entities/order_status.dart';
 import '../providers/profile_provider.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../hero/orders/presentation/views/seller_order_status_screen.dart';
-import '../../../../hero/orders/presentation/views/order_receipt_screen.dart';
 
 // 
 //  ROOT SCREEN
@@ -179,11 +178,6 @@ class _DonationOrderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canShowReceipt = order.status != OrderStatus.created &&
-        order.status != OrderStatus.pendingPayment &&
-        order.status != OrderStatus.canceled &&
-        order.status != OrderStatus.failed;
-
     final statusColor = _statusColor(order.status);
     final statusBg = _statusBg(order.status);
     final shortId = order.orderId.length > 8
@@ -194,8 +188,6 @@ class _DonationOrderTile extends StatelessWidget {
     final buyerName = 'Hero';
 
     final myItemsCount = order.items.fold<int>(0, (sum, item) => sum + item.qty);
-    final myAmount =
-        order.items.fold<double>(0, (sum, item) => sum + item.totalPrice);
 
     final hasRider = order.rider.isAssigned &&
         (order.rider.riderNameSnapshot?.isNotEmpty ?? false);
@@ -241,7 +233,6 @@ class _DonationOrderTile extends StatelessWidget {
               statusBg: statusBg,
               statusColor: statusColor,
               shortId: shortId,
-              myAmount: myAmount,
               hasBuyerPhoto: false,
               buyerPhotoUrl: null,
             ),
@@ -319,11 +310,6 @@ class _DonationOrderTile extends StatelessWidget {
                     ],
                   ),
 
-                  // Receipt button
-                  if (canShowReceipt) ...[
-                    const SizedBox(height: 12),
-                    _ReceiptButton(orderId: order.orderId),
-                  ],
                 ],
               ),
             ),
@@ -380,7 +366,6 @@ class _TileHeader extends StatelessWidget {
   final Color statusBg;
   final Color statusColor;
   final String shortId;
-  final double myAmount;
   final bool hasBuyerPhoto;
   final String? buyerPhotoUrl;
 
@@ -389,7 +374,6 @@ class _TileHeader extends StatelessWidget {
     required this.statusBg,
     required this.statusColor,
     required this.shortId,
-    required this.myAmount,
     required this.hasBuyerPhoto,
     required this.buyerPhotoUrl,
   });
@@ -538,59 +522,11 @@ class _TileHeader extends StatelessWidget {
                   ),
                 ),
 
-                // â”€â”€ Price + HERO decorative text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                _PriceWithHero(
-                  amount: myAmount,
-                  statusColor: statusColor,
-                ),
               ],
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  PRICE WIDGET with "HERO" decorative text behind it
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-class _PriceWithHero extends StatelessWidget {
-  final double amount;
-  final Color statusColor;
-
-  const _PriceWithHero({
-    required this.amount,
-    required this.statusColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '\$${amount.toStringAsFixed(0)}',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-            color: statusColor,
-            letterSpacing: -0.5,
-            height: 1,
-          ),
-        ),
-        Text(
-          'CLP',
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-            color: statusColor.withValues(alpha: 0.6),
-            letterSpacing: 0.5,
-          ),
-        ),
-      ],
     );
   }
 }
@@ -653,55 +589,12 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  RECEIPT BUTTON
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// 
+// 
 
-class _ReceiptButton extends StatelessWidget {
-  final String orderId;
-  const _ReceiptButton({required this.orderId});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => OrderReceiptScreen(orderId: orderId),
-          ),
-        );
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        decoration: BoxDecoration(
-          color: backgroundGray50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: primaryOrange.withValues(alpha: 0.3)),
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.receipt_long_rounded, size: 15, color: primaryOrange),
-            SizedBox(width: 7),
-            Text(
-              'Ver boleta',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 13,
-                color: primaryOrange,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// 
 //  EMPTY STATE
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// 
 
 class _EmptyState extends StatelessWidget {
   final IconData icon;

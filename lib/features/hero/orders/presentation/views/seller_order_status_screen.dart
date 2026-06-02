@@ -11,15 +11,12 @@ import '../../../../../domain/entities/chat_type.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_item.dart';
 import '../../../../../domain/entities/order_status.dart';
-import '../../../../../domain/entities/payment.dart';
 import '../../../../../domain/entities/user.dart';
 import '../../../../../data/providers/network_providers.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../shared/chat/presentation/providers/chat_providers.dart';
 import '../../../../shared/chat/presentation/views/chat_conversation_screen.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
-import '../../../payment/providers/payment_providers.dart';
-import 'order_receipt_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ROOT SCREEN
@@ -300,18 +297,7 @@ class _SellerOrderContent extends ConsumerWidget {
         status != OrderStatus.failed &&
         (status == OrderStatus.pickedUp || status == OrderStatus.inTransit);
 
-    final paymentAsync =
-        ref.watch(watchPaymentByOrderIdProvider(order.orderId));
-    final payment = paymentAsync.asData?.value;
-    final isPaymentApproved = payment?.status == PaymentStatus.approved;
-    final isCashPayment =
-        payment?.paymentMethod == PaymentMethod.cash ||
-            (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
-            (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
-    final canShowReceipt = status != OrderStatus.pendingPayment &&
-        (isPaymentApproved || isCashPayment);
-
-    final myTotal = myItems.fold(0.0, (s, i) => s + i.totalPrice);
+    final myItemsCount = myItems.fold<int>(0, (s, i) => s + i.qty);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -322,7 +308,6 @@ class _SellerOrderContent extends ConsumerWidget {
           cfg: cfg,
           status: status,
           hasRider: hasRider,
-          canShowReceipt: canShowReceipt,
           canMarkReadyForPickup: canMarkReadyForPickup,
           canMarkDelivered: canMarkDelivered,
           sellerId: sellerId,
@@ -331,7 +316,7 @@ class _SellerOrderContent extends ConsumerWidget {
         const SizedBox(height: 16),
 
         // ── SUMMARY CARD ─────────────────────────────────────────
-        _SummaryCard(order: order, myTotal: myTotal),
+        _SummaryCard(order: order, myItemsCount: myItemsCount),
 
         const SizedBox(height: 16),
 
@@ -351,7 +336,6 @@ class _StatusCard extends ConsumerWidget {
   final _StatusConfig cfg;
   final OrderStatus status;
   final bool hasRider;
-  final bool canShowReceipt;
   final bool canMarkReadyForPickup;
   final bool canMarkDelivered;
   final String sellerId;
@@ -361,7 +345,6 @@ class _StatusCard extends ConsumerWidget {
     required this.cfg,
     required this.status,
     required this.hasRider,
-    required this.canShowReceipt,
     required this.canMarkReadyForPickup,
     required this.canMarkDelivered,
     required this.sellerId,
@@ -482,11 +465,6 @@ class _StatusCard extends ConsumerWidget {
                 // Chat chips
                 _SellerChatActions(order: order, sellerId: sellerId),
 
-                // Receipt button
-                if (canShowReceipt) ...[
-                  const SizedBox(height: 10),
-                  _ReceiptButton(order: order),
-                ],
               ],
             ),
           ),
@@ -551,9 +529,9 @@ class _StatusCard extends ConsumerWidget {
 
 class _SummaryCard extends StatelessWidget {
   final Order order;
-  final double myTotal;
+  final int myItemsCount;
 
-  const _SummaryCard({required this.order, required this.myTotal});
+  const _SummaryCard({required this.order, required this.myItemsCount});
 
   @override
   Widget build(BuildContext context) {
@@ -594,12 +572,12 @@ class _SummaryCard extends StatelessWidget {
           const _Hairline(),
           const SizedBox(height: 14),
 
-          // Total row
           _DetailRow(
-            icon: Icons.payments_rounded,
-            iconColor: categoryTextGreen,
+            icon: Icons.shopping_bag_outlined,
+            iconColor: primaryOrange,
             label: 'Mis artículos',
-            value: '\$${myTotal.toStringAsFixed(0)} CLP',
+            value:
+                '$myItemsCount producto${myItemsCount == 1 ? '' : 's'}',
           ),
 
           // Delivery address row
@@ -750,8 +728,6 @@ class _MyItemsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     if (myItems.isEmpty) return const SizedBox.shrink();
 
-    final total = myItems.fold(0.0, (s, i) => s + i.totalPrice);
-
     return _SectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -781,23 +757,6 @@ class _MyItemsCard extends StatelessWidget {
                     fontSize: 15,
                     color: textGray900,
                     letterSpacing: -0.2,
-                  ),
-                ),
-              ),
-              // Total pill
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: primaryOrange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '\$${total.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: primaryOrange,
-                    fontSize: 12,
                   ),
                 ),
               ),
@@ -879,23 +838,6 @@ class _ItemRow extends StatelessWidget {
                 ),
               ],
             ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: backgroundGray50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: borderGray100),
-          ),
-          child: Text(
-            '\$${item.totalPrice.toStringAsFixed(0)}',
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: textGray900,
-              fontSize: 12,
-            ),
           ),
         ),
       ],
@@ -1645,45 +1587,6 @@ class _Hairline extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       Container(height: 1, color: const Color(0xFFF2F2F2));
-}
-
-class _ReceiptButton extends StatelessWidget {
-  final Order order;
-  const _ReceiptButton({required this.order});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-            builder: (_) => OrderReceiptScreen(orderId: order.orderId)),
-      ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.7),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.9)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.receipt_long_rounded, size: 16, color: primaryOrange),
-            const SizedBox(width: 7),
-            Text(
-              order.isFactura ? 'Ver factura' : 'Ver boleta',
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 13,
-                color: primaryOrange,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _RiderChip extends StatelessWidget {

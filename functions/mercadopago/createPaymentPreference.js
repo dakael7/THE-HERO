@@ -1,6 +1,10 @@
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const {MercadoPagoConfig, Preference} = require("mercadopago");
+const {
+  getMercadoPagoAccessToken,
+  redactMercadoPagoSecrets,
+} = require("./credentials");
 
 /**
  * Creates a MercadoPago payment preference for an order
@@ -87,7 +91,7 @@ exports.createPaymentPreference = onCall(
   };
 
   try {
-    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    const accessToken = getMercadoPagoAccessToken();
     if (!accessToken) {
       throw new HttpsError(
           "failed-precondition",
@@ -121,10 +125,17 @@ exports.createPaymentPreference = onCall(
         );
       } else {
         const text = await meRes.text();
-        console.warn("MercadoPago users/me failed:", meRes.status, text);
+        console.warn(
+          "MercadoPago users/me failed:",
+          meRes.status,
+          redactMercadoPagoSecrets(text),
+        );
       }
     } catch (meErr) {
-      console.warn("MercadoPago users/me error:", meErr?.message ?? meErr);
+      console.warn(
+        "MercadoPago users/me error:",
+        redactMercadoPagoSecrets(meErr?.message ?? meErr),
+      );
     }
 
     const tokenPrefix = typeof accessToken === "string" ? accessToken.split("-")[0] : "unknown";
@@ -664,13 +675,13 @@ exports.createPaymentPreference = onCall(
     }
 
     const errorDetails = {
-      message: error?.message,
+      message: redactMercadoPagoSecrets(error?.message),
       name: error?.name,
-      stack: error?.stack,
+      stack: redactMercadoPagoSecrets(error?.stack),
       status: error?.status,
-      cause: error?.cause,
-      error: error?.error,
-      apiResponse: error?.api_response,
+      cause: redactMercadoPagoSecrets(error?.cause),
+      error: redactMercadoPagoSecrets(error?.error),
+      apiResponse: redactMercadoPagoSecrets(error?.api_response),
     };
 
     console.error(
@@ -693,9 +704,11 @@ exports.createPaymentPreference = onCall(
         .add({
           orderId: orderIdForLogs,
           heroId: heroIdForLogs,
-          message: error?.message ? String(error.message) : null,
+          message: error?.message ?
+            redactMercadoPagoSecrets(String(error.message)) :
+            null,
           status: error?.status ?? null,
-          cause: error?.cause ?? null,
+          cause: redactMercadoPagoSecrets(error?.cause ?? null),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
     } catch (persistError) {
@@ -711,7 +724,7 @@ exports.createPaymentPreference = onCall(
 
     throw new HttpsError(
         "internal",
-        `Failed to create payment preference: ${error.message}`,
+        "Failed to create payment preference",
     );
   }
   },

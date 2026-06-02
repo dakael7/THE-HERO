@@ -2,6 +2,10 @@ const {onRequest} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const {MercadoPagoConfig, Payment} = require("mercadopago");
 const crypto = require("crypto");
+const {
+  getMercadoPagoAccessToken,
+  redactMercadoPagoSecrets,
+} = require("./credentials");
 
 const _getHeader = (req, key) => {
   const value =
@@ -146,7 +150,7 @@ exports.mercadopagoWebhook = onRequest(
       });
 
       // Get MercadoPago Access Token
-      const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+      const accessToken = getMercadoPagoAccessToken();
       if (!accessToken) {
         console.error("MercadoPago credentials not configured");
         res.status(500).send("Server configuration error");
@@ -190,10 +194,17 @@ exports.mercadopagoWebhook = onRequest(
           );
         } else {
           const text = await meRes.text();
-          console.warn("MercadoPago users/me failed (webhook):", meRes.status, text);
+          console.warn(
+            "MercadoPago users/me failed (webhook):",
+            meRes.status,
+            redactMercadoPagoSecrets(text),
+          );
         }
       } catch (meErr) {
-        console.warn("MercadoPago users/me error (webhook):", meErr?.message ?? meErr);
+        console.warn(
+          "MercadoPago users/me error (webhook):",
+          redactMercadoPagoSecrets(meErr?.message ?? meErr),
+        );
       }
 
       // Initialize MercadoPago client
@@ -455,10 +466,12 @@ exports.mercadopagoWebhook = onRequest(
                 } catch (notifPaymentErr) {
                   await persistWebhookError({
                     error: {
-                      message: notifPaymentErr?.message ?? notifPaymentErr,
+                      message: redactMercadoPagoSecrets(
+                        notifPaymentErr?.message ?? notifPaymentErr,
+                      ),
                       status: notifPaymentErr?.status ?? null,
                       error: notifPaymentErr?.error ?? null,
-                      cause: notifPaymentErr?.cause ?? null,
+                      cause: redactMercadoPagoSecrets(notifPaymentErr?.cause ?? null),
                     },
                     diagnostics: {
                       attemptedPaymentId: paymentId?.toString?.() ?? String(paymentId),
@@ -502,10 +515,10 @@ exports.mercadopagoWebhook = onRequest(
           if (!resolved) {
             await persistWebhookError({
               error: {
-                message: lastErr?.message ?? lastErr,
+                message: redactMercadoPagoSecrets(lastErr?.message ?? lastErr),
                 status: lastErr?.status ?? null,
                 error: lastErr?.error ?? null,
-                cause: lastErr?.cause ?? null,
+                cause: redactMercadoPagoSecrets(lastErr?.cause ?? null),
               },
               diagnostics: {
                 attemptedPaymentId: paymentId?.toString?.() ?? String(paymentId),
@@ -520,10 +533,10 @@ exports.mercadopagoWebhook = onRequest(
         } else {
           await persistWebhookError({
             error: {
-              message: err?.message ?? err,
+              message: redactMercadoPagoSecrets(err?.message ?? err),
               status: err?.status ?? null,
               error: err?.error ?? null,
-              cause: err?.cause ?? null,
+              cause: redactMercadoPagoSecrets(err?.cause ?? null),
             },
           });
           throw err;

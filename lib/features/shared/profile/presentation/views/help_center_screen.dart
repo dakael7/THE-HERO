@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
+import '../providers/account_deletion_provider.dart';
 
 class HelpCenterScreen extends ConsumerWidget {
   final bool isRiderProfile;
@@ -25,6 +26,9 @@ class HelpCenterScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final accountDeletionState = ref.watch(accountDeletionNotifierProvider);
+    final isDeletingAccount = accountDeletionState is AsyncLoading<void>;
+
     return Scaffold(
       backgroundColor: backgroundGray50,
       appBar: HeroHeaderAppBar(
@@ -143,6 +147,110 @@ class HelpCenterScreen extends ConsumerWidget {
                 );
               },
             ),
+          const SizedBox(height: 16),
+          _HelpTile(
+            icon: Icons.delete_forever_outlined,
+            title: 'Eliminar cuenta',
+            subtitle: isDeletingAccount
+                ? 'Eliminando tu cuenta...'
+                : 'Borra tu cuenta y archivos asociados.',
+            iconColor: categoryTextRed,
+            onTap: isDeletingAccount
+                ? () {}
+                : () => _requestAccountDeletion(context, ref),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _requestAccountDeletion(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('¿Eliminar cuenta?'),
+          content: const Text(
+            'Esta accion eliminara tu cuenta, tu perfil, tus publicaciones, '
+            'tus fotos y documentos asociados. Esta accion no se puede deshacer.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: categoryTextRed,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Eliminar cuenta'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _DeletingAccountDialog(),
+    );
+
+    try {
+      await ref
+          .read(accountDeletionNotifierProvider.notifier)
+          .deleteCurrentAccount();
+
+      if (!context.mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Cuenta eliminada correctamente')),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      navigator.pop();
+      messenger.showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+}
+
+class _DeletingAccountDialog extends StatelessWidget {
+  const _DeletingAccountDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AlertDialog(
+      content: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(color: primaryOrange),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              'Eliminando cuenta y archivos asociados...',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: textGray900,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -171,12 +279,14 @@ class _HelpTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final Color iconColor;
 
   const _HelpTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.iconColor = primaryOrange,
   });
 
   @override
@@ -200,10 +310,10 @@ class _HelpTile extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: primaryOrange.withValues(alpha: 0.12),
+                    color: iconColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(icon, color: primaryOrange),
+                  child: Icon(icon, color: iconColor),
                 ),
                 const SizedBox(width: 12),
                 Expanded(

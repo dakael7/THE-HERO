@@ -1,5 +1,9 @@
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {MercadoPagoConfig, Payment} = require("mercadopago");
+const {
+  getMercadoPagoAccessToken,
+  redactMercadoPagoSecrets,
+} = require("./credentials");
 
 /**
  * Verifies payment status with MercadoPago API
@@ -30,7 +34,7 @@ exports.verifyPayment = onCall(
     }
 
     // Get MercadoPago Access Token
-    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    const accessToken = getMercadoPagoAccessToken();
     if (!accessToken) {
       throw new HttpsError(
           "failed-precondition",
@@ -73,10 +77,10 @@ exports.verifyPayment = onCall(
       },
     };
   } catch (error) {
-    console.error("Error verifying payment:", error);
+    console.error("Error verifying payment:", redactMercadoPagoSecrets(error));
     throw new HttpsError(
         "internal",
-        `Failed to verify payment: ${error.message}`,
+        "Failed to verify payment",
     );
   }
   },

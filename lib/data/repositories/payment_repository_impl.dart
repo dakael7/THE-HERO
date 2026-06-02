@@ -35,24 +35,6 @@ class PaymentRepositoryImpl implements PaymentRepository {
       // Parse response
       final preferenceModel = PaymentPreferenceModel.fromJson(response);
 
-      // Create initial payment document in Firestore
-      final payment = Payment(
-        id: preferenceModel.preferenceId,
-        orderId: order.orderId,
-        preferenceId: preferenceModel.preferenceId,
-        status: PaymentStatus.pending,
-        amount: order.amountTotal,
-        currency: 'CLP',
-        createdAt: DateTime.now(),
-      );
-
-      try {
-        await savePayment(payment);
-      } catch (_) {
-        // payments docs are created/updated by backend + MercadoPago webhook.
-        // Client writes may be blocked by Firestore rules, so ignore.
-      }
-
       return preferenceModel.toEntity();
     } on PaymentFunctionsException {
       rethrow;
@@ -66,9 +48,6 @@ class PaymentRepositoryImpl implements PaymentRepository {
     try {
       final response = await _remoteDataSource.verifyPayment(paymentId);
       final paymentModel = PaymentModel.fromJson(response);
-
-      // Update payment in Firestore
-      await savePayment(paymentModel.toEntity());
 
       return paymentModel.toEntity();
     } catch (e) {
