@@ -1147,6 +1147,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           currentUser: user,
         );
 
+        if (paymentState.expiresAt != null) {
+          await firestore.FirebaseFirestore.instance
+              .collection('orders')
+              .doc(createdOrder.orderId)
+              .set(
+            {
+              'paymentPreferenceId': paymentState.preferenceId,
+              'paymentExpiresAt': firestore.Timestamp.fromDate(
+                paymentState.expiresAt!,
+              ),
+              'paymentStatus': 'pending',
+              'updatedAt': firestore.FieldValue.serverTimestamp(),
+            },
+            firestore.SetOptions(merge: true),
+          );
+        }
+
         _removeProcessedCartItems(cartItems);
 
         if (mounted) {
@@ -1160,7 +1177,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               message:
                   'Tu solicitud de servicio ha sido creada y está pendiente de pago. '
                   'Serás redirigido a MercadoPago para completar el pago del servicio. '
-                  'Si no completas el pago ahora, podrás hacerlo más tarde desde "Mis pedidos".',
+                  'Tienes 5 minutos para pagar; si no se completa, la orden se cancelará y el stock volverá a estar disponible.',
               actionLabel: 'Pagar servicio',
               onAction: () => Navigator.of(context).pop(),
             ),

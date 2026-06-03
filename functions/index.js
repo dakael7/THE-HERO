@@ -24,6 +24,9 @@ const {
   simulatePaymentApproved,
 } = require("./mercadopago/simulatePaymentApproved");
 const {
+  cancelExpiredPendingPayments,
+} = require("./mercadopago/cancelExpiredPendingPayments");
+const {
   onOrderPaidCreateInvoice,
   retryInvoiceEmission,
 } = require("./billing/onOrderPaidCreateInvoice");
@@ -43,6 +46,7 @@ exports.createPaymentPreference = createPaymentPreference;
 exports.mercadopagoWebhook = mercadopagoWebhook;
 exports.verifyPayment = verifyPayment;
 exports.simulatePaymentApproved = simulatePaymentApproved;
+exports.cancelExpiredPendingPayments = cancelExpiredPendingPayments;
 exports.onOrderPaidCreateInvoice = onOrderPaidCreateInvoice;
 exports.retryInvoiceEmission = retryInvoiceEmission;
 exports.getInvoiceDownloadLink = getInvoiceDownloadLink;

@@ -7,6 +7,14 @@ const {
   redactMercadoPagoSecrets,
 } = require("./credentials");
 
+const _timestampToMillis = (value) => {
+  if (!value) return 0;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const _getHeader = (req, key) => {
   const value =
     req.get?.(key) ??
@@ -619,6 +627,7 @@ exports.mercadopagoWebhook = onRequest(
       };
 
       const consumeReservationIfNeeded = async () => {
+        let consumed = false;
         await admin.firestore().runTransaction(async (transaction) => {
           const reservationDoc = await transaction.get(reservationRef);
           if (!reservationDoc.exists) return;
@@ -626,12 +635,17 @@ exports.mercadopagoWebhook = onRequest(
           const reservation = reservationDoc.data() || {};
           if (reservation.status !== "reserved") return;
 
+          const expiresAtMs = _timestampToMillis(reservation.expiresAt);
+          if (expiresAtMs > 0 && expiresAtMs <= Date.now()) return;
+
           transaction.update(reservationRef, {
             status: "consumed",
             consumedAt: admin.firestore.FieldValue.serverTimestamp(),
             paymentId: paymentData.id?.toString?.() ?? null,
           });
+          consumed = true;
         });
+        return consumed;
       };
 
       // Update payment document in Firestore
@@ -745,8 +759,13 @@ exports.mercadopagoWebhook = onRequest(
 
       switch (paymentData.status) {
       case "approved":
-        newOrderStatus = "queued"; // Order is ready for riders
-        await consumeReservationIfNeeded();
+        if (await consumeReservationIfNeeded()) {
+          newOrderStatus = "queued"; // Order is ready for riders
+        } else {
+          console.warn(
+            `Approved payment ignored for expired or released reservation order=${orderId}`,
+          );
+        }
         break;
       case "rejected":
       case "cancelled":

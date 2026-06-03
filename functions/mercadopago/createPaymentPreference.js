@@ -6,6 +6,8 @@ const {
   redactMercadoPagoSecrets,
 } = require("./credentials");
 
+const PENDING_PAYMENT_TIMEOUT_MS = 5 * 60 * 1000;
+
 /**
  * Creates a MercadoPago payment preference for an order
  * @param {Object} request - Request object with data and auth
@@ -27,6 +29,19 @@ exports.createPaymentPreference = onCall(
   let orderIdForLogs = null;
   let heroIdForLogs = null;
   let shouldRollbackReservationOnFailure = false;
+
+  const timestampToMillis = (value) => {
+    if (!value) return 0;
+    if (typeof value.toMillis === "function") return value.toMillis();
+    if (value instanceof Date) return value.getTime();
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const isExpiredReservation = (reservation) => {
+    const expiresAtMs = timestampToMillis(reservation?.expiresAt);
+    return expiresAtMs > 0 && expiresAtMs <= Date.now();
+  };
 
   const releaseReservedStock = async (orderId, reason) => {
     if (!orderId) return;
@@ -86,6 +101,36 @@ exports.createPaymentPreference = onCall(
         status: "released",
         releasedAt: admin.firestore.FieldValue.serverTimestamp(),
         releasedReason: reason || "preference_creation_failed",
+      });
+    });
+  };
+
+  const cancelPendingPaymentOrderIfExists = async (orderId, reason) => {
+    if (!orderId) return;
+
+    const orderRef = admin.firestore().collection("orders").doc(String(orderId));
+    await admin.firestore().runTransaction(async (transaction) => {
+      const orderDoc = await transaction.get(orderRef);
+      if (!orderDoc.exists) return;
+
+      const order = orderDoc.data() || {};
+      const status = String(order.status || "").toLowerCase();
+      const canCancel =
+        status === "pending_payment" ||
+        status === "pendingpayment" ||
+        status === "created";
+
+      if (!canCancel) return;
+
+      transaction.update(orderRef, {
+        status: "canceled",
+        cancelReason: reason || "Pago no completado dentro de 5 minutos",
+        canceledBy: "system:payment_expiration",
+        paymentStatus: "expired",
+        "timestamps.canceledAt": admin.firestore.FieldValue.serverTimestamp(),
+        stockRestored: true,
+        stockRestoredAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     });
   };
@@ -301,11 +346,78 @@ exports.createPaymentPreference = onCall(
     collectSnapshotMetadata(orderItemsFromDoc);
     collectSnapshotMetadata(requestItems);
 
+    let activeReservationExpiresAt = null;
+
     const reserveStock = async () => {
       const existing = await reservationsRef.get();
       if (existing.exists) {
-        // Idempotent: if reservation already exists for this orderId, keep going.
-        return false;
+        const existingReservation = existing.data() || {};
+        if (
+          existingReservation.status === "reserved" &&
+          !isExpiredReservation(existingReservation)
+        ) {
+          const existingExpiresAtMs = timestampToMillis(existingReservation.expiresAt);
+          activeReservationExpiresAt = existingExpiresAtMs > 0 ?
+            new Date(existingExpiresAtMs) :
+            new Date(Date.now() + PENDING_PAYMENT_TIMEOUT_MS);
+          // Idempotent: if a live reservation already exists for this orderId, keep going.
+          return false;
+        }
+
+        if (
+          existingReservation.status === "reserved" &&
+          isExpiredReservation(existingReservation)
+        ) {
+          await releaseReservedStock(
+            orderIdStr,
+            "pending_payment_expired_before_preference_retry",
+          );
+          await cancelPendingPaymentOrderIfExists(
+            orderIdStr,
+            "Pago no completado dentro de 5 minutos",
+          );
+        }
+
+        throw new HttpsError(
+          "deadline-exceeded",
+          "La reserva de este pedido expiró. Crea una nueva solicitud para volver a pagar.",
+        );
+      }
+
+      const reservationExpiresAt = new Date(
+        Date.now() + PENDING_PAYMENT_TIMEOUT_MS,
+      );
+      activeReservationExpiresAt = reservationExpiresAt;
+
+      if (orderExistedAtStart) {
+        const currentStatus = String(orderDataAtStart.status || "").toLowerCase();
+        const canCreatePreference =
+          currentStatus === "pending_payment" ||
+          currentStatus === "pendingpayment" ||
+          currentStatus === "created";
+        if (!canCreatePreference) {
+          throw new HttpsError(
+            "failed-precondition",
+            "This order is not pending payment",
+          );
+        }
+      }
+
+      const existingOrderExpiresAtMs = timestampToMillis(
+        orderDataAtStart.paymentExpiresAt,
+      );
+      if (orderExistedAtStart && existingOrderExpiresAtMs > 0) {
+        const nowMs = Date.now();
+        if (existingOrderExpiresAtMs <= nowMs) {
+          await cancelPendingPaymentOrderIfExists(
+            orderIdStr,
+            "Pago no completado dentro de 5 minutos",
+          );
+          throw new HttpsError(
+            "deadline-exceeded",
+            "La reserva de este pedido expiró. Crea una nueva solicitud para volver a pagar.",
+          );
+        }
       }
 
       let createdInThisCall = false;
@@ -389,9 +501,7 @@ exports.createPaymentPreference = onCall(
           items: aggregatedItems,
           status: "reserved",
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          expiresAt: admin.firestore.Timestamp.fromDate(
-            new Date(Date.now() + 30 * 60 * 1000),
-          ),
+          expiresAt: admin.firestore.Timestamp.fromDate(reservationExpiresAt),
         });
         createdInThisCall = true;
       });
@@ -404,6 +514,12 @@ exports.createPaymentPreference = onCall(
       reservationCreatedInThisCall && !orderExistedAtStart;
 
     const reservationAfterStock = await reservationsRef.get();
+    if (!activeReservationExpiresAt) {
+      const expiresAtMs = timestampToMillis(reservationAfterStock.data()?.expiresAt);
+      activeReservationExpiresAt = expiresAtMs > 0 ?
+        new Date(expiresAtMs) :
+        new Date(Date.now() + PENDING_PAYMENT_TIMEOUT_MS);
+    }
     const reservationItems = Array.isArray(reservationAfterStock.data()?.items)
       ? reservationAfterStock.data().items
       : normalizedItemsForReservation;
@@ -594,6 +710,8 @@ exports.createPaymentPreference = onCall(
       (process.env.MERCADOPAGO_NOTIFICATION_URL || "").toString().trim() ||
       `https://us-central1-${process.env.GCLOUD_PROJECT}.cloudfunctions.net/mercadopagoWebhook`;
 
+    const preferenceExpiresAt = activeReservationExpiresAt;
+
     // Create preference body
     const preferenceData = {
       items: mpItems,
@@ -617,13 +735,29 @@ exports.createPaymentPreference = onCall(
       statement_descriptor: "THE HERO",
       expires: true,
       expiration_date_from: new Date().toISOString(),
-      expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+      expiration_date_to: preferenceExpiresAt.toISOString(),
     };
 
     // Create preference
     const result = await preference.create({body: preferenceData});
 
     console.log(`Payment preference created: ${result.id} for order ${orderIdStr}`);
+
+    if (orderExistedAtStart) {
+      await admin
+        .firestore()
+        .collection("orders")
+        .doc(orderIdStr)
+        .set(
+          {
+            paymentPreferenceId: String(result.id),
+            paymentExpiresAt: admin.firestore.Timestamp.fromDate(preferenceExpiresAt),
+            paymentStatus: "pending",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          {merge: true},
+        );
+    }
 
     try {
       const paymentsCollection = admin.firestore().collection("payments");
@@ -637,6 +771,7 @@ exports.createPaymentPreference = onCall(
           currency: "CLP",
           heroId: String(heroId),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          expiresAt: admin.firestore.Timestamp.fromDate(preferenceExpiresAt),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
         {merge: true},

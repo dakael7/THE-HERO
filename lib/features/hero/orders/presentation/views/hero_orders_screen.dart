@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:intl/intl.dart';
@@ -17,6 +19,12 @@ import '../../../payment/providers/payment_providers.dart';
 import '../../../presentation/views/hero_home_screen.dart';
 import 'order_receipt_screen.dart';
 import 'hero_order_status_screen.dart';
+
+const _pendingPaymentTimeout = Duration(minutes: 5);
+
+final _pendingPaymentTickerProvider = StreamProvider.autoDispose<int>((ref) {
+  return Stream<int>.periodic(const Duration(seconds: 1), (tick) => tick);
+});
 
 class HeroOrdersScreen extends ConsumerWidget {
   const HeroOrdersScreen({super.key});
@@ -114,6 +122,16 @@ class _OrderTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final paymentState = ref.watch(paymentNotifierProvider);
     final isPayingOrder = paymentState.isProcessing;
+    final isPendingPayment = order.status == OrderStatus.pendingPayment;
+    if (isPendingPayment) {
+      ref.watch(_pendingPaymentTickerProvider);
+    }
+    final paymentExpiresAt =
+        order.paymentExpiresAt ??
+        order.timestamps.createdAt.add(_pendingPaymentTimeout);
+    final paymentRemaining = paymentExpiresAt.difference(DateTime.now());
+    final isPaymentExpired =
+        isPendingPayment && paymentRemaining.inSeconds <= 0;
     final isFactura = order.isFactura;
     final canShowReceipt = order.status != OrderStatus.created &&
         order.status != OrderStatus.pendingPayment &&
@@ -211,14 +229,24 @@ class _OrderTile extends ConsumerWidget {
                     ],
                   ),
                   // Show payment and delete buttons for pending payment orders
-                  if (order.status == OrderStatus.pendingPayment) ...[
+                  if (isPendingPayment) ...[
+                    const SizedBox(height: 6),
+                    _InfoRow(
+                      icon: Icons.timer_rounded,
+                      iconColor: isPaymentExpired ? Colors.red : primaryOrange,
+                      text: isPaymentExpired
+                          ? 'Reserva expirada; se cancelará automáticamente'
+                          : 'Reserva expira en ${_formatPaymentRemaining(paymentRemaining)}',
+                      textColor: isPaymentExpired ? Colors.red : primaryOrange,
+                      fontWeight: FontWeight.w800,
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
                           flex: 2,
                           child: ElevatedButton.icon(
-                            onPressed: isPayingOrder ? null : () async {
+                            onPressed: isPayingOrder || isPaymentExpired ? null : () async {
                               try {
                                 // Create payment preference
                                 final paymentNotifier = ref.read(
@@ -240,6 +268,10 @@ class _OrderTile extends ConsumerWidget {
                                   if (errorCode == 'resource-exhausted') {
                                     userMessage =
                                         'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.';
+                                  } else if (errorCode == 'deadline-exceeded' ||
+                                      message.contains('expir')) {
+                                    userMessage =
+                                        'La reserva expiró. Crea una nueva solicitud para volver a pagar.';
                                   } else if (message.contains('stock insuficiente') ||
                                       message.contains('failed-precondition')) {
                                     userMessage =
@@ -295,7 +327,11 @@ class _OrderTile extends ConsumerWidget {
                             },
                             icon: const Icon(Icons.payment, size: 18),
                             label: Text(
-                              isPayingOrder ? 'Procesando...' : 'Pagar',
+                              isPaymentExpired
+                                  ? 'Expirado'
+                                  : isPayingOrder
+                                      ? 'Procesando...'
+                                      : 'Pagar',
                               style: TextStyle(fontWeight: FontWeight.w800),
                             ),
                             style: ElevatedButton.styleFrom(
@@ -544,6 +580,13 @@ class _OrderTile extends ConsumerWidget {
   static String _formatCreatedAt(DateTime createdAt) {
     final local = createdAt.toLocal();
     return DateFormat('dd/MM/yyyy HH:mm').format(local);
+  }
+
+  static String _formatPaymentRemaining(Duration duration) {
+    final totalSeconds = duration.inSeconds < 0 ? 0 : duration.inSeconds;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   static IconData _statusIcon(OrderStatus status) {

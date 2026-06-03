@@ -289,7 +289,7 @@ class _PaymentProcessingScreenState
           style: TextStyle(fontWeight: FontWeight.w800, color: textGray900),
         ),
         content: const Text(
-          'Si cancelas ahora, tu orden quedará pendiente de pago y podrás retomarla desde "Mis pedidos".',
+          'Si cancelas ahora, tu orden quedará pendiente de pago por 5 minutos. Después se cancelará y el stock volverá a estar disponible.',
           style: TextStyle(color: textGray700),
         ),
         actions: [

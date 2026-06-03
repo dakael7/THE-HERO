@@ -40,6 +40,7 @@ class Order {
   final OrderTimestamps timestamps;
   final String? cancelReason;
   final String? canceledBy;
+  final DateTime? paymentExpiresAt;
   final DateTime updatedAt;
   final int version;
   final PickupSchedule? pickupSchedule;
@@ -81,6 +82,7 @@ class Order {
     required this.timestamps,
     this.cancelReason,
     this.canceledBy,
+    this.paymentExpiresAt,
     required this.updatedAt,
     this.version = 1,
     this.pickupSchedule,
@@ -142,6 +144,7 @@ class Order {
     OrderTimestamps? timestamps,
     String? cancelReason,
     String? canceledBy,
+    DateTime? paymentExpiresAt,
     DateTime? updatedAt,
     int? version,
     PickupSchedule? pickupSchedule,
@@ -182,6 +185,7 @@ class Order {
       timestamps: timestamps ?? this.timestamps,
       cancelReason: cancelReason ?? this.cancelReason,
       canceledBy: canceledBy ?? this.canceledBy,
+      paymentExpiresAt: paymentExpiresAt ?? this.paymentExpiresAt,
       updatedAt: updatedAt ?? this.updatedAt,
       version: version ?? this.version,
       pickupSchedule: pickupSchedule ?? this.pickupSchedule,

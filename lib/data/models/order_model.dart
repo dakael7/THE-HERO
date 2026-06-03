@@ -42,6 +42,7 @@ class OrderModel {
   final OrderTimestampsModel timestamps;
   final String? cancelReason;
   final String? canceledBy;
+  final firestore.Timestamp? paymentExpiresAt;
   final firestore.Timestamp updatedAt;
   final int version;
   final PickupScheduleModel? pickupSchedule;
@@ -83,6 +84,7 @@ class OrderModel {
     required this.timestamps,
     this.cancelReason,
     this.canceledBy,
+    this.paymentExpiresAt,
     required this.updatedAt,
     this.version = 1,
     this.pickupSchedule,
@@ -182,6 +184,9 @@ class OrderModel {
       ),
       cancelReason: json['cancelReason'] as String?,
       canceledBy: json['canceledBy'] as String?,
+      paymentExpiresAt: json['paymentExpiresAt'] != null
+          ? parseTimestamp(json['paymentExpiresAt'])
+          : null,
       updatedAt: parseTimestamp(json['updatedAt']),
       version: json['version'] as int? ?? 1,
       pickupSchedule: json['pickupSchedule'] != null
@@ -233,6 +238,7 @@ class OrderModel {
       'timestamps': timestamps.toJson(),
       'cancelReason': cancelReason,
       'canceledBy': canceledBy,
+      'paymentExpiresAt': paymentExpiresAt?.toDate().toIso8601String(),
       'updatedAt': updatedAt
           .toDate()
           .toIso8601String(), // Convert to ISO string
@@ -279,6 +285,7 @@ class OrderModel {
       timestamps: timestamps.toEntity(),
       cancelReason: cancelReason,
       canceledBy: canceledBy,
+      paymentExpiresAt: paymentExpiresAt?.toDate(),
       updatedAt: updatedAt.toDate(),
       version: version,
       pickupSchedule: pickupSchedule?.toEntity(),
@@ -324,6 +331,9 @@ class OrderModel {
       timestamps: OrderTimestampsModel.fromEntity(entity.timestamps),
       cancelReason: entity.cancelReason,
       canceledBy: entity.canceledBy,
+      paymentExpiresAt: entity.paymentExpiresAt != null
+          ? firestore.Timestamp.fromDate(entity.paymentExpiresAt!)
+          : null,
       updatedAt: firestore.Timestamp.fromDate(entity.updatedAt),
       version: entity.version,
       pickupSchedule: entity.pickupSchedule != null

@@ -89,6 +89,7 @@ class PaymentState {
   final String? error;
   final String? preferenceId;
   final String? initPoint;
+  final DateTime? expiresAt;
 
   const PaymentState({
     this.isProcessing = false,
@@ -97,6 +98,7 @@ class PaymentState {
     this.error,
     this.preferenceId,
     this.initPoint,
+    this.expiresAt,
   });
 
   PaymentState copyWith({
@@ -106,6 +108,7 @@ class PaymentState {
     String? error,
     String? preferenceId,
     String? initPoint,
+    DateTime? expiresAt,
   }) {
     return PaymentState(
       isProcessing: isProcessing ?? this.isProcessing,
@@ -114,6 +117,7 @@ class PaymentState {
       error: error ?? this.error,
       preferenceId: preferenceId ?? this.preferenceId,
       initPoint: initPoint ?? this.initPoint,
+      expiresAt: expiresAt ?? this.expiresAt,
     );
   }
 }
@@ -141,6 +145,7 @@ class PaymentNotifier extends Notifier<PaymentState> {
         initPoint: MercadoPagoConfig.isProduction
             ? preference.initPoint
             : preference.sandboxInitPoint,
+        expiresAt: preference.expiresAt,
       );
     } on PaymentFunctionsException catch (e) {
       state = state.copyWith(
