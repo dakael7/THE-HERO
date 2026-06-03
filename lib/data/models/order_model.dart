@@ -52,6 +52,9 @@ class OrderModel {
   final bool confirmedByHero;
   final double? heroRating;
   final String? heroRatingComment;
+  final double? buyerRating;
+  final String? buyerRatingComment;
+  final String? buyerRatingBySellerId;
 
   OrderModel({
     required this.orderId,
@@ -94,6 +97,9 @@ class OrderModel {
     this.confirmedByHero = false,
     this.heroRating,
     this.heroRatingComment,
+    this.buyerRating,
+    this.buyerRatingComment,
+    this.buyerRatingBySellerId,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
@@ -204,6 +210,9 @@ class OrderModel {
       confirmedByHero: json['confirmedByHero'] as bool? ?? false,
       heroRating: (json['heroRating'] as num?)?.toDouble(),
       heroRatingComment: json['heroRatingComment'] as String?,
+      buyerRating: (json['buyerRating'] as num?)?.toDouble(),
+      buyerRatingComment: json['buyerRatingComment'] as String?,
+      buyerRatingBySellerId: json['buyerRatingBySellerId'] as String?,
     );
   }
 
@@ -250,6 +259,9 @@ class OrderModel {
       'confirmedByHero': confirmedByHero,
       'heroRating': heroRating,
       'heroRatingComment': heroRatingComment,
+      'buyerRating': buyerRating,
+      'buyerRatingComment': buyerRatingComment,
+      'buyerRatingBySellerId': buyerRatingBySellerId,
     };
   }
 
@@ -295,6 +307,9 @@ class OrderModel {
       confirmedByHero: confirmedByHero,
       heroRating: heroRating,
       heroRatingComment: heroRatingComment,
+      buyerRating: buyerRating,
+      buyerRatingComment: buyerRatingComment,
+      buyerRatingBySellerId: buyerRatingBySellerId,
     );
   }
 
@@ -347,6 +362,9 @@ class OrderModel {
       confirmedByHero: entity.confirmedByHero,
       heroRating: entity.heroRating,
       heroRatingComment: entity.heroRatingComment,
+      buyerRating: entity.buyerRating,
+      buyerRatingComment: entity.buyerRatingComment,
+      buyerRatingBySellerId: entity.buyerRatingBySellerId,
     );
   }
 

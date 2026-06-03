@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kReleaseMode;
@@ -13,6 +14,7 @@ import 'app/providers_scope.dart';
 import 'core/firebase/firebase_config.dart';
 import 'core/services/firebase_messaging_background_handler.dart';
 import 'core/services/fcm_service.dart';
+import 'core/services/payment_deep_link_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +51,8 @@ void main() async {
 
   // Set up background message handler for FCM
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+  unawaited(PaymentDeepLinkHandler().initialize());
 
   runApp(const AppProviderScope(child: App()));
 

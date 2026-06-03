@@ -22,6 +22,7 @@ import '../../../../shared/profile/presentation/providers/profile_provider.dart'
 import '../../../payment/providers/payment_providers.dart';
 import 'order_receipt_screen.dart';
 import 'driver_rating_screen.dart';
+import 'in_person_pickup_rating_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ROOT SCREEN
@@ -315,7 +316,7 @@ class _PickupStopsCard extends StatelessWidget {
                     size: 18, color: primaryOrange),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Puntos de recogida',
                   style: TextStyle(
@@ -595,8 +596,7 @@ class _OrderStatusContent extends ConsumerWidget {
 
         // ── DELIVERY CONFIRMATION ────────────────────────────────
         if (status == OrderStatus.delivered &&
-            order.confirmedByHero != true &&
-            !order.inPersonPickup) ...[
+            order.confirmedByHero != true) ...[
           _DeliveryConfirmationCard(order: order),
           const SizedBox(height: 16),
         ],
@@ -654,6 +654,15 @@ class _StatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isInPersonPickup = order.inPersonPickup;
+    final title = isInPersonPickup
+        ? 'Retiro completado?'
+        : 'Recibiste el paquete?';
+    final subtitle = isInPersonPickup
+        ? 'Confirma el retiro y califica al donador'
+        : 'Confirma que recibiste tu pedido';
+    final confirmLabel = isInPersonPickup ? 'Si, lo retire' : 'Si, lo recibi';
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -2047,6 +2056,15 @@ class _DeliveryConfirmationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isInPersonPickup = order.inPersonPickup;
+    final title = isInPersonPickup
+        ? 'Retiro completado?'
+        : 'Recibiste el paquete?';
+    final subtitle = isInPersonPickup
+        ? 'Confirma el retiro y califica al donador'
+        : 'Confirma que recibiste tu pedido';
+    final confirmLabel = isInPersonPickup ? 'Si, lo retire' : 'Si, lo recibi';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -2088,23 +2106,23 @@ class _DeliveryConfirmationCard extends StatelessWidget {
                     color: Colors.white, size: 28),
               ),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '¿Recibiste el paquete?',
-                      style: TextStyle(
+                      title,
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
                         color: textGray900,
                         letterSpacing: -0.2,
                       ),
                     ),
-                    SizedBox(height: 3),
+                    const SizedBox(height: 3),
                     Text(
-                      'Confirma que recibiste tu pedido',
-                      style: TextStyle(
+                      subtitle,
+                      style: const TextStyle(
                         fontSize: 12,
                         color: textGray700,
                         fontWeight: FontWeight.w500,
@@ -2123,7 +2141,9 @@ class _DeliveryConfirmationCard extends StatelessWidget {
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => DriverRatingScreen(order: order),
+                        builder: (_) => isInPersonPickup
+                            ? InPersonPickupRatingScreen(order: order)
+                            : DriverRatingScreen(order: order),
                       ),
                     );
                   },
@@ -2140,10 +2160,10 @@ class _DeliveryConfirmationCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: const Center(
+                    child: Center(
                       child: Text(
-                        'Sí, lo recibí',
-                        style: TextStyle(
+                        confirmLabel,
+                        style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
                           color: Colors.white,

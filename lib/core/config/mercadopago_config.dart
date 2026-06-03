@@ -11,13 +11,15 @@ class MercadoPagoConfig {
   static bool get isSandbox => environment.toLowerCase() == 'sandbox';
   static bool get isProduction => environment.toLowerCase() == 'production';
 
-  // Return URLs for Firebase Hosting
-  // Replace 'your-project' with your Firebase project ID
-  static const String baseUrl = 'https://the-hero-67d93.web.app';
+  // App return URLs used by Checkout Pro after the payment flow.
+  static const String paymentDeepLinkScheme = 'theheroprojects';
+  static const String paymentDeepLinkHost = 'payment';
+  static const String paymentDeepLinkBaseUrl =
+      '$paymentDeepLinkScheme://$paymentDeepLinkHost';
 
-  static String get successUrl => '$baseUrl/payment/success';
-  static String get failureUrl => '$baseUrl/payment/failure';
-  static String get pendingUrl => '$baseUrl/payment/pending';
+  static String get successUrl => '$paymentDeepLinkBaseUrl/success';
+  static String get failureUrl => '$paymentDeepLinkBaseUrl/failure';
+  static String get pendingUrl => '$paymentDeepLinkBaseUrl/pending';
 
   // Webhook URL (Firebase Function)
   // This will be automatically configured by Firebase

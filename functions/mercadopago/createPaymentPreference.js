@@ -725,9 +725,9 @@ exports.createPaymentPreference = onCall(
         ...(payerIdentification ? {identification: payerIdentification} : {}),
       },
       back_urls: {
-        success: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/success?orderId=${orderIdStr}`,
-        failure: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/failure?orderId=${orderIdStr}`,
-        pending: `https://${process.env.GCLOUD_PROJECT}.web.app/payment/pending?orderId=${orderIdStr}`,
+        success: `theheroprojects://payment/success?orderId=${orderIdStr}`,
+        failure: `theheroprojects://payment/failure?orderId=${orderIdStr}`,
+        pending: `theheroprojects://payment/pending?orderId=${orderIdStr}`,
       },
       auto_return: "approved",
       notification_url: resolvedNotificationUrl,

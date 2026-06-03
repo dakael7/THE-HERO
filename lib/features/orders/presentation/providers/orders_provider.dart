@@ -247,6 +247,98 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
     }
   }
 
+  Future<void> confirmInPersonPickupAndRateSeller({
+    required String orderId,
+    required String sellerHeroId,
+    required double sellerRating,
+    String? sellerComment,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final sellerId = sellerHeroId.trim();
+      if (sellerId.isEmpty) {
+        throw Exception('No se pudo identificar al donador.');
+      }
+
+      final firestore = ref.read(firebaseFirestoreProvider);
+      final now = DateTime.now();
+      await firestore.collection('orders').doc(orderId).update({
+        'confirmedByHero': true,
+        'sellerRating': sellerRating,
+        'sellerRatingHeroId': sellerId,
+        'sellerRatingComment': sellerComment,
+        'updatedAt': now,
+      });
+      state = const AsyncValue.data(null);
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
+      rethrow;
+    }
+  }
+
+  Future<void> rateBuyerForInPersonPickup({
+    required String orderId,
+    required String sellerId,
+    required double buyerRating,
+    String? buyerComment,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final normalizedSellerId = sellerId.trim();
+      if (normalizedSellerId.isEmpty) {
+        throw Exception('No se pudo identificar al donador.');
+      }
+
+      final firestore = ref.read(firebaseFirestoreProvider);
+      final orderRef = firestore.collection('orders').doc(orderId);
+      final orderDoc = await orderRef.get();
+      if (!orderDoc.exists) {
+        throw Exception('Pedido no encontrado.');
+      }
+
+      final data = orderDoc.data();
+      if (data == null) {
+        throw Exception('Pedido sin datos.');
+      }
+
+      final isInPersonPickup = data['inPersonPickup'] == true;
+      if (!isInPersonPickup) {
+        throw Exception('Este pedido no es de retiro en persona.');
+      }
+
+      final sellerIds = (data['sellerHeroIds'] as List<dynamic>?)
+              ?.map((value) => value.toString().trim())
+              .where((value) => value.isNotEmpty)
+              .toSet() ??
+          const <String>{};
+      final itemSellerIds = (data['items'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map((item) => item['sellerHeroIdSnapshot']?.toString().trim())
+              .whereType<String>()
+              .where((value) => value.isNotEmpty)
+              .toSet() ??
+          const <String>{};
+      final canRate = sellerIds.contains(normalizedSellerId) ||
+          itemSellerIds.contains(normalizedSellerId);
+      if (!canRate) {
+        throw Exception('Este donador no pertenece al pedido.');
+      }
+
+      final now = DateTime.now();
+      await orderRef.update({
+        'buyerRating': buyerRating,
+        'buyerRatingComment': buyerComment,
+        'buyerRatingBySellerId': normalizedSellerId,
+        'buyerRatingAt': now,
+        'updatedAt': now,
+      });
+      state = const AsyncValue.data(null);
+    } catch (e, stack) {
+      state = AsyncValue.error(e, stack);
+      rethrow;
+    }
+  }
+
   Future<void> updateStatus(String orderId, String status) async {
     state = const AsyncValue.loading();
     try {
@@ -318,6 +410,9 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
       };
       if (sellerRating != null) {
         updatePayload['sellerRating'] = sellerRating;
+      }
+      if (sellerHeroId != null && sellerHeroId.trim().isNotEmpty) {
+        updatePayload['sellerRatingHeroId'] = sellerHeroId.trim();
       }
       if (sellerComment != null) {
         updatePayload['sellerRatingComment'] = sellerComment;

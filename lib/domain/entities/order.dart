@@ -50,6 +50,9 @@ class Order {
   final bool confirmedByHero;
   final double? heroRating;
   final String? heroRatingComment;
+  final double? buyerRating;
+  final String? buyerRatingComment;
+  final String? buyerRatingBySellerId;
 
   Order({
     required this.orderId,
@@ -92,6 +95,9 @@ class Order {
     this.confirmedByHero = false,
     this.heroRating,
     this.heroRatingComment,
+    this.buyerRating,
+    this.buyerRatingComment,
+    this.buyerRatingBySellerId,
   });
 
   bool get isAssigned => rider.isAssigned;
@@ -154,6 +160,9 @@ class Order {
     bool? confirmedByHero,
     double? heroRating,
     String? heroRatingComment,
+    double? buyerRating,
+    String? buyerRatingComment,
+    String? buyerRatingBySellerId,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -195,6 +204,10 @@ class Order {
       confirmedByHero: confirmedByHero ?? this.confirmedByHero,
       heroRating: heroRating ?? this.heroRating,
       heroRatingComment: heroRatingComment ?? this.heroRatingComment,
+      buyerRating: buyerRating ?? this.buyerRating,
+      buyerRatingComment: buyerRatingComment ?? this.buyerRatingComment,
+      buyerRatingBySellerId:
+          buyerRatingBySellerId ?? this.buyerRatingBySellerId,
     );
   }
 }

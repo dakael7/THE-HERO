@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 
 import '../../../../../core/constants/app_colors.dart';
@@ -17,6 +18,7 @@ import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../shared/chat/presentation/providers/chat_providers.dart';
 import '../../../../shared/chat/presentation/views/chat_conversation_screen.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
+import 'in_person_buyer_rating_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ROOT SCREEN
@@ -281,8 +283,7 @@ class _SellerOrderContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final status = order.status;
     final cfg = _config(order);
-    final hasRider = order.rider.isAssigned &&
-        (order.rider.riderNameSnapshot?.isNotEmpty ?? false);
+    final hasRider = order.rider.isAssigned;
 
     final canMarkReadyForPickup = order.inPersonPickup &&
         status != OrderStatus.delivered &&
@@ -316,7 +317,18 @@ class _SellerOrderContent extends ConsumerWidget {
         const SizedBox(height: 16),
 
         // ── SUMMARY CARD ─────────────────────────────────────────
+        if (order.inPersonPickup &&
+            status == OrderStatus.delivered &&
+            order.buyerRating == null) ...[
+          _BuyerRatingPromptCard(order: order, sellerId: sellerId),
+          const SizedBox(height: 16),
+        ],
+
         _SummaryCard(order: order, myItemsCount: myItemsCount),
+
+        const SizedBox(height: 16),
+
+        _OrderContactsCard(order: order),
 
         const SizedBox(height: 16),
 
@@ -363,6 +375,16 @@ class _StatusCard extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(successMsg)));
+        if (order.inPersonPickup && newStatus == 'delivered') {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => InPersonBuyerRatingScreen(
+                order: order.copyWith(status: OrderStatus.delivered),
+                sellerId: sellerId,
+              ),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (context.mounted) {
@@ -527,6 +549,86 @@ class _StatusCard extends ConsumerWidget {
 //  SUMMARY CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+class _BuyerRatingPromptCard extends StatelessWidget {
+  final Order order;
+  final String sellerId;
+
+  const _BuyerRatingPromptCard({
+    required this.order,
+    required this.sellerId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: categoryTextGreen.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.star_rounded,
+                  color: categoryTextGreen,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Califica al Hero',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Cuentanos como fue el retiro en persona.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: textGray600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _PrimaryActionButton(
+            label: 'Calificar Hero',
+            icon: Icons.star_rounded,
+            color: categoryTextGreen,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => InPersonBuyerRatingScreen(
+                    order: order,
+                    sellerId: sellerId,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SummaryCard extends StatelessWidget {
   final Order order;
   final int myItemsCount;
@@ -587,6 +689,230 @@ class _SummaryCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _OrderContactsCard extends ConsumerWidget {
+  final Order order;
+
+  const _OrderContactsCard({required this.order});
+
+  static String? _clean(String? value) {
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
+  }
+
+  static String? _firstNonEmpty(List<String?> values) {
+    for (final value in values) {
+      final cleaned = _clean(value);
+      if (cleaned != null) return cleaned;
+    }
+    return null;
+  }
+
+  static Future<void> _callPhone(BuildContext context, String? phone) async {
+    final cleanPhone = _clean(phone);
+    if (cleanPhone == null) return;
+
+    final phoneForUri = cleanPhone.replaceAll(RegExp(r'\s+'), '');
+    final uri = Uri(scheme: 'tel', path: phoneForUri);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo abrir el telefono')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final heroAsync = ref.watch(userByIdStreamProvider(order.heroId));
+    final heroName = heroAsync.maybeWhen(
+      data: (user) => _firstNonEmpty([user?.fullName, 'Hero'])!,
+      orElse: () => 'Hero',
+    );
+    final heroPhone = heroAsync.maybeWhen(
+      data: (user) => _firstNonEmpty([
+        user?.phoneNumber,
+        order.delivery.recipientPhone,
+      ]),
+      orElse: () => _clean(order.delivery.recipientPhone),
+    );
+    final isHeroPhoneLoading = heroAsync.isLoading && heroPhone == null;
+
+    final riderId = _clean(order.rider.assignedRiderId);
+    final hasRider = riderId != null;
+    final riderAsync = hasRider
+        ? ref.watch(userByIdStreamProvider(riderId))
+        : const AsyncValue<User?>.data(null);
+    final riderName = _firstNonEmpty([
+      order.rider.riderNameSnapshot,
+      riderAsync.maybeWhen(
+        data: (user) => user?.fullName,
+        orElse: () => null,
+      ),
+      'Rider',
+    ])!;
+    final riderPhone = _firstNonEmpty([
+      order.rider.riderPhoneSnapshot,
+      riderAsync.maybeWhen(
+        data: (user) => user?.phoneNumber,
+        orElse: () => null,
+      ),
+    ]);
+    final isRiderPhoneLoading =
+        hasRider && riderAsync.isLoading && riderPhone == null;
+
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: primaryOrange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.contacts_rounded,
+                  size: 17,
+                  color: primaryOrange,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Contactos del pedido',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: textGray900,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const _Hairline(),
+          const SizedBox(height: 14),
+          _ContactPhoneRow(
+            icon: Icons.person_rounded,
+            iconColor: const Color(0xFF2563EB),
+            label: 'Hero que hizo el pedido',
+            name: heroName,
+            phone: heroPhone,
+            isLoading: isHeroPhoneLoading,
+            onCall: () => _callPhone(context, heroPhone),
+          ),
+          if (hasRider) ...[
+            const SizedBox(height: 12),
+            _ContactPhoneRow(
+              icon: Icons.delivery_dining_rounded,
+              iconColor: primaryOrange,
+              label: 'Rider asignado',
+              name: riderName,
+              phone: riderPhone,
+              isLoading: isRiderPhoneLoading,
+              onCall: () => _callPhone(context, riderPhone),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ContactPhoneRow extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String name;
+  final String? phone;
+  final bool isLoading;
+  final VoidCallback onCall;
+
+  const _ContactPhoneRow({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.name,
+    required this.phone,
+    required this.isLoading,
+    required this.onCall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanPhone = phone?.trim();
+    final hasPhone = cleanPhone != null && cleanPhone.isNotEmpty;
+    final phoneText = isLoading
+        ? 'Cargando telefono...'
+        : hasPhone
+            ? cleanPhone
+            : 'Sin telefono registrado';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: iconColor, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: textGray600,
+                  letterSpacing: 0.1,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: textGray900,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                phoneText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: hasPhone ? textGray700 : textGray600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton.filledTonal(
+          onPressed: hasPhone && !isLoading ? onCall : null,
+          icon: const Icon(Icons.call_rounded, size: 18),
+          color: categoryTextGreen,
+          tooltip: hasPhone ? 'Llamar' : 'Telefono no disponible',
+        ),
+      ],
     );
   }
 }

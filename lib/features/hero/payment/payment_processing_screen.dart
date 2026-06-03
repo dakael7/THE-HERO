@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'dart:io';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -30,16 +27,10 @@ class PaymentProcessingScreen extends ConsumerStatefulWidget {
 
 class _PaymentProcessingScreenState
     extends ConsumerState<PaymentProcessingScreen> {
-  WebViewController? _controller;
-  bool _isLoading = true;
+  bool _isOpeningCheckout = false;
+  bool _hasOpenedCheckout = false;
   bool _canSimulatePayment = false;
   bool _isSimulating = false;
-
-  Map<String, String> _extractQueryParams(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return const {};
-    return uri.queryParameters.map((k, v) => MapEntry(k, v));
-  }
 
   Future<void> _openInExternalBrowser() async {
     final uri = Uri.tryParse(widget.initPoint);
@@ -50,10 +41,44 @@ class _PaymentProcessingScreenState
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _openCheckout() async {
+    if (_isOpeningCheckout) return;
+
+    final uri = Uri.tryParse(widget.initPoint);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Link de pago inválido')),
+      );
+      return;
+    }
+
+    setState(() => _isOpeningCheckout = true);
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+      if (!opened) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+
+      if (mounted) {
+        setState(() => _hasOpenedCheckout = true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo abrir Mercado Pago: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningCheckout = false);
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    Future.microtask(_initializeWebView);
+    Future.microtask(_openCheckout);
     Future.microtask(_loadSimulatorPermissions);
   }
 
@@ -115,102 +140,6 @@ class _PaymentProcessingScreenState
     }
   }
 
-  Future<void> _initializeWebView() async {
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setUserAgent(
-        'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36',
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (NavigationRequest request) {
-            final uri = Uri.tryParse(request.url);
-            if (uri == null) {
-              return NavigationDecision.navigate;
-            }
-
-            final scheme = uri.scheme.toLowerCase();
-            if (scheme != 'http' && scheme != 'https') {
-              debugPrint('Blocking non-web scheme in WebView: ${request.url}');
-              launchUrl(uri, mode: LaunchMode.externalApplication);
-              return NavigationDecision.prevent;
-            }
-
-            return NavigationDecision.navigate;
-          },
-          onPageStarted: (String url) {
-            setState(() => _isLoading = true);
-            _checkForReturnUrl(url);
-          },
-          onPageFinished: (String url) {
-            setState(() => _isLoading = false);
-          },
-          onWebResourceError: (WebResourceError error) {
-            debugPrint(
-              'WebView error: ${error.errorCode} ${error.errorType} ${error.description}',
-            );
-          },
-        ),
-      );
-
-    final cookieManager = WebViewCookieManager();
-    await cookieManager.clearCookies();
-    await controller.clearCache();
-
-    if (Platform.isAndroid && WebViewPlatform.instance is AndroidWebViewPlatform) {
-      final androidCookieManager =
-          cookieManager.platform as AndroidWebViewCookieManager;
-      final androidController = controller.platform as AndroidWebViewController;
-      await androidCookieManager.setAcceptThirdPartyCookies(androidController, true);
-    }
-
-    setState(() {
-      _controller = controller;
-    });
-
-    await controller.loadRequest(Uri.parse(widget.initPoint));
-  }
-
-  void _checkForReturnUrl(String url) {
-    // Check if URL matches success, failure, or pending patterns
-    if (url.contains('/payment/success')) {
-      _handlePaymentResult(
-        PaymentResultType.success,
-        returnUrl: url,
-      );
-    } else if (url.contains('/payment/failure')) {
-      _handlePaymentResult(
-        PaymentResultType.failure,
-        returnUrl: url,
-      );
-    } else if (url.contains('/payment/pending')) {
-      _handlePaymentResult(
-        PaymentResultType.pending,
-        returnUrl: url,
-      );
-    }
-  }
-
-  void _handlePaymentResult(
-    PaymentResultType resultType, {
-    required String returnUrl,
-  }) {
-    final queryParams = _extractQueryParams(returnUrl);
-
-    // Navigate to result screen
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => PaymentResultScreen(
-            orderId: widget.orderId,
-            resultType: resultType,
-            queryParams: queryParams,
-          ),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -250,27 +179,93 @@ class _PaymentProcessingScreenState
       ),
       body: Stack(
         children: [
-          if (_controller != null) WebViewWidget(controller: _controller!),
-          if (_isLoading)
-            Container(
-              color: backgroundWhite,
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(primaryOrange),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 88,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      color: primaryOrange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(24),
                     ),
-                    SizedBox(height: 16),
-                    Text(
-                      'Cargando pasarela de pago...',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: textGray700,
+                    child: const Icon(
+                      Icons.payments_rounded,
+                      color: primaryOrange,
+                      size: 42,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Completa tu pago en Mercado Pago',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: textGray900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Abriremos Mercado Pago en una ventana segura. Al finalizar, volverás automáticamente a The Hero.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: textGray700,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isOpeningCheckout ? null : _openCheckout,
+                      icon: _isOpeningCheckout
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.open_in_new_rounded),
+                      label: Text(
+                        _isOpeningCheckout
+                            ? 'Abriendo...'
+                            : _hasOpenedCheckout
+                                ? 'Reabrir Mercado Pago'
+                                : 'Abrir Mercado Pago',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryOrange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _openInExternalBrowser,
+                    child: const Text('Abrir en navegador externo'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_isOpeningCheckout)
+            Container(
+              color: Colors.white.withValues(alpha: 0.62),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(primaryOrange),
                 ),
               ),
             ),
