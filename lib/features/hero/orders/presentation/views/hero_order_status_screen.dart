@@ -39,8 +39,9 @@ class HeroOrderStatusScreen extends ConsumerWidget {
       backgroundColor: backgroundGray50,
       appBar: _buildAppBar(context),
       body: profileAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator(color: primaryOrange)),
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: primaryOrange),
+        ),
         error: (err, _) => _StatusMessage(
           title: 'No pudimos cargar tu perfil',
           subtitle: err.toString(),
@@ -56,7 +57,8 @@ class HeroOrderStatusScreen extends ConsumerWidget {
           final orderAsync = ref.watch(orderByIdProvider(orderId));
           return orderAsync.when(
             loading: () => const Center(
-                child: CircularProgressIndicator(color: primaryOrange)),
+              child: CircularProgressIndicator(color: primaryOrange),
+            ),
             error: (err, _) => _StatusMessage(
               title: 'No pudimos obtener el pedido',
               subtitle: err.toString(),
@@ -110,8 +112,11 @@ class HeroOrderStatusScreen extends ConsumerWidget {
                         color: Colors.black.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.arrow_back_ios_new_rounded,
-                          size: 18, color: textGray900),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 18,
+                        color: textGray900,
+                      ),
                     ),
                   ),
                 ),
@@ -133,8 +138,11 @@ class HeroOrderStatusScreen extends ConsumerWidget {
                     color: primaryOrange.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.receipt_long_rounded,
-                      size: 18, color: primaryOrange),
+                  child: const Icon(
+                    Icons.receipt_long_rounded,
+                    size: 18,
+                    color: primaryOrange,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 const Text(
@@ -259,16 +267,18 @@ class _PlusCodeTextState extends State<_PlusCodeText> {
     final show = (_resolved != null && _resolved!.trim().isNotEmpty)
         ? _resolved!.trim()
         : (raw.isEmpty || raw.startsWith('Lat:')
-            ? 'Ubicación en el mapa'
-            : raw);
+              ? 'Ubicación en el mapa'
+              : raw);
 
     return Row(
       children: [
         Expanded(
-          child: Text(show,
-              style: widget.style,
-              maxLines: widget.maxLines,
-              overflow: widget.overflow),
+          child: Text(
+            show,
+            style: widget.style,
+            maxLines: widget.maxLines,
+            overflow: widget.overflow,
+          ),
         ),
         if (_loading)
           const Padding(
@@ -312,8 +322,11 @@ class _PickupStopsCard extends StatelessWidget {
                   color: primaryOrange.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.place_rounded,
-                    size: 18, color: primaryOrange),
+                child: const Icon(
+                  Icons.place_rounded,
+                  size: 18,
+                  color: primaryOrange,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -328,8 +341,7 @@ class _PickupStopsCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: primaryOrange.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -566,18 +578,21 @@ class _OrderStatusContent extends ConsumerWidget {
     final cfg = _config(order);
     final isFailed = status == OrderStatus.failed;
     final isCanceled = status == OrderStatus.canceled;
-    final hasRider = order.rider.isAssigned &&
+    final hasRider =
+        order.rider.isAssigned &&
         (order.rider.riderNameSnapshot?.isNotEmpty ?? false);
 
-    final paymentAsync =
-        ref.watch(watchPaymentByOrderIdProvider(order.orderId));
+    final paymentAsync = ref.watch(
+      watchPaymentByOrderIdProvider(order.orderId),
+    );
     final payment = paymentAsync.asData?.value;
     final isPaymentApproved = payment?.status == PaymentStatus.approved;
     final isCashPayment =
         payment?.paymentMethod == PaymentMethod.cash ||
-            (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
-            (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
-    final canShowReceipt = status != OrderStatus.pendingPayment &&
+        (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
+        (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
+    final canShowReceipt =
+        status != OrderStatus.pendingPayment &&
         (isPaymentApproved || isCashPayment);
 
     return ListView(
@@ -613,8 +628,7 @@ class _OrderStatusContent extends ConsumerWidget {
         else if (isFailed)
           const _StatusBanner(
             title: 'Pedido fallido',
-            subtitle:
-                'Este pedido tuvo un problema y no pudo completarse.',
+            subtitle: 'Este pedido tuvo un problema y no pudo completarse.',
             color: Colors.red,
           ),
 
@@ -690,8 +704,9 @@ class _StatusCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
             decoration: BoxDecoration(
               color: cfg.bg,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(22)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(22),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -706,8 +721,7 @@ class _StatusCard extends StatelessWidget {
                         color: cfg.color.withOpacity(0.18),
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child:
-                          Icon(cfg.icon, color: cfg.color, size: 28),
+                      child: Icon(cfg.icon, color: cfg.color, size: 28),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -728,7 +742,9 @@ class _StatusCard extends StatelessWidget {
                           const SizedBox(height: 3),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
                               color: cfg.color.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(6),
@@ -810,7 +826,11 @@ class _ReceiptButton extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.receipt_long_rounded, size: 16, color: primaryOrange),
+              const Icon(
+                Icons.receipt_long_rounded,
+                size: 16,
+                color: primaryOrange,
+              ),
               const SizedBox(width: 7),
               Text(
                 order.isFactura ? 'Ver factura' : 'Ver boleta',
@@ -851,8 +871,11 @@ class _RiderChip extends StatelessWidget {
               color: primaryOrange.withOpacity(0.14),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.delivery_dining_rounded,
-                color: primaryOrange, size: 18),
+            child: const Icon(
+              Icons.delivery_dining_rounded,
+              color: primaryOrange,
+              size: 18,
+            ),
           ),
           const SizedBox(width: 10),
           Column(
@@ -946,8 +969,8 @@ class _DetailsCard extends StatelessWidget {
     final pickupLabel = (stops != null && stops.isNotEmpty)
         ? '${stops.length} punto${stops.length == 1 ? '' : 's'} de recogida'
         : (order.pickup.addressSnapshot.isNotEmpty
-            ? order.pickup.addressSnapshot
-            : 'Sin dirección');
+              ? order.pickup.addressSnapshot
+              : 'Sin dirección');
 
     return _SectionCard(
       child: Column(
@@ -963,8 +986,11 @@ class _DetailsCard extends StatelessWidget {
                   color: textGray700.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.info_outline_rounded,
-                    size: 17, color: textGray700),
+                child: const Icon(
+                  Icons.info_outline_rounded,
+                  size: 17,
+                  color: textGray700,
+                ),
               ),
               const SizedBox(width: 10),
               const Text(
@@ -1047,8 +1073,11 @@ class _OrderItemsCard extends StatelessWidget {
                   color: primaryOrange.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.shopping_bag_rounded,
-                    size: 17, color: primaryOrange),
+                child: const Icon(
+                  Icons.shopping_bag_rounded,
+                  size: 17,
+                  color: primaryOrange,
+                ),
               ),
               const SizedBox(width: 10),
               const Expanded(
@@ -1063,8 +1092,7 @@ class _OrderItemsCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: backgroundGray50,
                   borderRadius: BorderRadius.circular(8),
@@ -1089,8 +1117,7 @@ class _OrderItemsCard extends StatelessWidget {
           if (items.isEmpty)
             const Text(
               'Sin productos',
-              style: TextStyle(
-                  color: textGray600, fontWeight: FontWeight.w600),
+              style: TextStyle(color: textGray600, fontWeight: FontWeight.w600),
             )
           else
             ...List.generate(items.length, (index) {
@@ -1147,7 +1174,9 @@ class _OrderItemsCard extends StatelessWidget {
                       const SizedBox(width: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: backgroundGray50,
                           borderRadius: BorderRadius.circular(8),
@@ -1294,7 +1323,8 @@ class _TimelineStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final done = index < activeIndex ||
+    final done =
+        index < activeIndex ||
         (index == activeIndex && status == OrderStatus.delivered);
     final current = index == activeIndex;
 
@@ -1307,8 +1337,11 @@ class _TimelineStep extends StatelessWidget {
       dotColor = categoryTextGreen.withOpacity(0.14);
       textColor = categoryTextGreen;
       subtitleColor = textGray600;
-      dotChild = const Icon(Icons.check_rounded,
-          color: categoryTextGreen, size: 16);
+      dotChild = const Icon(
+        Icons.check_rounded,
+        color: categoryTextGreen,
+        size: 16,
+      );
     } else if (current) {
       dotColor = primaryOrange.withOpacity(0.14);
       textColor = textGray900;
@@ -1344,8 +1377,7 @@ class _TimelineStep extends StatelessWidget {
           ? BoxDecoration(
               color: primaryOrange.withOpacity(0.06),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color: primaryOrange.withOpacity(0.15)),
+              border: Border.all(color: primaryOrange.withOpacity(0.15)),
             )
           : null,
       child: Row(
@@ -1355,10 +1387,7 @@ class _TimelineStep extends StatelessWidget {
             duration: const Duration(milliseconds: 300),
             width: 34,
             height: 34,
-            decoration: BoxDecoration(
-              color: dotColor,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
             child: Center(child: dotChild),
           ),
           const SizedBox(width: 12),
@@ -1379,9 +1408,10 @@ class _TimelineStep extends StatelessWidget {
                 Text(
                   subtitle,
                   style: TextStyle(
-                      fontSize: 11,
-                      color: subtitleColor,
-                      fontWeight: FontWeight.w500),
+                    fontSize: 11,
+                    color: subtitleColor,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),
@@ -1485,8 +1515,11 @@ class _StatusMessage extends StatelessWidget {
                 color: primaryOrange.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(22),
               ),
-              child: const Icon(Icons.receipt_long_rounded,
-                  size: 36, color: primaryOrange),
+              child: const Icon(
+                Icons.receipt_long_rounded,
+                size: 36,
+                color: primaryOrange,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
@@ -1540,8 +1573,7 @@ class _OrderChatActions extends ConsumerWidget {
         if (chat == null) return 0;
         if (currentUserId == null) return 0;
         if (chat.unreadCount <= 0) return 0;
-        if ((chat.lastMessageSenderId ?? '').trim() == currentUserId)
-          return 0;
+        if ((chat.lastMessageSenderId ?? '').trim() == currentUserId) return 0;
         return chat.unreadCount;
       },
       orElse: () => 0,
@@ -1559,12 +1591,14 @@ class _OrderChatActions extends ConsumerWidget {
   Future<List<_SellerChatChoice>> _resolveSellerChoices(WidgetRef ref) async {
     final repo = ref.read(offersRepositoryProvider);
     final itemsByOfferId = {for (final i in order.items) i.offerId: i};
-    final offerIds =
-        itemsByOfferId.keys.where((id) => id.trim().isNotEmpty).toSet();
+    final offerIds = itemsByOfferId.keys
+        .where((id) => id.trim().isNotEmpty)
+        .toSet();
     if (offerIds.isEmpty) return const <_SellerChatChoice>[];
 
-    final offers =
-        await Future.wait(offerIds.map((id) => repo.getOfferById(id)));
+    final offers = await Future.wait(
+      offerIds.map((id) => repo.getOfferById(id)),
+    );
 
     final choices = <_SellerChatChoice>[];
     for (final offer in offers.whereType<Offer>()) {
@@ -1573,11 +1607,13 @@ class _OrderChatActions extends ConsumerWidget {
       final offerId = offer.offerId.trim();
       if (offerId.isEmpty) continue;
       final title = itemsByOfferId[offerId]?.titleSnapshot;
-      choices.add(_SellerChatChoice(
-        sellerId: sellerId,
-        offerId: offerId,
-        itemTitle: (title != null && title.trim().isNotEmpty) ? title : null,
-      ));
+      choices.add(
+        _SellerChatChoice(
+          sellerId: sellerId,
+          offerId: offerId,
+          itemTitle: (title != null && title.trim().isNotEmpty) ? title : null,
+        ),
+      );
     }
     return choices;
   }
@@ -1610,26 +1646,26 @@ class _OrderChatActions extends ConsumerWidget {
     final docLegacy = docNew.exists
         ? null
         : await FirebaseFirestore.instance
-            .collection('chats')
-            .doc(legacyChatId)
-            .get();
+              .collection('chats')
+              .doc(legacyChatId)
+              .get();
 
     final legacyOk = (() {
       if (!(docLegacy?.exists ?? false)) return false;
       final data = docLegacy!.data() ?? <String, dynamic>{};
-      final legacyBuyerId = (data['buyerId'] as String?) ??
-          (data['heroId'] as String?) ??
-          '';
+      final legacyBuyerId =
+          (data['buyerId'] as String?) ?? (data['heroId'] as String?) ?? '';
       final legacyRiderId = (data['riderId'] as String?) ?? '';
       final rawParticipantIds = data['participantIds'];
       final participantIds = rawParticipantIds is List
           ? rawParticipantIds
-              .map((e) => e.toString().trim())
-              .where((e) => e.isNotEmpty)
-              .toList()
+                .map((e) => e.toString().trim())
+                .where((e) => e.isNotEmpty)
+                .toList()
           : <String>[];
       final expected = <String>[order.heroId.trim(), riderId.trim()];
-      final hasOnlyExpected = participantIds.length == 2 &&
+      final hasOnlyExpected =
+          participantIds.length == 2 &&
           participantIds.toSet().containsAll(expected) &&
           expected.toSet().containsAll(participantIds.toSet());
       final legacySellerId = (data['sellerId'] as String?) ?? '';
@@ -1639,8 +1675,9 @@ class _OrderChatActions extends ConsumerWidget {
           hasOnlyExpected;
     })();
 
-    final chatId =
-        docNew.exists ? newChatId : (legacyOk ? legacyChatId : newChatId);
+    final chatId = docNew.exists
+        ? newChatId
+        : (legacyOk ? legacyChatId : newChatId);
     final chat = Chat(
       chatId: chatId,
       type: ChatType.heroRider,
@@ -1695,7 +1732,9 @@ class _OrderChatActions extends ConsumerWidget {
   }
 
   Future<void> _pickAndOpenSellerChat(
-      BuildContext context, WidgetRef ref) async {
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final choices = await _resolveSellerChoices(ref);
     if (choices.isEmpty) return;
     if (!context.mounted) return;
@@ -1704,10 +1743,11 @@ class _OrderChatActions extends ConsumerWidget {
     if (choices.length == 1) {
       final c = choices.first;
       await _openSellerChat(
-          navigator: navigator,
-          ref: ref,
-          sellerId: c.sellerId,
-          offerId: c.offerId);
+        navigator: navigator,
+        ref: ref,
+        sellerId: c.sellerId,
+        offerId: c.offerId,
+      );
       return;
     }
 
@@ -1722,15 +1762,17 @@ class _OrderChatActions extends ConsumerWidget {
     if (selected == null) return;
     if (!context.mounted) return;
     await _openSellerChat(
-        navigator: navigator,
-        ref: ref,
-        sellerId: selected.sellerId,
-        offerId: selected.offerId);
+      navigator: navigator,
+      ref: ref,
+      sellerId: selected.sellerId,
+      offerId: selected.offerId,
+    );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hasRider = order.rider.isAssigned &&
+    final hasRider =
+        order.rider.isAssigned &&
         (order.rider.assignedRiderId?.isNotEmpty ?? false);
     final riderName = order.rider.riderNameSnapshot ?? 'Rider';
     final riderId = order.rider.assignedRiderId;
@@ -1768,8 +1810,7 @@ class _OrderChatActions extends ConsumerWidget {
         .where((v) => v.isNotEmpty)
         .toSet()
         .toList();
-    final singleSellerId =
-        sellerIds.length == 1 ? sellerIds.first : null;
+    final singleSellerId = sellerIds.length == 1 ? sellerIds.first : null;
     final sellerAsync = (singleSellerId != null)
         ? ref.watch(userByIdStreamProvider(singleSellerId))
         : const AsyncValue<User?>.data(null);
@@ -1804,7 +1845,7 @@ class _OrderChatActions extends ConsumerWidget {
           icon: Icons.storefront_outlined,
           label: singleSellerId != null
               ? ((sellerName.isNotEmpty ? sellerName : 'Donador') +
-                  ' (Donador)')
+                    ' (Donador)')
               : 'Donadores',
           badgeCount: sellerBadgeCount,
           onTap: () => _pickAndOpenSellerChat(context, ref),
@@ -1860,8 +1901,7 @@ class _ChatChipButton extends StatelessWidget {
           children: [
             if (showBadge) ...[
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: primaryOrange,
                   borderRadius: BorderRadius.circular(999),
@@ -1937,8 +1977,11 @@ class _SellerPickerSheet extends ConsumerWidget {
                     color: primaryOrange.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.storefront_outlined,
-                      size: 17, color: primaryOrange),
+                  child: const Icon(
+                    Icons.storefront_outlined,
+                    size: 17,
+                    color: primaryOrange,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 const Text(
@@ -1957,23 +2000,23 @@ class _SellerPickerSheet extends ConsumerWidget {
             ...choices.map((c) {
               final asyncUser = ref.watch(userByIdStreamProvider(c.sellerId));
               final sellerName = asyncUser.maybeWhen(
-                data: (u) =>
-                    (u?.fullName.trim().isNotEmpty ?? false)
-                        ? u!.fullName
-                        : 'Hero Donador',
+                data: (u) => (u?.fullName.trim().isNotEmpty ?? false)
+                    ? u!.fullName
+                    : 'Hero Donador',
                 orElse: () => 'Hero Donador',
               );
               final itemTitle =
                   (c.itemTitle != null && c.itemTitle!.trim().isNotEmpty)
-                      ? c.itemTitle!
-                      : 'Artículo';
+                  ? c.itemTitle!
+                  : 'Artículo';
 
               return GestureDetector(
                 onTap: () => Navigator.of(context).pop(
                   _SellerChatChoice(
-                      sellerId: c.sellerId,
-                      offerId: c.offerId,
-                      itemTitle: c.itemTitle),
+                    sellerId: c.sellerId,
+                    offerId: c.offerId,
+                    itemTitle: c.itemTitle,
+                  ),
                 ),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 8),
@@ -1992,8 +2035,11 @@ class _SellerPickerSheet extends ConsumerWidget {
                           color: primaryOrange.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.storefront_outlined,
-                            color: primaryOrange, size: 18),
+                        child: const Icon(
+                          Icons.storefront_outlined,
+                          color: primaryOrange,
+                          size: 18,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -2022,8 +2068,11 @@ class _SellerPickerSheet extends ConsumerWidget {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right_rounded,
-                          color: textGray600, size: 20),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: textGray600,
+                        size: 20,
+                      ),
                     ],
                   ),
                 ),
@@ -2102,8 +2151,11 @@ class _DeliveryConfirmationCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: const Icon(Icons.check_circle_rounded,
-                    color: Colors.white, size: 28),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -2179,8 +2231,7 @@ class _DeliveryConfirmationCard extends StatelessWidget {
                   onTap: () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content:
-                            Text('Función de reporte en desarrollo'),
+                        content: Text('Función de reporte en desarrollo'),
                       ),
                     );
                   },
@@ -2190,8 +2241,9 @@ class _DeliveryConfirmationCard extends StatelessWidget {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(13),
                       border: Border.all(
-                          color: primaryOrange.withOpacity(0.4),
-                          width: 1.5),
+                        color: primaryOrange.withOpacity(0.4),
+                        width: 1.5,
+                      ),
                     ),
                     child: const Center(
                       child: Text(

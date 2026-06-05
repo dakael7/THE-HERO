@@ -75,10 +75,11 @@ dependencies:
   google_maps_flutter_platform_interface: ^2.15.0
   riverpod: ^3.2.1
   firebase_messaging: any
-  firebase_in_app_messaging: ^0.8.0+10
-  firebase_analytics: ^11.4.2
+  firebase_in_app_messaging: any
+  firebase_analytics: any
   flutter_local_notifications: ^21.0.0
   flutter_dotenv: ^5.2.1
+  firebase_app_installations: ^0.4.2+3
 
 dev_dependencies:
   flutter_test:

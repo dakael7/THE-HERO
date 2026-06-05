@@ -8,6 +8,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_in_app_messaging/firebase_in_app_messaging.dart';
 
 import 'app/app.dart';
 import 'app/providers_scope.dart';
@@ -60,6 +62,17 @@ void main() async {
     Future<void>(() async {
       try {
         await FCMService().initialize();
+        
+        // Force Firebase In-App Messaging
+        try {
+          final fiam = FirebaseInAppMessaging.instance;
+          await fiam.setMessagesSuppressed(false);
+          await fiam.triggerEvent('on_foreground');
+          
+          final analytics = FirebaseAnalytics.instance;
+          await analytics.logAppOpen();
+        } catch (_) {}
+        
       } catch (e) {
         debugPrint('FCM initialize failed: $e');
       }
