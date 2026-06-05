@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/chat_model.dart';
@@ -123,34 +125,70 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     String chatId, {
     int limit = 50,
   }) {
+    final messagesRef = _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages');
+
+    // Helper: map a QuerySnapshot to a sorted list.
+    List<ChatMessageModel> mapAndSort(QuerySnapshot<Map<String, dynamic>> snap) {
+      final models = snap.docs
+          .map((doc) => ChatMessageModel.fromJson({'messageId': doc.id, ...doc.data()}))
+          .toList();
+      models.sort((a, b) => a.sentAt.compareTo(b.sentAt));
+      if (models.length > limit) return models.sublist(models.length - limit);
+      return models;
+    }
+
+    // Primary query: ordered + limited (requires composite index in Firestore).
+    // Falls back to a plain collection listen if the index is missing.
+    late Stream<List<ChatMessageModel>> primary;
     try {
-      return _firestore
-          .collection('chats')
-          .doc(chatId)
-          .collection('messages')
+      primary = messagesRef
           .orderBy('sentAt', descending: false)
           .limit(limit)
           .snapshots()
-          .map(
-            (snapshot) => snapshot.docs
-                .map(
-                  (doc) => ChatMessageModel.fromJson({
-                    'messageId': doc.id,
-                    ...doc.data(),
-                  }),
-                )
-                .toList(),
-          )
-          .handleError((error) {
+          .map(mapAndSort)
+          .handleError((Object error) {
+            // Index missing or permission issue on the compound query — will switch to fallback.
             if (error is FirebaseException &&
-                error.code == 'permission-denied') {
-              return;
+                (error.code == 'permission-denied' ||
+                    error.code == 'failed-precondition' ||
+                    error.code == 'unimplemented')) {
+              throw error; // rethrow so switchIfError can catch it
             }
             throw error;
           });
-    } catch (e) {
-      throw Exception('Error al obtener mensajes del chat: $e');
+    } catch (_) {
+      // Synchronous failure — use fallback directly.
+      return messagesRef
+          .snapshots()
+          .map(mapAndSort)
+          .handleError((Object error) {
+            if (error is FirebaseException && error.code == 'permission-denied') return;
+            throw error;
+          });
     }
+
+    // Wrap the primary stream: on any FirebaseException, switch to the simple fallback.
+    return primary.transform(
+      StreamTransformer.fromHandlers(
+        handleError: (error, stackTrace, sink) {
+          if (error is FirebaseException) {
+            // Swallow the error and subscribe to the fallback instead.
+            messagesRef.snapshots().map(mapAndSort).listen(
+              sink.add,
+              onError: (e) {
+                if (e is FirebaseException && e.code == 'permission-denied') return;
+                sink.addError(e, stackTrace);
+              },
+            );
+            return;
+          }
+          sink.addError(error, stackTrace);
+        },
+      ),
+    );
   }
 
   @override

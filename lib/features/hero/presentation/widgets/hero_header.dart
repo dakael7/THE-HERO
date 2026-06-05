@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../viewmodels/search_viewmodel.dart';
-import '../../../shared/notifications/presentation/providers/notifications_provider.dart';
-import '../../../shared/notifications/presentation/views/notifications_screen.dart';
+import '../../../shared/chat/presentation/providers/chat_providers.dart';
+import '../../../shared/chat/presentation/views/chat_list_screen.dart';
 import '../providers/catalog_filters_provider.dart';
 import '../widgets/product_card.dart';
 import '../widgets/catalog_filter_widgets.dart';
@@ -123,7 +123,7 @@ class HeroHeaderDelegate extends SliverPersistentHeaderDelegate {
               ),
             ),
           ),
-          // Fila superior (logo + notificaciones) que se oculta al hacer scroll o expandir búsqueda
+          // Fila superior (logo + mensajes) que se oculta al hacer scroll o expandir búsqueda
           Positioned(
             top: statusBarHeight + paddingNormal - 8 * t,
             left: paddingLarge,
@@ -247,7 +247,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
         expandedHeight: expandedHeight,
         collapsedHeight: collapsedHeight,
         buildLogoSection: _buildLogoSection,
-        buildNotificationIcon: _buildNotificationIcon,
+        buildNotificationIcon: _buildMessagesIcon,
         buildSearchBar: _buildSearchBar,
         isSearchExpanded: _isSearchExpanded,
         fadeAnimation: _fadeAnimation,
@@ -293,11 +293,11 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
     );
   }
 
-  Widget _buildNotificationIcon() {
-    final badgeCount = ref.watch(
-      notificationsProvider.select(
+  Widget _buildMessagesIcon() {
+    final unreadCount = ref.watch(
+      userChatsProvider.select(
         (async) => async.maybeWhen(
-          data: (notifications) => notifications.where((n) => !n.read).length,
+          data: (chats) => chats.fold<int>(0, (sum, c) => sum + c.unreadCount),
           orElse: () => 0,
         ),
       ),
@@ -307,7 +307,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
       onTap: () {
         Navigator.of(
           context,
-        ).push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+        ).push(MaterialPageRoute(builder: (_) => const ChatListScreen()));
       },
       child: Stack(
         clipBehavior: Clip.none,
@@ -326,12 +326,12 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
               ],
             ),
             child: const Icon(
-              Icons.notifications_none_outlined,
+              Icons.chat_bubble_outline_rounded,
               color: primaryOrange,
               size: 24,
             ),
           ),
-          if (badgeCount > 0)
+          if (unreadCount > 0)
             Positioned(
               right: -2,
               top: -2,
@@ -355,7 +355,7 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
                 ),
                 constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                 child: Text(
-                  badgeCount.toString(),
+                  unreadCount > 99 ? '99+' : unreadCount.toString(),
                   style: const TextStyle(
                     color: backgroundWhite,
                     fontSize: 10,

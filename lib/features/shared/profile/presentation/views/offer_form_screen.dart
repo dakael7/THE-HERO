@@ -85,7 +85,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
   bool? _isInGoodState;
   bool? _worksCorrectly;
   bool _isSaving = false;
-  bool _publishNow = false;
+  bool _publishNow = true;
   bool _acceptedTerms = false;
   String _weightUnit = 'kg';
   final String _placesApiKey = Env.placesApiKey;
