@@ -1,10 +1,22 @@
-﻿const {onCall, HttpsError} = require('firebase-functions/v2/https');
+const {onCall, HttpsError} = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const forge = require('node-forge');
+const {DOMParser, XMLSerializer} = require('@xmldom/xmldom');
+const {SignedXml} = require('xml-crypto');
 
 const FISCAL_REGION = 'southamerica-west1';
 const SUPPORTED_TIPO_DTE = new Set([33, 34, 39, 41, 46, 52, 56, 61]);
+// Para el set SII de factura de compra, el caso corresponde a IVA retenido construccion.
+const FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO = 41;
+const IVA_RETENIDO_CONSTRUCCION_CODIGO = 41;
+const FACTURA_COMPRA_RETENCION_TOTAL_IVA = [{
+  CodImp: FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO,
+  Retencion: 19,
+  price_include: false,
+  TasaImp: 19,
+}];
 
 function _readString(value) {
   if (typeof value !== 'string') return '';
@@ -147,6 +159,15 @@ function _toMaxLength(value, maxLength) {
   if (!normalized) return '';
   if (normalized.length <= maxLength) return normalized;
   return normalized.slice(0, maxLength);
+}
+
+function _xmlEscape(value) {
+  return _readString(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 function _parseNumericCsv(value) {
@@ -662,6 +683,212 @@ function _extractCafAuthorizationDate(cafBuffer) {
   const match = text.match(/<FA>\s*(\d{4}-\d{2}-\d{2})\s*<\/FA>/i);
   if (!match?.[1]) return '';
   return _safeIsoDate(match[1]);
+}
+
+function _extractSigningMaterialFromPfx({pfxBuffer, password}) {
+  if (!Buffer.isBuffer(pfxBuffer) || pfxBuffer.length === 0) {
+    throw new Error('Empty PFX buffer');
+  }
+
+  let p12;
+  try {
+    const der = forge.util.createBuffer(pfxBuffer.toString('binary'));
+    const asn1 = forge.asn1.fromDer(der);
+    p12 = forge.pkcs12.pkcs12FromAsn1(asn1, false, password);
+  } catch (error) {
+    throw new Error(`Unable to parse PFX certificate: ${_readString(error?.message)}`);
+  }
+
+  const keyBags = [
+    ...(p12.getBags({bagType: forge.pki.oids.pkcs8ShroudedKeyBag})[
+      forge.pki.oids.pkcs8ShroudedKeyBag
+    ] || []),
+    ...(p12.getBags({bagType: forge.pki.oids.keyBag})[
+      forge.pki.oids.keyBag
+    ] || []),
+  ];
+  const certBags = p12.getBags({bagType: forge.pki.oids.certBag})[forge.pki.oids.certBag] || [];
+  const key = keyBags[0]?.key || null;
+  const cert = certBags[0]?.cert || null;
+
+  if (!key || !cert) {
+    throw new Error('PFX does not contain private key and certificate');
+  }
+
+  const privateKeyPem = forge.pki.privateKeyToPem(key);
+  const certificatePem = forge.pki.certificateToPem(cert);
+  const certificateBase64 = certificatePem
+    .replace(/-----BEGIN CERTIFICATE-----/g, '')
+    .replace(/-----END CERTIFICATE-----/g, '')
+    .replace(/\r?\n/g, '');
+  const publicKey = cert.publicKey || null;
+  const modulusHexRaw = _readString(publicKey?.n?.toString(16));
+  const exponentHexRaw = _readString(publicKey?.e?.toString(16));
+  const modulusHex = modulusHexRaw.length % 2 === 0 ? modulusHexRaw : `0${modulusHexRaw}`;
+  const exponentHex = exponentHexRaw.length % 2 === 0 ? exponentHexRaw : `0${exponentHexRaw}`;
+  const rsaModulusBase64 = modulusHex ? Buffer.from(modulusHex, 'hex').toString('base64') : '';
+  const rsaExponentBase64 = exponentHex ? Buffer.from(exponentHex, 'hex').toString('base64') : '';
+
+  return {
+    privateKeyPem,
+    certificateBase64,
+    rsaModulusBase64,
+    rsaExponentBase64,
+  };
+}
+
+function _findFirstElementByLocalName(rootNode, localName) {
+  if (!rootNode || !localName) return null;
+  const nodes = rootNode.getElementsByTagName('*');
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const nodeName = _readString(node?.nodeName);
+    const local = _readString(node?.localName);
+    if (local === localName || nodeName === localName || nodeName.endsWith(`:${localName}`)) {
+      return node;
+    }
+  }
+  return null;
+}
+
+function _stripXmlSignature(xmlText) {
+  return _readString(xmlText)
+    .replace(/<Signature\b[\s\S]*?<\/Signature>\s*/i, '')
+    .replace(/<[^>]*:Signature\b[\s\S]*?<\/[^>]*:Signature>\s*/i, '');
+}
+
+function _addXmlReferenceCompat(signature, xpath, uri) {
+  const transforms = ['http://www.w3.org/TR/2001/REC-xml-c14n-20010315'];
+  const digestAlgorithm = 'http://www.w3.org/2000/09/xmldsig#sha1';
+
+  try {
+    signature.addReference({
+      xpath,
+      transforms,
+      digestAlgorithm,
+      uri,
+    });
+    return;
+  } catch (_) {}
+
+  signature.addReference(xpath, transforms, digestAlgorithm, uri);
+}
+
+function _signDteXml({xmlText, signingMaterial}) {
+  const unsignedXml = _stripXmlSignature(xmlText);
+  const doc = new DOMParser().parseFromString(unsignedXml, 'text/xml');
+  const documentoNode = _findFirstElementByLocalName(doc, 'Documento');
+  const documentoId = _readString(documentoNode?.getAttribute?.('ID'));
+  if (!documentoId) {
+    throw new Error('Unable to sign DTE XML: Documento ID not found');
+  }
+
+  const signature = new SignedXml();
+  signature.idAttributes = ['ID'];
+  signature.signatureAlgorithm = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1';
+  signature.canonicalizationAlgorithm = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
+  signature.signingKey = signingMaterial.privateKeyPem;
+  signature.privateKey = signingMaterial.privateKeyPem;
+
+  const keyInfoContent =
+    `<KeyValue><RSAKeyValue><Modulus>${signingMaterial.rsaModulusBase64}</Modulus>` +
+    `<Exponent>${signingMaterial.rsaExponentBase64}</Exponent></RSAKeyValue></KeyValue>` +
+    `<X509Data><X509Certificate>${signingMaterial.certificateBase64}</X509Certificate></X509Data>`;
+  signature.keyInfoProvider = {
+    getKeyInfo() {
+      return keyInfoContent;
+    },
+  };
+  signature.getKeyInfoContent = () => keyInfoContent;
+
+  const documentoXPath = "/*[local-name()='DTE']/*[local-name()='Documento']";
+  _addXmlReferenceCompat(signature, documentoXPath, `#${documentoId}`);
+  signature.computeSignature(unsignedXml, {
+    location: {
+      reference: documentoXPath,
+      action: 'after',
+    },
+  });
+
+  return signature.getSignedXml();
+}
+
+function _buildCdgItemXmlFromLine(line) {
+  const source = Array.isArray(line?.CodigosItem) && line.CodigosItem.length > 0 ?
+    line.CodigosItem[0] :
+    line?.CdgItem;
+  const tipoCodigo = _toMaxLength(
+    _firstNonEmpty(source?.TipoCodigo, source?.TpoCodigo),
+    10,
+  );
+  const valorCodigo = _toMaxLength(
+    _firstNonEmpty(source?.ValorCodigo, source?.VlrCodigo),
+    35,
+  );
+  if (!tipoCodigo || !valorCodigo) return '';
+  return `<CdgItem><TpoCodigo>${_xmlEscape(tipoCodigo)}</TpoCodigo>` +
+    `<VlrCodigo>${_xmlEscape(valorCodigo)}</VlrCodigo></CdgItem>`;
+}
+
+function _patchDteCdgItemBlocks(xmlText, dteInput) {
+  const details = Array.isArray(dteInput?.Documento?.Detalles) ?
+    dteInput.Documento.Detalles :
+    [];
+  if (details.length === 0) return xmlText;
+
+  let detailIndex = 0;
+  let patchedCount = 0;
+  const patchedXml = _readString(xmlText).replace(
+    /<Detalle\b[^>]*>[\s\S]*?<\/Detalle>/gi,
+    (detailBlock) => {
+      const line = details[detailIndex++] || null;
+      const cdgItemXml = _buildCdgItemXmlFromLine(line);
+      if (!cdgItemXml) return detailBlock;
+
+      if (/<CdgItem\s*\/>/i.test(detailBlock)) {
+        patchedCount++;
+        return detailBlock.replace(/<CdgItem\s*\/>/i, cdgItemXml);
+      }
+
+      if (/<CdgItem\b[\s\S]*?<\/CdgItem>/i.test(detailBlock)) {
+        const hasTipo = /<TpoCodigo>\s*[^<]+\s*<\/TpoCodigo>/i.test(detailBlock);
+        const hasValor = /<VlrCodigo>\s*[^<]+\s*<\/VlrCodigo>/i.test(detailBlock);
+        if (hasTipo && hasValor) return detailBlock;
+        patchedCount++;
+        return detailBlock.replace(/<CdgItem\b[\s\S]*?<\/CdgItem>/i, cdgItemXml);
+      }
+
+      patchedCount++;
+      return detailBlock.replace(/(<NroLinDet>\s*\d+\s*<\/NroLinDet>)/i, `$1\n${cdgItemXml}`);
+    },
+  );
+
+  if (patchedCount > 0) {
+    logger.info('DTE_XML_CDGITEM_PATCHED', {patchedCount});
+  }
+
+  return patchedXml;
+}
+
+function _finalizeDteXmlInternally({xmlPayloadBuffer, dteInput, pfxBuffer, pfxPassword}) {
+  const decoded = xmlPayloadBuffer.toString('latin1');
+  const patchedXml = _patchDteCdgItemBlocks(decoded, dteInput);
+  if (patchedXml === decoded) {
+    return xmlPayloadBuffer;
+  }
+
+  const signingMaterial = _extractSigningMaterialFromPfx({
+    pfxBuffer,
+    password: pfxPassword,
+  });
+  const signedXml = _signDteXml({
+    xmlText: patchedXml,
+    signingMaterial,
+  });
+  const finalXml = signedXml.startsWith('<?xml') ?
+    signedXml.replace(/^<\?xml[\s\S]*?\?>/i, '<?xml version="1.0" encoding="iso-8859-1"?>') :
+    `<?xml version="1.0" encoding="iso-8859-1"?>\n${signedXml}`;
+  return Buffer.from(finalXml, 'latin1');
 }
 
 function _maxIsoDate(a, b) {
@@ -1351,7 +1578,6 @@ function _buildReferences(payload, currentFolio = 0) {
   const references = Array.isArray(payload?.references) ? payload.references : [];
   const out = [];
   const defaultRefDate = _safeIsoDate(payload?.emitDate);
-  const selfFolio = Math.max(1, Math.round(_asNumber(currentFolio)));
 
   for (let idx = 0; idx < references.length; idx++) {
     const ref = references[idx] || {};
@@ -1375,15 +1601,21 @@ function _buildReferences(payload, currentFolio = 0) {
     const entry = {
       Numero: idx + 1,
     };
+
     if (tipoDocumento) entry.TipoDocumento = tipoDocumento;
+
+    // Para SET debe ir el número del caso: 1, 2, 3...
+    // No debe ir el folio real del DTE.
     if (tipoDocumento === 'SET') {
-      entry.FolioReferencia = String(selfFolio);
+      entry.FolioReferencia = folio || String(idx + 1);
     } else if (folio) {
       entry.FolioReferencia = folio;
     }
+
     if (_isValidRutShape(rutRef) && _hasValidRutDv(rutRef)) {
       entry.RutReferencia = rutRef;
     }
+
     if (refDate) entry.FechaDocumentoReferencia = refDate;
     if (indicator > 0) entry.IndicadorGlobal = indicator;
     if (codRef) entry.CodigoReferencia = codRef;
@@ -1471,9 +1703,6 @@ function _buildDetails(payload, tipoDte, references) {
   const canIncludeZero = _allowZeroAmountLine({tipoDte, tipoTraslado, references});
   const defaultTaxCodeCandidates = [
     payload?.codigoImpuestoAdicional,
-    payload?.impuestoRetenido?.tipoImpuesto,
-    payload?.impuestoRetenido?.tipo,
-    payload?.retencionIva?.tipoImpuesto,
     payload?.retainedTaxCode,
   ];
   let defaultTaxCodes = [];
@@ -1556,10 +1785,26 @@ function _buildDetails(payload, tipoDte, references) {
     );
     const itemCodeType = _readString(item?.itemCodeType || item?.tpoCodigo || 'INT1') || 'INT1';
     if (itemCode) {
-      line.CdgItem = {
-        TpoCodigo: _toMaxLength(itemCodeType, 10),
-        VlrCodigo: _toMaxLength(itemCode, 35),
+      const codigoItem = {
+        TipoCodigo: _toMaxLength(itemCodeType, 10),
+        ValorCodigo: _toMaxLength(itemCode, 35),
       };
+      // SimpleAPI SDK expects CodigosItem and serializes it as <CdgItem>.
+      // Keep CdgItem too for backwards compatibility with direct payload variants.
+      line.CdgItem = {
+        TpoCodigo: codigoItem.TipoCodigo,
+        VlrCodigo: codigoItem.ValorCodigo,
+      };
+      line.CodigosItem = [codigoItem];
+    }
+    const indAgente = _toMaxLength(
+      _firstNonEmpty(item?.indAgente, item?.indicadorAgente, item?.agenteRetenedor),
+      1,
+    ).toUpperCase();
+    if (['R', 'A'].includes(indAgente)) {
+      line.IndAgente = indAgente;
+      // SimpleAPI/SII: agente retenedor en bloque Retenedor (HED-2-302 si falta con CodImp 15).
+      line.Retenedor = {IndicadorAgente: indAgente};
     }
     if (!(compactLine && omitAmountInCompact)) {
       line.MontoItem = montoItem;
@@ -1591,9 +1836,85 @@ function _buildDetails(payload, tipoDte, references) {
       }
     }
     const lineTaxCodes = itemTaxCodes.length > 0 ? itemTaxCodes : defaultTaxCodes;
-    if (lineTaxCodes.length > 0) {
-      line.CodigoImpuestoAdicional = lineTaxCodes;
-    }
+  //  if (lineTaxCodes.length > 0) {
+  //    line.CodigoImpuestoAdicional = lineTaxCodes;
+ //   }
+const retainedTaxCode =
+  lineTaxCodes.includes(IVA_RETENIDO_CONSTRUCCION_CODIGO)
+    ? IVA_RETENIDO_CONSTRUCCION_CODIGO
+    : (
+      lineTaxCodes.includes(FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO)
+        ? FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO
+        : null
+    );
+
+if ([46, 56, 61].includes(tipoDte) && retainedTaxCode) {
+  // Calcular el IVA de esta linea (MontoItem es neto)
+  const lineNeto = Math.max(0, _readInteger(line?.MontoItem ?? line?.Monto ?? 0));
+  const lineIva = Math.round(lineNeto * 19 / 100);
+
+  // SII calcula la retencion del detalle desde la base informada en Retenedor.
+  line.Retenedor = {
+    IndicadorAgente: 'R',
+    MontoBaseFaenamiento: lineNeto,
+  };
+
+ if (lineIva > 0) {
+  if (!Array.isArray(line.Impuesto)) line.Impuesto = [];
+
+  line.Impuesto = line.Impuesto.filter(
+    t => _readInteger(t?.CodImp) !== retainedTaxCode
+  );
+
+  line.Impuesto.push({
+    CodImp: retainedTaxCode,
+    TasaImp: 19,
+    MontoImpuesto: lineIva,
+    MontoImp: lineIva,
+  });
+}
+
+  // Asegurar códigos de impuesto adicional
+  if (!Array.isArray(line.CodigoImpuestoAdicional)) line.CodigoImpuestoAdicional = [];
+  if (!line.CodigoImpuestoAdicional.includes(retainedTaxCode)) {
+    line.CodigoImpuestoAdicional.push(retainedTaxCode);
+  }
+  // También en formato alternativo
+  if (!Array.isArray(line.CodImpAdic)) line.CodImpAdic = [];
+  if (!line.CodImpAdic.includes(retainedTaxCode)) {
+    line.CodImpAdic.push(retainedTaxCode);
+  }
+}
+const retentionAlreadyBuilt = Array.isArray(line.Impuesto) &&
+  line.Impuesto.some((t) => _readInteger(t?.CodImp) === FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO ||
+    _readInteger(t?.CodImp) === IVA_RETENIDO_CONSTRUCCION_CODIGO);
+
+const itemTaxes = retentionAlreadyBuilt ? [] :
+  (Array.isArray(item?.Impuesto) ? item.Impuesto :
+    (Array.isArray(item?.impuesto) ? item.impuesto :
+      (Array.isArray(item?.impuestos) ? item.impuestos : [])));
+
+if (itemTaxes.length > 0) {
+  const lineNeto = Math.max(0, _readInteger(line?.MontoItem ?? 0));
+  const mappedTaxes = itemTaxes.map((tax) => {
+    const codImp = Math.round(_asNumber(tax?.CodImp ?? tax?.codImp ?? tax?.codigo ?? tax?.tipoImpuesto));
+    const tasaImp = _firstFiniteNumber(tax?.TasaImp, tax?.tasaImp, tax?.tasa, 0);
+    const montoExplicito = tax?.MontoImpuesto ?? tax?.montoImpuesto ?? tax?.Monto ?? tax?.monto;
+    const montoImpuesto = montoExplicito != null
+      ? Math.max(0, _toMoneyInt(montoExplicito))
+      : (tasaImp > 0 ? Math.round(lineNeto * tasaImp / 100) : 0);
+    return {
+      CodImp: codImp,
+      Retencion: _firstFiniteNumber(tax?.Retencion, tax?.retencion, tax?.tasaRetencion, 0),
+      price_include: _readBoolean(tax?.price_include ?? tax?.priceInclude, false),
+      TasaImp: tasaImp,
+      ...(montoImpuesto > 0 ? { MontoImpuesto: montoImpuesto } : {}),
+    };
+  }).filter((tax) => tax.CodImp > 0);
+  if (mappedTaxes.length > 0) {
+    line.Impuesto = mappedTaxes;
+  }
+}
 
     const lineAmount = Math.max(0, Math.round(_asNumber(line?.MontoItem)));
     if (lineAmount > 0 || canIncludeZero || _readBoolean(item?.allowZero, false)) {
@@ -1703,7 +2024,7 @@ function _resolveRetainedTaxConfig({payload, tipoDte, details, iva}) {
   if (explicitAmountSource !== undefined && explicitAmountSource !== null) {
     retainedAmount = Math.max(0, _toMoneyInt(explicitAmountSource));
   } else {
-    retainedAmount = Math.max(0, _toMoneyInt(iva * (resolvedRate / 19)));
+    retainedAmount = iva;
   }
 
   const modeRaw = _toLower(
@@ -1720,6 +2041,94 @@ function _resolveRetainedTaxConfig({payload, tipoDte, details, iva}) {
     montoImpuesto: retainedAmount,
     ivaNoRetenido,
   };
+}
+
+function _buildSimpleApiImpuestosRetencionesRow(retainedTax, retainedAmount) {
+  const tipoImpuesto = _readInteger(retainedTax?.tipoImpuesto, 0);
+  const tasaImpuesto = _asNumber(retainedTax?.tasaImpuesto) || 19;
+  const montoImpuesto = Math.max(0, _toMoneyInt(retainedAmount));
+
+  if (tipoImpuesto <= 0 || montoImpuesto <= 0) return null;
+
+  return {
+    TipoImpuesto: tipoImpuesto,
+    TasaImpuesto: tasaImpuesto,
+    MontoImpuesto: montoImpuesto,
+  };
+}
+
+function _applyRetainedTaxToSimpleApiTotals(totals, retainedTax, retainedAmount) {
+  if (!retainedTax || retainedAmount <= 0) return totals;
+
+  const retentionRow = _buildSimpleApiImpuestosRetencionesRow(retainedTax, retainedAmount);
+
+  if (retentionRow) {
+    // SimpleAPI transforma este DTO a:
+    // <ImptoReten><TipoImp>...</TipoImp><TasaImp>...</TasaImp><MontoImp>...</MontoImp></ImptoReten>
+    totals.ImpuestosRetenciones = [retentionRow];
+    totals.MontoBaseFaenamientoCarne = Math.max(0, _readInteger(totals?.MontoNeto));
+  }
+
+  if (retainedTax.ivaNoRetenido > 0) {
+    totals.IVANoRetenido = retainedTax.ivaNoRetenido;
+  }
+
+  return totals;
+}
+
+function _detailLinesHaveTaxCode(detalles, taxCode) {
+  const code = _readInteger(taxCode, 0);
+  if (code <= 0) return false;
+  for (const line of detalles || []) {
+    const rawCodes = line?.CodigoImpuestoAdicional ??
+      line?.codigoImpuestoAdicional ??
+      line?.CodImpAdic ??
+      line?.codImpAdic ??
+      [];
+    const codes = Array.isArray(rawCodes) ? rawCodes : [rawCodes];
+    if (codes.some((item) => _readInteger(item, 0) === code)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function _sanitizeSimpleApiIvaRetenidoTotalPayload(documento, tipoDte) {
+  if (![46, 56, 61].includes(tipoDte)) return documento;
+
+  const detalles = Array.isArray(documento?.Detalles) ? documento.Detalles : [];
+
+  const targetTaxCode = [
+    FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO,
+    IVA_RETENIDO_CONSTRUCCION_CODIGO,
+  ].find(code => _detailLinesHaveTaxCode(detalles, code));
+
+  if (!targetTaxCode) return documento;
+
+  for (const line of detalles) {
+    const neto = Math.max(0, _readInteger(line?.MontoItem ?? line?.Monto));
+    if (neto <= 0) continue;
+
+    const lineIva = Math.round(neto * 19 / 100);
+    if (lineIva <= 0) continue;
+
+    if (!Array.isArray(line.Impuesto)) {
+      line.Impuesto = [];
+    }
+
+    line.Impuesto = line.Impuesto.filter(
+      t => _readInteger(t?.CodImp) !== targetTaxCode
+    );
+
+    line.Impuesto.push({
+      CodImp: targetTaxCode,
+      TasaImp: 19,
+      MontoImpuesto: lineIva,
+      MontoImp: lineIva,
+    });
+  }
+
+  return documento;
 }
 
 function _computeTotals({payload, tipoDte, details, globalDiscounts}) {
@@ -1777,16 +2186,7 @@ function _computeTotals({payload, tipoDte, details, globalDiscounts}) {
     totals.TasaIVA = 19;
   }
 
-  if (retainedTax && retainedAmount > 0) {
-    totals.ImpuestosRetenciones = [{
-      TipoImpuesto: retainedTax.tipoImpuesto,
-      TasaImpuesto: retainedTax.tasaImpuesto,
-      MontoImpuesto: retainedAmount,
-    }];
-    if (retainedTax.ivaNoRetenido > 0) {
-      totals.IVANoRetenido = retainedTax.ivaNoRetenido;
-    }
-  }
+  _applyRetainedTaxToSimpleApiTotals(totals, retainedTax, retainedAmount);
 
   return totals;
 }
@@ -1874,7 +2274,7 @@ function _buildDteInput({payload, folio, tipoDte}) {
     encabezado.Transporte = transporte;
   }
 
-  const documento = {
+  let documento = {
     Encabezado: encabezado,
     Detalles: detalles,
   };
@@ -1891,13 +2291,33 @@ function _buildDteInput({payload, folio, tipoDte}) {
     documento.Referencias = referencias;
   }
 
-  return {
-    Documento: documento,
-    Certificado: {
-      Rut: certRut,
-      Password: _readString(process.env.SIMPLEAPI_PFX_PASSWORD),
-    },
-  };
+documento = _sanitizeSimpleApiIvaRetenidoTotalPayload(documento, tipoDte);
+
+if ([46, 56, 61].includes(tipoDte)) {
+  logger.info('DTE_RETENCION_INPUT_DEBUG', {
+    tipoDte,
+    folio: idDoc.Folio,
+    totales: documento?.Encabezado?.Totales,
+    detalles: (documento?.Detalles || []).map((line) => ({
+      numero: line.NumeroLinea,
+      nombre: line.Nombre,
+      montoItem: line.MontoItem,
+      codigosItem: line.CodigosItem || line.CdgItem || [],
+      codigos: line.CodigoImpuestoAdicional || line.CodImpAdic || [],
+      impuesto: line.Impuesto || [],
+      otrosImp: line.OtrosImp || [],
+    })),
+  });
+}
+
+return {
+  Documento: documento,
+  Certificado: {
+    Rut: certRut,
+    Password: _readString(process.env.SIMPLEAPI_PFX_PASSWORD),
+  },
+};
+
 }
 
 function _buildPdfInput(payload) {
@@ -2045,8 +2465,9 @@ async function _emitFiscalDocument({
   let dteBodyBuffer = Buffer.alloc(0);
   let dteBodyText = '';
   let dteStatusCode = 0;
+  let dteInput = null;
   for (let attempt = 0; ; attempt++) {
-    const dteInput = _buildDteInput({
+    dteInput = _buildDteInput({
       payload: payloadForEmission,
       folio: currentFolio,
       tipoDte,
@@ -2144,7 +2565,12 @@ async function _emitFiscalDocument({
   if (!xmlPayloadInfo) {
     throw new Error(`DTE response did not include a valid XML payload (status=${dteStatusCode})`);
   }
-  const xmlPayloadBuffer = xmlPayloadInfo.xmlBuffer;
+  let xmlPayloadBuffer = _finalizeDteXmlInternally({
+    xmlPayloadBuffer: xmlPayloadInfo.xmlBuffer,
+    dteInput,
+    pfxBuffer,
+    pfxPassword: _readString(process.env.SIMPLEAPI_PFX_PASSWORD),
+  });
 
   const bucket = outputBucketName ?
     admin.storage().bucket(outputBucketName) :
@@ -2526,7 +2952,15 @@ exports.runSiiCertificationSet = onCall(
       contacto: _readString(data.receptor.contacto),
     };
     const internalReceiver = _buildInternalGuideReceptorFromEnv();
-    const emitDate = _safeIsoDate(data?.emitDate);
+let emitDate = _safeIsoDate(data?.emitDate);
+const today = _safeIsoDate(new Date());
+if (!emitDate || emitDate > today) {
+  emitDate = today;
+  logger.warn('EMIT_DATE_ADJUSTED_TO_TODAY', {
+    original: _safeIsoDate(data?.emitDate) || 'undefined',
+    adjusted: emitDate
+  });
+}
     const forceSiiSendRaw = data?.forceSiiSend;
     const forceSiiSend = forceSiiSendRaw == null ? null : _readBoolean(forceSiiSendRaw, false);
     const sendDocumentsIndividually = _readBoolean(
@@ -2558,437 +2992,505 @@ exports.runSiiCertificationSet = onCall(
     const shouldRunGuia = setMode === 'all' || setMode === 'guia';
     const shouldRunCompra = setMode === 'all' || setMode === 'factura_compra';
     // La simulacion se envia en un sobre aparte; no mezclar con sets de certificacion.
-    const shouldRunSimulation = setMode === 'simulacion';
-    // Set SII 783301032 (ver docs/Set/SIISetDePruebas783301032.txt)
-    const basicSetPrefix = _readString(process.env.SII_SET_BASICO_CASE_PREFIX) || '4864439';
-    const guiaSetPrefix = _readString(process.env.SII_SET_GUIA_CASE_PREFIX) || '4864442';
-    const compraSetPrefix = _readString(process.env.SII_SET_COMPRA_CASE_PREFIX) || '4864444';
+const shouldRunSimulation = setMode === 'simulacion';
 
-    async function emitCase(caseCode, payload, options = {}) {
-      const includeSetReference = _readBoolean(options?.includeSetReference, true);
-      const caseCodeParts = _readString(caseCode).split('_');
-      const setNumber = _readString(caseCodeParts[0]);
-      const caseNumber = _readString(caseCodeParts[1]);
-      const caseLabel = setNumber && caseNumber ? `${setNumber}-${caseNumber}` : _readString(caseCode);
+try {
+  // Set SII 783301032 - nuevo set de prueba
+  const basicSetPrefix = _readString(process.env.SII_SET_BASICO_CASE_PREFIX) || '4896901';
+  const guiaSetPrefix = _readString(process.env.SII_SET_GUIA_CASE_PREFIX) || '4896904';
+  const compraSetPrefix = _readString(process.env.SII_SET_COMPRA_CASE_PREFIX) || '4896906';
 
-      const existingReferences = Array.isArray(payload?.references) ? payload.references : [];
-      let payloadWithReferences = {
-        ...(payload || {}),
-        references: existingReferences,
-      };
-      if (includeSetReference) {
-        // Primera referencia obligatoria para sets de prueba:
-        // TpoDocRef=SET y RazonRef=CASO <NRO_SET>-<CASO>
-        const setReference = {
-          tipoDocumento: 'SET',
-          folio: String(Math.max(1, _readInteger(caseNumber, 1))),
-          fecha: _safeIsoDate(emitDate),
-          razonReferencia: `CASO ${caseLabel}`,
-        };
-        payloadWithReferences = {
-          ...(payload || {}),
-          references: [setReference, ...existingReferences],
-        };
-      }
+async function emitCase(caseCode, payload, options = {}) {
+  const includeSetReference = _readBoolean(options?.includeSetReference, true);
 
-      const documentId = `${runId}_${caseCode}`;
-      const result = await _emitAndPersist({
-        db,
-        documentId,
-        payload: payloadWithReferences,
-        requestAuth: request.auth,
-        source: 'sii_certification',
-        setCaseCode: caseCode,
-        // Para certificacion SII, por defecto el set se envia en un solo sobre consolidado.
-        forceSiiSend: sendDocumentsIndividually ? forceSiiSend : false,
+  const caseCodeParts = _readString(caseCode).split('_');
+  const setNumber = _readString(caseCodeParts[0]);
+  const caseNumber = _readString(caseCodeParts[1]);
+  const caseLabel = setNumber && caseNumber
+    ? `${setNumber}-${caseNumber}`
+    : _readString(caseCode);
+
+  const existingReferences = Array.isArray(payload?.references)
+    ? payload.references
+    : [];
+
+  let payloadWithReferences = {
+    ...(payload || {}),
+    references: existingReferences,
+  };
+
+  if (includeSetReference) {
+    const setReference = {
+      tipoDocumento: 'SET',
+      folio: String(Math.max(1, _readInteger(caseNumber, 1))),
+      fecha: _safeIsoDate(emitDate),
+      razonReferencia: `CASO ${caseLabel}`,
+    };
+
+    payloadWithReferences = {
+      ...(payload || {}),
+      references: [setReference, ...existingReferences],
+    };
+  }
+
+  const documentId = `${runId}_${caseCode}`;
+
+  const result = await _emitAndPersist({
+    db,
+    documentId,
+    payload: payloadWithReferences,
+    requestAuth: request.auth,
+    source: 'sii_certification',
+    setCaseCode: caseCode,
+    forceSiiSend: sendDocumentsIndividually ? forceSiiSend : false,
+  });
+
+  refs[caseCode] = {
+    tipoDte: result.tipoDte,
+    folio: result.folio,
+    date: emitDate,
+  };
+
+  resultRows.push({
+    caseCode,
+    documentId,
+    tipoDte: result.tipoDte,
+    folio: result.folio,
+    providerTrackId: result.providerTrackId,
+    xmlPath: result.xmlPath,
+    xmlStoragePath: result.xmlStoragePath || null,
+    pdfPath: result.pdfPath,
+  });
+
+  await runRef.set({
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    results: resultRows,
+  }, {merge: true});
+}
+
+if (shouldRunBasic) {
+  await emitCase(`${basicSetPrefix}_1`, {
+    documentType: 'factura',
+    emitDate,
+    receptor: externalReceiver,
+    items: [
+      {name: 'Cajón AFECTO', quantity: 128, unitPrice: 1204},
+      {name: 'Relleno AFECTO', quantity: 55, unitPrice: 1948},
+    ],
+  });
+
+  await emitCase(`${basicSetPrefix}_2`, {
+    documentType: 'factura',
+    emitDate,
+    receptor: externalReceiver,
+    items: [
+      {name: 'Pañuelo AFECTO', quantity: 292, unitPrice: 2358, discountPercent: 4},
+      {name: 'ITEM 2 AFECTO', quantity: 220, unitPrice: 1420, discountPercent: 7},
+    ],
+  });
+
+  await emitCase(`${basicSetPrefix}_3`, {
+    documentType: 'factura',
+    emitDate,
+    receptor: externalReceiver,
+    items: [
+      {name: 'Pintura B&W AFECTO', quantity: 26, unitPrice: 2531},
+      {name: 'ITEM 2 AFECTO', quantity: 158, unitPrice: 3048},
+      {name: 'ITEM 3 SERVICIO EXENTO', quantity: 1, unitPrice: 34769, exempt: true},
+    ],
+  });
+
+  await emitCase(`${basicSetPrefix}_4`, {
+    documentType: 'factura',
+    emitDate,
+    receptor: externalReceiver,
+    items: [
+      {name: 'ITEM 1 AFECTO', quantity: 117, unitPrice: 2136},
+      {name: 'ITEM 2 AFECTO', quantity: 50, unitPrice: 2039},
+      {name: 'ITEM 3 SERVICIO EXENTO', quantity: 2, unitPrice: 6775, exempt: true},
+    ],
+    globalDiscount: {
+      description: 'DESCUENTO GLOBAL ITEMES AFECTOS',
+      percent: 8,
+      appliesToExempt: false,
+    },
+  });
+
+  await emitCase(`${basicSetPrefix}_5`, {
+    documentType: 'nota_credito',
+    emitDate,
+    receptor: externalReceiver,
+    forceTasaIva: true,
+    references: [
+      {
+        tipoDocumento: '33',
+        folio: String(refs[`${basicSetPrefix}_1`]?.folio || ''),
+        fecha: refs[`${basicSetPrefix}_1`]?.date || emitDate,
+        codigoReferencia: 2,
+        razonReferencia: 'CORRIGE GIRO DEL RECEPTOR',
+      },
+    ],
+    items: [
+      {
+        name: 'IMP. CORRIGE TEXTO',
+        amount: 0,
+        itemCode: 'NO_PRODUCT',
+        compactLine: true,
+        allowZero: true,
+      },
+    ],
+  });
+
+  await emitCase(`${basicSetPrefix}_6`, {
+    documentType: 'nota_credito',
+    emitDate,
+    receptor: externalReceiver,
+    references: [
+      {
+        tipoDocumento: '33',
+        folio: String(refs[`${basicSetPrefix}_2`]?.folio || ''),
+        fecha: refs[`${basicSetPrefix}_2`]?.date || emitDate,
+        codigoReferencia: 3,
+        razonReferencia: 'DEVOLUCION DE MERCADERIAS',
+      },
+    ],
+    items: [
+      {name: 'Pañuelo AFECTO', quantity: 107, unitPrice: 2358, discountPercent: 4},
+      {name: 'ITEM 2 AFECTO', quantity: 149, unitPrice: 1420, discountPercent: 7},
+    ],
+  });
+
+  await emitCase(`${basicSetPrefix}_7`, {
+    documentType: 'nota_credito',
+    emitDate,
+    receptor: externalReceiver,
+    references: [
+      {
+        tipoDocumento: '33',
+        folio: String(refs[`${basicSetPrefix}_3`]?.folio || ''),
+        fecha: refs[`${basicSetPrefix}_3`]?.date || emitDate,
+        codigoReferencia: 1,
+        razonReferencia: 'ANULA FACTURA',
+      },
+    ],
+    items: [
+      {name: 'Pintura B&W AFECTO', quantity: 26, unitPrice: 2531},
+      {name: 'ITEM 2 AFECTO', quantity: 158, unitPrice: 3048},
+      {name: 'ITEM 3 SERVICIO EXENTO', quantity: 1, unitPrice: 34769, exempt: true},
+    ],
+  });
+
+  await emitCase(`${basicSetPrefix}_8`, {
+    documentType: 'nota_debito',
+    emitDate,
+    receptor: externalReceiver,
+    forceTasaIva: true,
+    references: [
+      {
+        tipoDocumento: '61',
+        folio: String(refs[`${basicSetPrefix}_5`]?.folio || ''),
+        fecha: refs[`${basicSetPrefix}_5`]?.date || emitDate,
+        codigoReferencia: 1,
+        razonReferencia: 'ANULA NOTA DE CREDITO ELECTRONICA',
+      },
+    ],
+    items: [
+      {
+        name: 'ANULA NOTA DE CREDITO ELECTRONICA',
+        amount: 0,
+        compactLine: true,
+        allowZero: true,
+      },
+    ],
+  });
+}
+
+if (shouldRunGuia) {
+  await emitCase(`${guiaSetPrefix}_1`, {
+    documentType: 'guia_despacho',
+    emitDate,
+    receptor: internalReceiver,
+    guia: {
+      tipoTraslado: 5,
+      transporte: {
+        direccionDestino: _readString(process.env.SIMPLEAPI_EMISOR_DIRECCION),
+        comunaDestino: _readString(process.env.SIMPLEAPI_EMISOR_COMUNA),
+        ciudadDestino: _readString(process.env.SIMPLEAPI_EMISOR_CIUDAD),
+      },
+    },
+    items: [
+      {
+        name: 'ITEM 1',
+        quantity: 50,
+        compactLine: true,
+        keepQuantity: true,
+        omitLineAmount: true,
+        allowZero: true,
+      },
+      {
+        name: 'ITEM 2',
+        quantity: 41,
+        compactLine: true,
+        keepQuantity: true,
+        omitLineAmount: true,
+        allowZero: true,
+      },
+      {
+        name: 'ITEM 3',
+        quantity: 10,
+        compactLine: true,
+        keepQuantity: true,
+        omitLineAmount: true,
+        allowZero: true,
+      },
+    ],
+  });
+
+  await emitCase(`${guiaSetPrefix}_2`, {
+    documentType: 'guia_despacho',
+    emitDate,
+    receptor: externalReceiver,
+    guia: {
+      tipoTraslado: 1,
+      tipoDespacho: 2,
+      transporte: {
+        direccionDestino: externalReceiver.direccion,
+        comunaDestino: externalReceiver.comuna,
+        ciudadDestino: externalReceiver.ciudad,
+      },
+    },
+    items: [
+      {name: 'ITEM 1', quantity: 15, unitPrice: 962},
+      {name: 'ITEM 2', quantity: 13, unitPrice: 795},
+    ],
+  });
+
+  await emitCase(`${guiaSetPrefix}_3`, {
+    documentType: 'guia_despacho',
+    emitDate,
+    receptor: externalReceiver,
+    guia: {
+      tipoTraslado: 1,
+      tipoDespacho: 1,
+      transporte: {
+        direccionDestino: externalReceiver.direccion,
+        comunaDestino: externalReceiver.comuna,
+        ciudadDestino: externalReceiver.ciudad,
+      },
+    },
+    items: [
+      {name: 'ITEM 1', quantity: 67, unitPrice: 928},
+      {name: 'ITEM 2', quantity: 35, unitPrice: 821},
+    ],
+  });
+}
+
+if (shouldRunCompra) {
+  await emitCase(`${compraSetPrefix}_1`, {
+    documentType: 'factura_compra',
+    emitDate,
+    receptor: externalReceiver,
+    impuestoRetenido: {
+      aplicar: true,
+      tipoImpuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO,
+      tasa: 19,
+      modo: 'total',
+    },
+    items: [
+      {
+        name: 'Producto 1',
+        quantity: 1168,
+        unitPrice: 8805,
+        itemCode: '4100',
+        itemCodeType: 'CPCS',
+        indAgente: 'R',
+        codigoImpuestoAdicional: [FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO],
+        Impuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA,
+      },
+      {
+        name: 'Producto 2',
+        quantity: 43,
+        unitPrice: 4917,
+        itemCode: '4100',
+        itemCodeType: 'CPCS',
+        indAgente: 'R',
+        codigoImpuestoAdicional: [FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO],
+        Impuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA,
+      },
+    ],
+  });
+
+  await emitCase(`${compraSetPrefix}_2`, {
+    documentType: 'nota_credito',
+    emitDate,
+    receptor: externalReceiver,
+    impuestoRetenido: {
+      aplicar: true,
+      tipoImpuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO,
+      tasa: 19,
+      modo: 'total',
+    },
+    references: [
+      {
+        tipoDocumento: '46',
+        folio: String(refs[`${compraSetPrefix}_1`]?.folio || ''),
+        fecha: refs[`${compraSetPrefix}_1`]?.date || emitDate,
+        codigoReferencia: 3,
+        razonReferencia: 'DEVOLUCION DE MERCADERIA ITEMS 1 Y 2',
+      },
+    ],
+    items: [
+      {
+        name: 'Producto 1',
+        quantity: 389,
+        unitPrice: 8805,
+        itemCode: '4100',
+        itemCodeType: 'CPCS',
+        indAgente: 'R',
+        codigoImpuestoAdicional: [FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO],
+        Impuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA,
+      },
+      {
+        name: 'Producto 2',
+        quantity: 14,
+        unitPrice: 4917,
+        itemCode: '4100',
+        itemCodeType: 'CPCS',
+        indAgente: 'R',
+        codigoImpuestoAdicional: [FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO],
+        Impuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA,
+      },
+    ],
+  });
+
+ await emitCase(`${compraSetPrefix}_3`, {
+  documentType: 'nota_debito',
+  emitDate,
+  receptor: externalReceiver,
+  impuestoRetenido: {
+    aplicar: true,
+    tipoImpuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO,
+    tasa: 19,
+    modo: 'total',
+  },
+  references: [
+    {
+      tipoDocumento: '61',
+      folio: String(refs[`${compraSetPrefix}_2`]?.folio || ''),
+      fecha: refs[`${compraSetPrefix}_2`]?.date || emitDate,
+      codigoReferencia: 1,
+      razonReferencia: 'ANULA NOTA DE CREDITO ELECTRONICA',
+    },
+  ],
+  items: [
+    {
+      name: 'Producto 1',
+      quantity: 389,
+      unitPrice: 8805,
+      itemCode: '4100',
+      itemCodeType: 'CPCS',
+      indAgente: 'R',
+      codigoImpuestoAdicional: [FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO],
+      Impuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA,
+    },
+    {
+      name: 'Producto 2',
+      quantity: 14,
+      unitPrice: 4917,
+      itemCode: '4100',
+      itemCodeType: 'CPCS',
+      indAgente: 'R',
+      codigoImpuestoAdicional: [FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO],
+      Impuesto: FACTURA_COMPRA_RETENCION_TOTAL_IVA,
+    },
+  ],
+});
+}
+
+if (shouldRunSimulation) {
+  const simulationInvoiceCount = Math.max(
+    18,
+    Math.round(_asNumber(process.env.SII_SIMULATION_INVOICE_COUNT || 18)),
+  );
+
+  for (let simIndex = 1; simIndex <= simulationInvoiceCount; simIndex++) {
+    const simReceptor = _buildSimulationReceptor(simIndex);
+    const items = [
+      {
+        name: `SERVICIO SIMULACION ${simIndex}`,
+        quantity: 1,
+        unitPrice: 15000 + (simIndex * 1000),
+      },
+    ];
+
+    if (simIndex % 3 === 0) {
+      items.push({
+        name: `APOYO LOGISTICO ${simIndex}`,
+        quantity: 1,
+        unitPrice: 1200 + (simIndex * 100),
       });
-      refs[caseCode] = {
-        tipoDte: result.tipoDte,
-        folio: result.folio,
-        date: emitDate,
-      };
-      resultRows.push({
-        caseCode,
-        documentId,
-        tipoDte: result.tipoDte,
-        folio: result.folio,
-        providerTrackId: result.providerTrackId,
-        xmlPath: result.xmlPath,
-        xmlStoragePath: result.xmlStoragePath || null,
-        pdfPath: result.pdfPath,
-      });
-      await runRef.set({
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        results: resultRows,
-      }, {merge: true});
     }
 
-    try {
-      if (shouldRunBasic) {
-        await emitCase(`${basicSetPrefix}_1`, {
-          documentType: 'factura',
-          emitDate,
-          receptor: externalReceiver,
-          items: [
-            {name: 'Cajón AFECTO', quantity: 123, unitPrice: 911},
-            {name: 'Relleno AFECTO', quantity: 53, unitPrice: 1453},
-          ],
-        });
+    await emitCase(`SIM_${simIndex}`, {
+      documentType: 'factura',
+      emitDate,
+      receptor: simReceptor,
+      items,
+    }, {includeSetReference: false});
+  }
 
-        await emitCase(`${basicSetPrefix}_2`, {
-          documentType: 'factura',
-          emitDate,
-          receptor: externalReceiver,
-          items: [
-            {name: 'Pañuelo AFECTO', quantity: 232, unitPrice: 1908, discountPercent: 4},
-            {name: 'ITEM 2 AFECTO', quantity: 159, unitPrice: 972, discountPercent: 5},
-          ],
-        });
+  const ncReceptor = _buildSimulationReceptor(simulationInvoiceCount + 1);
+  const ncTargetGiro = _readString(_buildSimulationReceptor(1).giro) || 'Servicios y comercio';
 
-        await emitCase(`${basicSetPrefix}_3`, {
-          documentType: 'factura',
-          emitDate,
-          receptor: externalReceiver,
-          items: [
-            {name: 'Pintura B&W AFECTO', quantity: 24, unitPrice: 1912},
-            {name: 'ITEM 2 AFECTO', quantity: 148, unitPrice: 2972},
-            {name: 'ITEM 3 SERVICIO EXENTO', quantity: 1, unitPrice: 34702, exempt: true},
-          ],
-        });
+  await emitCase('SIM_NC', {
+    documentType: 'nota_credito',
+    emitDate,
+    receptor: ncReceptor,
+    references: [
+      {
+        tipoDocumento: '33',
+        folio: String(refs.SIM_1?.folio || ''),
+        fecha: refs.SIM_1?.date || emitDate,
+        codigoReferencia: 2,
+        razonReferencia: `Dice: ${ncTargetGiro} y debe decir: ${ncTargetGiro} ACTUALIZADO`,
+      },
+    ],
+    items: [
+      {
+        name: 'IMP. CORRIGE TEXTO',
+        amount: 0,
+        itemCode: 'NO_PRODUCT',
+        compactLine: true,
+        allowZero: true,
+      },
+    ],
+  }, {includeSetReference: false});
 
-        await emitCase(`${basicSetPrefix}_4`, {
-          documentType: 'factura',
-          emitDate,
-          receptor: externalReceiver,
-          items: [
-            {name: 'ITEM 1 AFECTO', quantity: 80, unitPrice: 1652},
-            {name: 'ITEM 2 AFECTO', quantity: 34, unitPrice: 1378},
-            {name: 'ITEM 3 SERVICIO EXENTO', quantity: 2, unitPrice: 6767, exempt: true},
-          ],
-          globalDiscount: {
-            description: 'DESCUENTO GLOBAL ITEMES AFECTOS',
-            percent: 6,
-          },
-        });
+  const ndReceptor = _buildSimulationReceptor(simulationInvoiceCount + 2);
 
-        const receptorGiro = _readString(externalReceiver.giro) || 'GIRO PRUEBAS';
-        await emitCase(`${basicSetPrefix}_5`, {
-          documentType: 'nota_credito',
-          emitDate,
-          receptor: externalReceiver,
-          forceTasaIva: true,
-          references: [
-            {
-              tipoDocumento: '33',
-              folio: String(refs[`${basicSetPrefix}_1`]?.folio || ''),
-              fecha: refs[`${basicSetPrefix}_1`]?.date || emitDate,
-              codigoReferencia: 2,
-              razonReferencia: `Dice: ${receptorGiro} y debe decir: NUEVO ${receptorGiro}`,
-            },
-          ],
-          items: [
-            {
-              name: 'IMP. CORRIGE TEXTO',
-              amount: 0,
-              itemCode: 'NO_PRODUCT',
-              compactLine: true,
-              allowZero: true,
-            },
-          ],
-        });
-
-        await emitCase(`${basicSetPrefix}_6`, {
-          documentType: 'nota_credito',
-          emitDate,
-          receptor: externalReceiver,
-          references: [
-            {
-              tipoDocumento: '33',
-              folio: String(refs[`${basicSetPrefix}_2`]?.folio || ''),
-              fecha: refs[`${basicSetPrefix}_2`]?.date || emitDate,
-              codigoReferencia: 3,
-              razonReferencia: 'DEVOLUCION DE MERCADERIAS',
-            },
-          ],
-          items: [
-            {name: 'Pañuelo AFECTO', quantity: 85, unitPrice: 1908, discountPercent: 4},
-            {name: 'ITEM 2 AFECTO', quantity: 108, unitPrice: 972, discountPercent: 5},
-          ],
-        });
-
-        await emitCase(`${basicSetPrefix}_7`, {
-          documentType: 'nota_credito',
-          emitDate,
-          receptor: externalReceiver,
-          references: [
-            {
-              tipoDocumento: '33',
-              folio: String(refs[`${basicSetPrefix}_3`]?.folio || ''),
-              fecha: refs[`${basicSetPrefix}_3`]?.date || emitDate,
-              codigoReferencia: 1,
-              razonReferencia: 'ANULA FACTURA',
-            },
-          ],
-          items: [
-            {name: 'Pintura B&W AFECTO', quantity: 24, unitPrice: 1912},
-            {name: 'ITEM 2 AFECTO', quantity: 148, unitPrice: 2972},
-            {name: 'ITEM 3 SERVICIO EXENTO', quantity: 1, unitPrice: 34702, exempt: true},
-          ],
-        });
-
-        await emitCase(`${basicSetPrefix}_8`, {
-          documentType: 'nota_debito',
-          emitDate,
-          receptor: externalReceiver,
-          forceTasaIva: true,
-          references: [
-            {
-              tipoDocumento: '61',
-              folio: String(refs[`${basicSetPrefix}_5`]?.folio || ''),
-              fecha: refs[`${basicSetPrefix}_5`]?.date || emitDate,
-              codigoReferencia: 1,
-              razonReferencia: 'ANULA NOTA DE CREDITO ELECTRONICA',
-            },
-          ],
-          items: [
-            {
-              name: 'ANULA NOTA DE CREDITO ELECTRONICA',
-              amount: 0,
-              compactLine: true,
-              allowZero: true,
-            },
-          ],
-        });
-      }
-
-      if (shouldRunGuia) {
-        await emitCase(`${guiaSetPrefix}_1`, {
-          documentType: 'guia_despacho',
-          emitDate,
-          receptor: internalReceiver,
-          guia: {
-            tipoTraslado: 5,
-            transporte: {
-              direccionDestino: _readString(process.env.SIMPLEAPI_EMISOR_DIRECCION),
-              comunaDestino: _readString(process.env.SIMPLEAPI_EMISOR_COMUNA),
-              ciudadDestino: _readString(process.env.SIMPLEAPI_EMISOR_CIUDAD),
-            },
-          },
-          items: [
-            {
-              name: 'ITEM 1',
-              quantity: 60,
-              compactLine: true,
-              keepQuantity: true,
-              omitLineAmount: true,
-              allowZero: true,
-            },
-            {
-              name: 'ITEM 2',
-              quantity: 68,
-              compactLine: true,
-              keepQuantity: true,
-              omitLineAmount: true,
-              allowZero: true,
-            },
-            {
-              name: 'ITEM 3',
-              quantity: 35,
-              compactLine: true,
-              keepQuantity: true,
-              omitLineAmount: true,
-              allowZero: true,
-            },
-          ],
-        });
-
-        await emitCase(`${guiaSetPrefix}_2`, {
-          documentType: 'guia_despacho',
-          emitDate,
-          receptor: externalReceiver,
-          guia: {
-            tipoTraslado: 1,
-            tipoDespacho: 2,
-            transporte: {
-              direccionDestino: externalReceiver.direccion,
-              comunaDestino: externalReceiver.comuna,
-              ciudadDestino: externalReceiver.ciudad,
-            },
-          },
-          items: [
-            {name: 'ITEM 1', quantity: 125, unitPrice: 2986},
-            {name: 'ITEM 2', quantity: 230, unitPrice: 1069},
-          ],
-        });
-
-        await emitCase(`${guiaSetPrefix}_3`, {
-          documentType: 'guia_despacho',
-          emitDate,
-          receptor: externalReceiver,
-          guia: {
-            tipoTraslado: 1,
-            tipoDespacho: 1,
-            transporte: {
-              direccionDestino: externalReceiver.direccion,
-              comunaDestino: externalReceiver.comuna,
-              ciudadDestino: externalReceiver.ciudad,
-            },
-          },
-          items: [
-            {name: 'ITEM 1', quantity: 100, unitPrice: 1267},
-            {name: 'ITEM 2', quantity: 160, unitPrice: 2380},
-          ],
-        });
-      }
-
-      if (shouldRunCompra) {
-        await emitCase(`${compraSetPrefix}_1`, {
-          documentType: 'factura_compra',
-          emitDate,
-          receptor: externalReceiver,
-          impuestoRetenido: {
-            aplicar: true,
-            tipoImpuesto: 15,
-            tasa: 19,
-            modo: 'total',
-          },
-          items: [
-            {name: 'Producto 1', quantity: 252, unitPrice: 2426, codigoImpuestoAdicional: [15]},
-            {name: 'Producto 2', quantity: 20, unitPrice: 1181, codigoImpuestoAdicional: [15]},
-          ],
-        });
-
-        await emitCase(`${compraSetPrefix}_2`, {
-          documentType: 'nota_credito',
-          emitDate,
-          receptor: externalReceiver,
-          impuestoRetenido: {
-            aplicar: true,
-            tipoImpuesto: 15,
-            tasa: 19,
-            modo: 'total',
-          },
-          references: [
-            {
-              tipoDocumento: '46',
-              folio: String(refs[`${compraSetPrefix}_1`]?.folio || ''),
-              fecha: refs[`${compraSetPrefix}_1`]?.date || emitDate,
-              codigoReferencia: 3,
-              razonReferencia: 'DEVOLUCION DE MERCADERIA ITEMS 1 Y 2',
-            },
-          ],
-          items: [
-            {name: 'Producto 1', quantity: 84, unitPrice: 2426, codigoImpuestoAdicional: [15]},
-            {name: 'Producto 2', quantity: 7, unitPrice: 1181, codigoImpuestoAdicional: [15]},
-          ],
-        });
-
-        await emitCase(`${compraSetPrefix}_3`, {
-          documentType: 'nota_debito',
-          emitDate,
-          receptor: externalReceiver,
-          impuestoRetenido: {
-            aplicar: true,
-            tipoImpuesto: 15,
-            tasa: 19,
-            modo: 'total',
-          },
-          references: [
-            {
-              tipoDocumento: '61',
-              folio: String(refs[`${compraSetPrefix}_2`]?.folio || ''),
-              fecha: refs[`${compraSetPrefix}_2`]?.date || emitDate,
-              codigoReferencia: 1,
-              razonReferencia: 'ANULA NOTA DE CREDITO ELECTRONICA',
-            },
-          ],
-          items: [
-            {name: 'Producto 1', quantity: 84, unitPrice: 2426, codigoImpuestoAdicional: [15]},
-            {name: 'Producto 2', quantity: 7, unitPrice: 1181, codigoImpuestoAdicional: [15]},
-          ],
-        });
-      }
-
-      if (shouldRunSimulation) {
-        const simulationInvoiceCount = Math.max(
-          18,
-          Math.round(_asNumber(process.env.SII_SIMULATION_INVOICE_COUNT || 18)),
-        );
-
-        for (let simIndex = 1; simIndex <= simulationInvoiceCount; simIndex++) {
-          const simReceptor = _buildSimulationReceptor(simIndex);
-          const items = [
-            {
-              name: `SERVICIO OPERATIVO ${simIndex}`,
-              quantity: (simIndex % 5) + 1,
-              unitPrice: 4500 + (simIndex * 750),
-            },
-          ];
-          if (simIndex % 3 === 0) {
-            items.push({
-              name: `APOYO LOGISTICO ${simIndex}`,
-              quantity: 1,
-              unitPrice: 1200 + (simIndex * 100),
-            });
-          }
-          await emitCase(`SIM_${simIndex}`, {
-            documentType: 'factura',
-            emitDate,
-            receptor: simReceptor,
-            items,
-          }, {includeSetReference: false});
-        }
-
-        const ncReceptor = _buildSimulationReceptor(simulationInvoiceCount + 1);
-        const ncTargetGiro = _readString(_buildSimulationReceptor(1).giro) || 'Servicios y comercio';
-        await emitCase('SIM_NC', {
-          documentType: 'nota_credito',
-          emitDate,
-          receptor: ncReceptor,
-          references: [
-            {
-              tipoDocumento: '33',
-              folio: String(refs.SIM_1?.folio || ''),
-              fecha: refs.SIM_1?.date || emitDate,
-              codigoReferencia: 2,
-              razonReferencia: `Dice: ${ncTargetGiro} y debe decir: ${ncTargetGiro} ACTUALIZADO`,
-            },
-          ],
-          items: [
-            {
-              name: 'IMP. CORRIGE TEXTO',
-              amount: 0,
-              itemCode: 'NO_PRODUCT',
-              compactLine: true,
-              allowZero: true,
-            },
-          ],
-        }, {includeSetReference: false});
-
-        const ndReceptor = _buildSimulationReceptor(simulationInvoiceCount + 2);
-        await emitCase('SIM_ND', {
-          documentType: 'nota_debito',
-          emitDate,
-          receptor: ndReceptor,
-          references: [
-            {
-              tipoDocumento: '33',
-              folio: String(refs.SIM_3?.folio || ''),
-              fecha: refs.SIM_3?.date || emitDate,
-              codigoReferencia: 3,
-              razonReferencia: 'RECARGO POR INTERESES MORATORIOS',
-            },
-          ],
-          items: [
-            {
-              name: 'RECARGO POR INTERESES MORATORIOS',
-              quantity: 1,
-              unitPrice: 25000,
-            },
-          ],
-        }, {includeSetReference: false});
-      }
-
+  await emitCase('SIM_ND', {
+    documentType: 'nota_debito',
+    emitDate,
+    receptor: ndReceptor,
+    references: [
+      {
+        tipoDocumento: '33',
+        folio: String(refs.SIM_3?.folio || ''),
+        fecha: refs.SIM_3?.date || emitDate,
+        codigoReferencia: 3,
+        razonReferencia: 'RECARGO POR INTERESES MORATORIOS',
+      },
+    ],
+    items: [
+      {
+        name: 'RECARGO POR INTERESES MORATORIOS',
+        quantity: 1,
+        unitPrice: 25000,
+      },
+    ],
+  }, {includeSetReference: false});
+}
+// Aqui
       const requireSiiSend = _readBoolean(process.env.SIMPLEAPI_REQUIRE_SII_SEND, true);
       let setEnvelope = {
         enabled: false,
@@ -3087,3 +3589,16 @@ exports.runSiiCertificationSet = onCall(
   },
 );
 
+if (process.env.EMIT_FISCAL_TEST === '1') {
+  module.exports.__emitFiscalTest = {
+    _buildDteInput,
+    _buildDetails,
+    _computeTotals,
+    _resolveRetainedTaxConfig,
+    _applyRetainedTaxToSimpleApiTotals,
+    _sanitizeSimpleApiIvaRetenidoTotalPayload,
+    _finalizeDteXmlInternally,
+    FACTURA_COMPRA_RETENCION_TOTAL_IVA_CODIGO,
+    FACTURA_COMPRA_RETENCION_TOTAL_IVA,
+  };
+}
