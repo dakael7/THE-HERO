@@ -88,7 +88,7 @@ class _PaymentMethodCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isSelected
-              ? primaryYellow.withOpacity(0.1)
+              ? primaryYellow.withValues(alpha: 0.1)
               : (isEnabled ? backgroundWhite : backgroundGray50),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
@@ -98,7 +98,7 @@ class _PaymentMethodCard extends StatelessWidget {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: primaryOrange.withOpacity(0.1),
+                    color: primaryOrange.withValues(alpha: 0.1),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -113,14 +113,14 @@ class _PaymentMethodCard extends StatelessWidget {
               height: 48,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? primaryOrange.withOpacity(0.1)
+                    ? primaryOrange.withValues(alpha: 0.1)
                     : backgroundGray50,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
                 icon,
                 color: !isEnabled
-                    ? textGray600.withOpacity(0.5)
+                    ? textGray600.withValues(alpha: 0.5)
                     : (isSelected ? primaryOrange : textGray600),
                 size: 24,
               ),
@@ -140,7 +140,7 @@ class _PaymentMethodCard extends StatelessWidget {
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: !isEnabled
-                              ? textGray700.withOpacity(0.6)
+                              ? textGray700.withValues(alpha: 0.6)
                               : (isSelected ? textGray900 : textGray700),
                         ),
                       ),

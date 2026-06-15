@@ -233,7 +233,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
         return Image.network(
           url,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
+          errorBuilder: (_, _, _) =>
               const Center(child: Icon(Icons.image, color: textGray600, size: 44)),
         );
       }
@@ -255,7 +255,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
     return Image.network(
       cover,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) =>
+      errorBuilder: (_, _, _) =>
           const Center(child: Icon(Icons.image, color: textGray600, size: 44)),
     );
   }
@@ -292,7 +292,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             : Image.network(
                 url,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Center(
+                errorBuilder: (_, _, _) => const Center(
                     child: Icon(Icons.image, color: textGray600, size: 44)),
               ),
       );

@@ -444,7 +444,7 @@ class _ProductImage extends StatelessWidget {
         maxHeightDiskCache: targetCacheSize * 2,
         filterQuality: FilterQuality.low,
         fadeInDuration: const Duration(milliseconds: 120),
-        placeholder: (_, __) => const Center(
+        placeholder: (_, _) => const Center(
           child: SizedBox(
             width: 20,
             height: 20,
@@ -454,7 +454,7 @@ class _ProductImage extends StatelessWidget {
             ),
           ),
         ),
-        errorWidget: (_, __, ___) => const Center(
+        errorWidget: (_, _, _) => const Center(
           child: Icon(
             Icons.image_not_supported_outlined,
             color: textGray600,

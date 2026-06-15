@@ -143,14 +143,14 @@ class _TipOptionCard extends StatelessWidget {
         boxShadow: selected
             ? [
                 BoxShadow(
-                  color: primaryOrange.withOpacity(0.18),
+                  color: primaryOrange.withValues(alpha: 0.18),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
               ]
             : [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
+                  color: Colors.black.withValues(alpha: 0.03),
                   blurRadius: 4,
                   offset: const Offset(0, 1),
                 ),
@@ -183,7 +183,7 @@ class _TipOptionCard extends StatelessWidget {
                           fontSize: 9,
                           fontWeight: FontWeight.w600,
                           color: selected
-                              ? primaryOrange.withOpacity(0.7)
+                              ? primaryOrange.withValues(alpha: 0.7)
                               : textGray600,
                         ),
                       ),

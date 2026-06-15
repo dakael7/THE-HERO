@@ -88,7 +88,7 @@ class CategoryFilterChips extends ConsumerWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final category = categories[index];
           final isAll = category == 'Todas';
@@ -104,7 +104,7 @@ class CategoryFilterChips extends ConsumerWidget {
                   .read(catalogFiltersProvider.notifier)
                   .setCategory(isAll ? null : category);
             },
-            selectedColor: primaryOrange.withOpacity(0.15),
+            selectedColor: primaryOrange.withValues(alpha: 0.15),
             backgroundColor: backgroundWhite,
             labelStyle: TextStyle(
               fontSize: 13,
@@ -212,7 +212,7 @@ class ActiveFiltersIndicator extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: primaryOrange.withOpacity(0.1),
+              color: primaryOrange.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: primaryOrange),
             ),

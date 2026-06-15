@@ -13,7 +13,6 @@ import '../../../../../domain/entities/chat.dart';
 import '../../../../../domain/entities/chat_type.dart';
 import '../../../../../domain/entities/chat_message.dart';
 import '../../../../../domain/entities/offer.dart';
-import '../../../../../domain/entities/order_status.dart';
 import '../../../../../domain/entities/user.dart';
 import '../../../profile/presentation/providers/profile_provider.dart';
 import '../providers/chat_providers.dart';

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/order.dart';
-import '../../../../../domain/entities/user.dart';
 import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
 

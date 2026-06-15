@@ -1,5 +1,5 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../datasources/auth_local_data_source.dart';
 import '../datasources/auth_remote_data_source.dart';
@@ -11,7 +11,10 @@ import '../datasources/offers_remote_data_source.dart';
 import '../datasources/orders_remote_data_source.dart';
 import 'network_providers.dart';
 
-final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>((ref) {
+part 'datasource_providers.g.dart';
+
+@Riverpod(keepAlive: true)
+AuthRemoteDataSource authRemoteDataSource(Ref ref) {
   final firebaseAuth = ref.read(firebaseAuthProvider);
   final firestore = ref.read(firebaseFirestoreProvider);
   final googleSignIn = GoogleSignIn.instance;
@@ -20,48 +23,53 @@ final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>((ref) {
     firestore: firestore,
     googleSignIn: googleSignIn,
   );
-});
+}
 
-final authLocalDataSourceProvider = Provider<AuthLocalDataSource>((ref) {
+@Riverpod(keepAlive: true)
+AuthLocalDataSource authLocalDataSource(Ref ref) {
   return AuthLocalDataSourceImpl();
-});
+}
 
-final notificationRemoteDataSourceProvider =
-    Provider<NotificationRemoteDataSource>((ref) {
+@Riverpod(keepAlive: true)
+NotificationRemoteDataSource notificationRemoteDataSource(Ref ref) {
   final firebaseAuth = ref.read(firebaseAuthProvider);
   final firestore = ref.read(firebaseFirestoreProvider);
   return NotificationRemoteDataSourceImpl(
     firebaseAuth: firebaseAuth,
     firestore: firestore,
   );
-});
+}
 
-final offersRemoteDataSourceProvider = Provider<OffersRemoteDataSource>((ref) {
+@Riverpod(keepAlive: true)
+OffersRemoteDataSource offersRemoteDataSource(Ref ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
   final storage = ref.read(firebaseStorageProvider);
   return OffersRemoteDataSourceImpl(
     firestore: firestore,
     storage: storage,
   );
-});
+}
 
-final moderationRemoteDataSourceProvider =
-    Provider<ModerationRemoteDataSource>((ref) {
+@Riverpod(keepAlive: true)
+ModerationRemoteDataSource moderationRemoteDataSource(Ref ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
   return ModerationRemoteDataSourceImpl(firestore: firestore);
-});
+}
 
-final ordersRemoteDataSourceProvider = Provider<OrdersRemoteDataSource>((ref) {
+@Riverpod(keepAlive: true)
+OrdersRemoteDataSource ordersRemoteDataSource(Ref ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
   return OrdersRemoteDataSourceImpl(firestore: firestore);
-});
+}
 
-final chatRemoteDataSourceProvider = Provider<ChatRemoteDataSource>((ref) {
+@Riverpod(keepAlive: true)
+ChatRemoteDataSource chatRemoteDataSource(Ref ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
   return ChatRemoteDataSourceImpl(firestore: firestore);
-});
+}
 
-final invoicesRemoteDataSourceProvider = Provider<InvoicesRemoteDataSource>((ref) {
+@Riverpod(keepAlive: true)
+InvoicesRemoteDataSource invoicesRemoteDataSource(Ref ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
   return InvoicesRemoteDataSourceImpl(firestore: firestore);
-});
+}

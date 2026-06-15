@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -107,7 +106,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
 
   Future<void> _pickProfilePhotoFromFiles() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.image,
         allowMultiple: false,
         withData: true,
@@ -359,7 +358,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
           : null,
       prefixIconConstraints: const BoxConstraints(minWidth: 44),
       hintStyle:
-          TextStyle(color: textGray600.withOpacity(0.45), fontSize: 13),
+          TextStyle(color: textGray600.withValues(alpha: 0.45), fontSize: 13),
       labelStyle: const TextStyle(
           color: textGray600, fontSize: 13, fontWeight: FontWeight.w500),
       floatingLabelStyle: const TextStyle(
@@ -870,7 +869,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                             height: 56,
                             decoration: BoxDecoration(
                               color: authState.isLoading
-                                  ? primaryOrange.withOpacity(0.65)
+                                  ? primaryOrange.withValues(alpha: 0.65)
                                   : primaryOrange,
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: authState.isLoading
@@ -878,7 +877,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                   : [
                                       BoxShadow(
                                         color: primaryOrange
-                                            .withOpacity(0.38),
+                                            .withValues(alpha: 0.38),
                                         blurRadius: 18,
                                         offset: const Offset(0, 8),
                                       ),
@@ -1001,14 +1000,14 @@ class _PhotoPicker extends StatelessWidget {
           boxShadow: hasPhoto
               ? [
                   BoxShadow(
-                    color: primaryOrange.withOpacity(0.12),
+                    color: primaryOrange.withValues(alpha: 0.12),
                     blurRadius: 16,
                     offset: const Offset(0, 5),
                   ),
                 ]
               : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 10,
                     offset: const Offset(0, 3),
                   ),
@@ -1027,7 +1026,7 @@ class _PhotoPicker extends StatelessWidget {
                         hasPhoto ? const Color(0xFFF0F0EE) : const Color(0xFFF5F5F5),
                     border: Border.all(
                       color: hasPhoto
-                          ? primaryOrange.withOpacity(0.3)
+                          ? primaryOrange.withValues(alpha: 0.3)
                           : const Color(0xFFE0E0E0),
                       width: 2,
                     ),
@@ -1076,7 +1075,7 @@ class _PhotoPicker extends StatelessWidget {
                         border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
                           BoxShadow(
-                            color: primaryOrange.withOpacity(0.3),
+                            color: primaryOrange.withValues(alpha: 0.3),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -1116,9 +1115,9 @@ class _PhotoPicker extends StatelessWidget {
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: isUploadingPhoto
-                          ? primaryOrange.withOpacity(0.85)
+                          ? primaryOrange.withValues(alpha: 0.85)
                           : hasPhoto
-                              ? const Color(0xFF10B981).withOpacity(0.7)
+                              ? const Color(0xFF10B981).withValues(alpha: 0.7)
                               : textGray600,
                     ),
                   ),
@@ -1189,7 +1188,7 @@ class _SectionLabel extends StatelessWidget {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: primaryOrange.withOpacity(0.1),
+            color: primaryOrange.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, size: 15, color: primaryOrange),
@@ -1227,7 +1226,7 @@ class _FieldGroup extends StatelessWidget {
         border: Border.all(color: const Color(0xFFECECEC)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -1280,7 +1279,7 @@ class _TermsRow extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),

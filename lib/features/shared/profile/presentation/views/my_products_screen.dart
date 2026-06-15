@@ -160,7 +160,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
         selected: selected,
         label: Text(label),
         onSelected: (_) => onSelected(),
-        selectedColor: primaryOrange.withOpacity(0.18),
+        selectedColor: primaryOrange.withValues(alpha: 0.18),
         backgroundColor: backgroundWhite,
         labelStyle: TextStyle(
           fontSize: 12,
@@ -168,7 +168,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           color: selected ? primaryOrange : textGray700,
         ),
         side: BorderSide(
-          color: selected ? primaryOrange.withOpacity(0.35) : borderGray100,
+          color: selected ? primaryOrange.withValues(alpha: 0.35) : borderGray100,
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

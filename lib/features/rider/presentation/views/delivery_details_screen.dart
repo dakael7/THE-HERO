@@ -313,7 +313,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                             borderRadius: BorderRadius.circular(14),
                             boxShadow: [
                               BoxShadow(
-                                color: primaryOrange.withOpacity(0.3),
+                                color: primaryOrange.withValues(alpha: 0.3),
                                 blurRadius: 10,
                                 offset: const Offset(0, 4),
                               ),
@@ -636,7 +636,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
+                            color: Colors.black.withValues(alpha: 0.15),
                             blurRadius: 10,
                             offset: const Offset(0, 3),
                           ),
@@ -662,10 +662,10 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                           vertical: 11,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.55),
+                          color: Colors.black.withValues(alpha: 0.55),
                           borderRadius: BorderRadius.circular(22),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.15),
+                            color: Colors.white.withValues(alpha: 0.15),
                           ),
                         ),
                         child: Row(
@@ -865,7 +865,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                               height: 22,
                                               decoration: BoxDecoration(
                                                 color: primaryOrange
-                                                    .withOpacity(0.12),
+                                                    .withValues(alpha: 0.12),
                                                 shape: BoxShape.circle,
                                               ),
                                               clipBehavior: Clip.antiAlias,
@@ -954,7 +954,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                     BoxShadow(
                                       color: const Color(
                                         0xFF16A34A,
-                                      ).withOpacity(0.3),
+                                      ).withValues(alpha: 0.3),
                                       blurRadius: 10,
                                       offset: const Offset(0, 4),
                                     ),
@@ -1333,14 +1333,14 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                             height: 56,
                             decoration: BoxDecoration(
                               color: (claimState.isLoading || _isClaiming)
-                                  ? primaryOrange.withOpacity(0.7)
+                                  ? primaryOrange.withValues(alpha: 0.7)
                                   : primaryOrange,
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: (claimState.isLoading || _isClaiming)
                                   ? []
                                   : [
                                       BoxShadow(
-                                        color: primaryOrange.withOpacity(0.4),
+                                        color: primaryOrange.withValues(alpha: 0.4),
                                         blurRadius: 14,
                                         offset: const Offset(0, 6),
                                       ),
@@ -1414,7 +1414,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: dotColor.withOpacity(0.12),
+                color: dotColor.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: dotColor, size: 18),
@@ -1651,7 +1651,7 @@ class _MapInfoChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.10),
+            color: Colors.black.withValues(alpha: 0.10),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -1663,7 +1663,7 @@ class _MapInfoChip extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: color, size: 16),

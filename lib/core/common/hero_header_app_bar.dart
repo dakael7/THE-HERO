@@ -28,7 +28,7 @@ class HeroHeaderAppBar extends StatelessWidget implements PreferredSizeWidget {
         color: primaryYellow,
         boxShadow: [
           BoxShadow(
-            color: primaryYellow.withOpacity(0.4),
+            color: primaryYellow.withValues(alpha: 0.4),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -50,7 +50,7 @@ class HeroHeaderAppBar extends StatelessWidget implements PreferredSizeWidget {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
@@ -76,7 +76,7 @@ class HeroHeaderAppBar extends StatelessWidget implements PreferredSizeWidget {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: primaryOrange.withOpacity(0.15),
+                  color: primaryOrange.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, size: 18, color: primaryOrange),

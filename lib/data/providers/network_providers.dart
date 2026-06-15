@@ -1,23 +1,29 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../core/firebase/firebase_config.dart';
 
-final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
-  return FirebaseConfig.auth;
-});
+part 'network_providers.g.dart';
 
-final firebaseAuthUserProvider = StreamProvider<User?>((ref) {
+@Riverpod(keepAlive: true)
+FirebaseAuth firebaseAuth(Ref ref) {
+  return FirebaseConfig.auth;
+}
+
+@Riverpod(keepAlive: true)
+Stream<User?> firebaseAuthUser(Ref ref) {
   final auth = ref.watch(firebaseAuthProvider);
   return auth.authStateChanges();
-});
+}
 
-final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
+@Riverpod(keepAlive: true)
+FirebaseFirestore firebaseFirestore(Ref ref) {
   return FirebaseConfig.firestore;
-});
+}
 
-final firebaseStorageProvider = Provider<FirebaseStorage>((ref) {
+@Riverpod(keepAlive: true)
+FirebaseStorage firebaseStorage(Ref ref) {
   return FirebaseConfig.storage;
-});
+}

@@ -77,7 +77,7 @@ class SellerOrderStatusScreen extends ConsumerWidget {
           color: primaryYellow,
           boxShadow: [
             BoxShadow(
-              color: primaryYellow.withOpacity(0.4),
+              color: primaryYellow.withValues(alpha: 0.4),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -99,7 +99,7 @@ class SellerOrderStatusScreen extends ConsumerWidget {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
@@ -126,7 +126,7 @@ class SellerOrderStatusScreen extends ConsumerWidget {
                   width: 34,
                   height: 34,
                   decoration: BoxDecoration(
-                    color: primaryOrange.withOpacity(0.15),
+                    color: primaryOrange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
@@ -404,12 +404,12 @@ class _StatusCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
-            color: cfg.color.withOpacity(0.14),
+            color: cfg.color.withValues(alpha: 0.14),
             blurRadius: 20,
             offset: const Offset(0, 7),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -437,7 +437,7 @@ class _StatusCard extends ConsumerWidget {
                       width: 52,
                       height: 52,
                       decoration: BoxDecoration(
-                        color: cfg.color.withOpacity(0.18),
+                        color: cfg.color.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Icon(cfg.icon, color: cfg.color, size: 28),
@@ -463,7 +463,7 @@ class _StatusCard extends ConsumerWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: cfg.color.withOpacity(0.12),
+                              color: cfg.color.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -471,7 +471,7 @@ class _StatusCard extends ConsumerWidget {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
-                                color: cfg.color.withOpacity(0.75),
+                                color: cfg.color.withValues(alpha: 0.75),
                                 letterSpacing: 0.4,
                               ),
                             ),
@@ -571,7 +571,7 @@ class _BuyerRatingPromptCard extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: categoryTextGreen.withOpacity(0.1),
+                  color: categoryTextGreen.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
@@ -648,7 +648,7 @@ class _SummaryCard extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: textGray700.withOpacity(0.08),
+                  color: textGray700.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
@@ -774,7 +774,7 @@ class _OrderContactsCard extends ConsumerWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: primaryOrange.withOpacity(0.1),
+                  color: primaryOrange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
@@ -861,7 +861,7 @@ class _ContactPhoneRow extends StatelessWidget {
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
+            color: iconColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: iconColor, size: 18),
@@ -939,7 +939,7 @@ class _DetailRow extends StatelessWidget {
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
+            color: iconColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(icon, color: iconColor, size: 16),
@@ -989,7 +989,7 @@ class _DeliveryAddressRow extends StatelessWidget {
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: const Color(0xFF2563EB).withOpacity(0.1),
+            color: const Color(0xFF2563EB).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Icon(
@@ -1065,7 +1065,7 @@ class _MyItemsCard extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: primaryOrange.withOpacity(0.1),
+                  color: primaryOrange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
@@ -1127,9 +1127,9 @@ class _ItemRow extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: primaryOrange.withOpacity(0.08),
+            color: primaryOrange.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: primaryOrange.withOpacity(0.15)),
+            border: Border.all(color: primaryOrange.withValues(alpha: 0.15)),
           ),
           child: const Icon(
             Icons.volunteer_activism_outlined,
@@ -1260,7 +1260,7 @@ class _Connector extends StatelessWidget {
           width: 2,
           decoration: BoxDecoration(
             color: done
-                ? categoryTextGreen.withOpacity(0.5)
+                ? categoryTextGreen.withValues(alpha: 0.5)
                 : borderGray100,
             borderRadius: BorderRadius.circular(2),
           ),
@@ -1297,13 +1297,13 @@ class _TimelineStep extends StatelessWidget {
     final Widget dotChild;
 
     if (done) {
-      dotBg = categoryTextGreen.withOpacity(0.14);
+      dotBg = categoryTextGreen.withValues(alpha: 0.14);
       textColor = categoryTextGreen;
       subtitleColor = textGray600;
       dotChild = const Icon(Icons.check_rounded,
           color: categoryTextGreen, size: 16);
     } else if (current) {
-      dotBg = primaryOrange.withOpacity(0.14);
+      dotBg = primaryOrange.withValues(alpha: 0.14);
       textColor = textGray900;
       subtitleColor = textGray700;
       dotChild = Container(
@@ -1322,7 +1322,7 @@ class _TimelineStep extends StatelessWidget {
         width: 8,
         height: 8,
         decoration: BoxDecoration(
-          color: textGray600.withOpacity(0.25),
+          color: textGray600.withValues(alpha: 0.25),
           shape: BoxShape.circle,
         ),
       );
@@ -1335,10 +1335,10 @@ class _TimelineStep extends StatelessWidget {
           : const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       decoration: current
           ? BoxDecoration(
-              color: primaryOrange.withOpacity(0.06),
+              color: primaryOrange.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                  color: primaryOrange.withOpacity(0.15)),
+                  color: primaryOrange.withValues(alpha: 0.15)),
             )
           : null,
       child: Row(
@@ -1636,12 +1636,12 @@ class _ChatChipButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.65),
+          color: Colors.white.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.white.withOpacity(0.85)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -1678,7 +1678,7 @@ class _ChatChipButton extends StatelessWidget {
                   width: 20,
                   height: 20,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
+                  errorBuilder: (_, _, _) =>
                       Icon(icon, size: 15, color: primaryOrange),
                 ),
               )
@@ -1840,7 +1840,7 @@ class _StatusMessage extends StatelessWidget {
               width: 76,
               height: 76,
               decoration: BoxDecoration(
-                color: primaryOrange.withOpacity(0.1),
+                color: primaryOrange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(22),
               ),
               child: const Icon(
@@ -1896,7 +1896,7 @@ class _SectionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 14,
             offset: const Offset(0, 5),
           ),
@@ -1924,9 +1924,9 @@ class _RiderChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: primaryOrange.withOpacity(0.07),
+        color: primaryOrange.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: primaryOrange.withOpacity(0.18)),
+        border: Border.all(color: primaryOrange.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1935,7 +1935,7 @@ class _RiderChip extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: primaryOrange.withOpacity(0.14),
+              color: primaryOrange.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(
@@ -1999,7 +1999,7 @@ class _PrimaryActionButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: color.withOpacity(0.32),
+              color: color.withValues(alpha: 0.32),
               blurRadius: 14,
               offset: const Offset(0, 5),
             ),

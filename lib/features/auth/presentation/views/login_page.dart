@@ -360,7 +360,7 @@ class _AnimatedBackground extends StatelessWidget {
 
     return AnimatedBuilder(
       animation: controller,
-      builder: (_, __) {
+      builder: (_, _) {
         final t = controller.value;
         return SizedBox.expand(
           child: CustomPaint(

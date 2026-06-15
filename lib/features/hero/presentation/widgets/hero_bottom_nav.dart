@@ -63,7 +63,7 @@ class HeroBottomNav extends ConsumerWidget {
     // Responsive border radius
     final navRadius = (26.0 * scaleFactor).clamp(22.0, 32.0);
 
-    final navBackground = backgroundWhite.withOpacity(0.92);
+    final navBackground = backgroundWhite.withValues(alpha: 0.92);
 
     // Responsive badge size
     final badgeFontSize = (8.0 * scaleFactor).clamp(7.0, 10.0);
@@ -84,15 +84,15 @@ class HeroBottomNav extends ConsumerWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(navRadius),
-            border: Border.all(color: textGray900.withOpacity(0.06), width: 1),
+            border: Border.all(color: textGray900.withValues(alpha: 0.06), width: 1),
             boxShadow: [
               BoxShadow(
-                color: textGray900.withOpacity(0.10),
+                color: textGray900.withValues(alpha: 0.10),
                 blurRadius: 28,
                 offset: const Offset(0, 10),
               ),
               BoxShadow(
-                color: primaryOrange.withOpacity(0.10),
+                color: primaryOrange.withValues(alpha: 0.10),
                 blurRadius: 24,
                 offset: const Offset(0, 16),
               ),

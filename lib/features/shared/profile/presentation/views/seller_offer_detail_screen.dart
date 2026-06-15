@@ -105,7 +105,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
       maxWidthDiskCache: cacheSize == null ? null : cacheSize * 2,
       maxHeightDiskCache: cacheSize == null ? null : cacheSize * 2,
       fadeInDuration: const Duration(milliseconds: 120),
-      placeholder: (_, __) => Container(
+      placeholder: (_, _) => Container(
         color: borderGray100,
         alignment: Alignment.center,
         child: const SizedBox(
@@ -117,7 +117,7 @@ class SellerOfferDetailScreen extends ConsumerWidget {
           ),
         ),
       ),
-      errorWidget: (_, __, ___) => _PlaceholderImage(),
+      errorWidget: (_, _, _) => _PlaceholderImage(),
     );
   }
 

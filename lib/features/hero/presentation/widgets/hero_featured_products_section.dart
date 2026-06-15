@@ -57,7 +57,7 @@ class HeroFeaturedProductsSection extends StatelessWidget {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: primaryOrange.withOpacity(0.1),
+                  color: primaryOrange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Text(
@@ -84,7 +84,7 @@ class HeroFeaturedProductsSection extends StatelessWidget {
               border: Border.all(color: borderGray100),
               boxShadow: [
                 BoxShadow(
-                  color: textGray900.withOpacity(0.05),
+                  color: textGray900.withValues(alpha: 0.05),
                   blurRadius: 12,
                   offset: const Offset(0, 8),
                 ),
