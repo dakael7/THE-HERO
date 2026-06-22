@@ -88,9 +88,8 @@ class _ReceiptBody extends ConsumerWidget {
         (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
     final hideTotalsForRider = isRiderView && !isCashPayment;
     final isFactura = order.isFactura;
-    final invoiceAsync = isFactura
-        ? ref.watch(invoiceByOrderIdProvider(order.orderId))
-        : const AsyncValue<BillingInvoiceEntity?>.data(null);
+    final documentLabel = isFactura ? 'Factura' : 'Boleta';
+    final invoiceAsync = ref.watch(invoiceByOrderIdProvider(order.orderId));
 
     final shortOrderId = order.orderId.length > 8
         ? order.orderId.substring(0, 8)
@@ -201,10 +200,10 @@ class _ReceiptBody extends ConsumerWidget {
                 ),
                 child: Text(
                   isFactura
-                      ? 'Este pedido se emite como factura. Puedes descargarla cuando este disponible.'
+                      ? 'Este pedido se emite como factura electrónica. Puedes descargarla cuando esté disponible.'
                       : (isPaid
-                          ? 'Pago confirmado.'
-                          : 'Esta boleta esta disponible, pero el pago aun no esta confirmado.'),
+                          ? 'Pago confirmado. La boleta electrónica estará disponible cuando termine la emisión.'
+                          : 'La boleta electrónica se emitirá al procesar el pedido.'),
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: isFactura
@@ -218,14 +217,13 @@ class _ReceiptBody extends ConsumerWidget {
             ],
           ),
         ),
-        if (isFactura) ...[
-          const SizedBox(height: 12),
-          _Card(
-            child: _InvoiceSection(
-              invoiceAsync: invoiceAsync,
-            ),
+        const SizedBox(height: 12),
+        _Card(
+          child: _InvoiceSection(
+            invoiceAsync: invoiceAsync,
+            documentLabel: documentLabel,
           ),
-        ],
+        ),
         const SizedBox(height: 12),
         _Card(
           child: Column(
@@ -374,23 +372,25 @@ class _ReceiptBody extends ConsumerWidget {
 
 class _InvoiceSection extends ConsumerWidget {
   final AsyncValue<BillingInvoiceEntity?> invoiceAsync;
+  final String documentLabel;
 
   const _InvoiceSection({
     required this.invoiceAsync,
+    required this.documentLabel,
   });
 
   String _statusLabel(BillingInvoiceStatus status) {
     switch (status) {
       case BillingInvoiceStatus.pending:
-        return 'Factura en proceso de emision.';
+        return '$documentLabel en proceso de emisión.';
       case BillingInvoiceStatus.issued:
-        return 'Factura emitida.';
+        return '$documentLabel emitida.';
       case BillingInvoiceStatus.failed:
-        return 'No se pudo emitir la factura.';
+        return 'No se pudo emitir ${documentLabel.toLowerCase()}.';
       case BillingInvoiceStatus.canceled:
-        return 'Factura anulada.';
+        return '$documentLabel anulada.';
       case BillingInvoiceStatus.unknown:
-        return 'Factura pendiente de emision.';
+        return '$documentLabel pendiente de emisión.';
     }
   }
 
@@ -399,9 +399,9 @@ class _InvoiceSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Factura',
-          style: TextStyle(
+        Text(
+          documentLabel,
+          style: const TextStyle(
             fontWeight: FontWeight.w900,
             color: textGray900,
             fontSize: 16,
@@ -409,19 +409,19 @@ class _InvoiceSection extends ConsumerWidget {
         ),
         const SizedBox(height: 10),
         invoiceAsync.when(
-          loading: () => const _InvoiceInfoBanner(
+          loading: () => _InvoiceInfoBanner(
             icon: Icons.hourglass_top_rounded,
-            text: 'Buscando factura de este pedido...',
+            text: 'Buscando ${documentLabel.toLowerCase()} de este pedido...',
           ),
-          error: (_, _) => const _InvoiceInfoBanner(
+          error: (_, _) => _InvoiceInfoBanner(
             icon: Icons.receipt_long_rounded,
-            text: 'Factura pendiente de emision.',
+            text: '$documentLabel pendiente de emisión.',
           ),
           data: (invoice) {
             if (invoice == null) {
-              return const _InvoiceInfoBanner(
+              return _InvoiceInfoBanner(
                 icon: Icons.receipt_long_rounded,
-                text: 'Factura pendiente de emision.',
+                text: '$documentLabel pendiente de emisión.',
               );
             }
 
@@ -437,7 +437,10 @@ class _InvoiceSection extends ConsumerWidget {
               );
             }
 
-            return _InvoiceDownloadButton(invoiceId: invoice.invoiceId);
+            return _InvoiceDownloadButton(
+              invoiceId: invoice.invoiceId,
+              documentLabel: documentLabel,
+            );
           },
         ),
       ],
@@ -488,8 +491,12 @@ class _InvoiceInfoBanner extends StatelessWidget {
 
 class _InvoiceDownloadButton extends ConsumerStatefulWidget {
   final String invoiceId;
+  final String documentLabel;
 
-  const _InvoiceDownloadButton({required this.invoiceId});
+  const _InvoiceDownloadButton({
+    required this.invoiceId,
+    required this.documentLabel,
+  });
 
   @override
   ConsumerState<_InvoiceDownloadButton> createState() =>
@@ -522,8 +529,8 @@ class _InvoiceDownloadButtonState extends ConsumerState<_InvoiceDownloadButton> 
         SnackBar(
           content: Text(
             errorMessage?.trim().isNotEmpty == true
-                ? 'No se pudo abrir la factura: $errorMessage'
-                : 'No se pudo abrir la factura',
+                ? 'No se pudo abrir ${widget.documentLabel.toLowerCase()}: $errorMessage'
+                : 'No se pudo abrir ${widget.documentLabel.toLowerCase()}',
           ),
           backgroundColor: Colors.red,
         ),
@@ -535,7 +542,7 @@ class _InvoiceDownloadButtonState extends ConsumerState<_InvoiceDownloadButton> 
     if (uri == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('URL de factura invalida'),
+          content: Text('URL del documento inválida'),
           backgroundColor: Colors.red,
         ),
       );
@@ -549,7 +556,7 @@ class _InvoiceDownloadButtonState extends ConsumerState<_InvoiceDownloadButton> 
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No se pudo abrir el PDF de factura'),
+          content: Text('No se pudo abrir el PDF'),
           backgroundColor: Colors.red,
         ),
       );
@@ -592,7 +599,9 @@ class _InvoiceDownloadButtonState extends ConsumerState<_InvoiceDownloadButton> 
               const SizedBox(width: 7),
             ],
             Text(
-              isLoading ? 'Abriendo factura...' : 'Descargar factura',
+              isLoading
+                  ? 'Abriendo ${widget.documentLabel.toLowerCase()}...'
+                  : 'Descargar ${widget.documentLabel.toLowerCase()}',
               style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 13,

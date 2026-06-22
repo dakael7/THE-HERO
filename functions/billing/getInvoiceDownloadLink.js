@@ -121,6 +121,7 @@ exports.getInvoiceDownloadLink = onCall(
       }
 
       const resolvedBucketName = _readString(storageRef.bucketName) ||
+        _readString(process.env.WASABIL_OUTPUT_BUCKET) ||
         _readString(process.env.SIMPLEAPI_OUTPUT_BUCKET);
       const bucket = resolvedBucketName ?
         admin.storage().bucket(resolvedBucketName) :

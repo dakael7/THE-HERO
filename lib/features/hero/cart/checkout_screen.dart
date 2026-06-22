@@ -2206,6 +2206,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _selectedDocumentType == 'factura'
+                        ? 'La factura electrónica se emitirá al procesar el pedido.'
+                        : 'La boleta electrónica se emitirá al procesar el pedido.',
+                    style: const TextStyle(
+                      color: textGray700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   if (_selectedDocumentType == 'factura') ...[
                     const SizedBox(height: 14),
                     const _Hairline(),

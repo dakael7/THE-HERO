@@ -42,18 +42,7 @@ Future<DocumentSnapshot<Map<String, dynamic>>?> _loadInitialUserDoc(
 }
 
 final currentUserIdProvider = Provider<String?>((ref) {
-  final currentUid = ref.watch(firebaseAuthProvider).currentUser?.uid;
-  if (currentUid != null && currentUid.isNotEmpty) {
-    return currentUid;
-  }
-
-  final authAsync = ref.watch(firebaseAuthUserProvider);
-  final liveUid = authAsync.value?.uid;
-  if (liveUid != null && liveUid.isNotEmpty) {
-    return liveUid;
-  }
-
-  return null;
+  return ref.watch(firebaseAuthUserProvider).value?.uid;
 });
 
 final profileProvider = FutureProvider<User?>((ref) async {
@@ -136,8 +125,10 @@ final profileStreamProvider = StreamProvider<User?>((ref) {
   );
 });
 
-final userByIdStreamProvider =
-    StreamProvider.family<User?, String>((ref, userId) {
+final userByIdStreamProvider = StreamProvider.family<User?, String>((
+  ref,
+  userId,
+) {
   if (userId.trim().isEmpty) return const Stream<User?>.empty();
 
   final firestore = ref.watch(firebaseFirestoreProvider);
@@ -150,8 +141,10 @@ final userByIdStreamProvider =
   });
 });
 
-final userByIdProvider =
-    FutureProvider.family<User?, String>((ref, userId) async {
+final userByIdProvider = FutureProvider.family<User?, String>((
+  ref,
+  userId,
+) async {
   try {
     final authRepository = ref.read(authRepositoryProvider);
     return await authRepository.getUserById(userId);

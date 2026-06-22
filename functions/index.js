@@ -29,6 +29,7 @@ const {
 const {
   onOrderPaidCreateInvoice,
   retryInvoiceEmission,
+  wasabilInvoiceWebhook,
 } = require("./billing/onOrderPaidCreateInvoice");
 const {
   getInvoiceDownloadLink,
@@ -49,6 +50,7 @@ exports.simulatePaymentApproved = simulatePaymentApproved;
 exports.cancelExpiredPendingPayments = cancelExpiredPendingPayments;
 exports.onOrderPaidCreateInvoice = onOrderPaidCreateInvoice;
 exports.retryInvoiceEmission = retryInvoiceEmission;
+exports.wasabilInvoiceWebhook = wasabilInvoiceWebhook;
 exports.getInvoiceDownloadLink = getInvoiceDownloadLink;
 exports.emitFiscalDocument = emitFiscalDocument;
 exports.runSiiCertificationSet = runSiiCertificationSet;
