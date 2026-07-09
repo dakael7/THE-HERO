@@ -668,15 +668,6 @@ class _StatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isInPersonPickup = order.inPersonPickup;
-    final title = isInPersonPickup
-        ? 'Retiro completado?'
-        : 'Recibiste el paquete?';
-    final subtitle = isInPersonPickup
-        ? 'Confirma el retiro y califica al donador'
-        : 'Confirma que recibiste tu pedido';
-    final confirmLabel = isInPersonPickup ? 'Si, lo retire' : 'Si, lo recibi';
-
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1619,6 +1610,7 @@ class _OrderChatActions extends ConsumerWidget {
   }
 
   Future<void> _openRiderChat(NavigatorState navigator, WidgetRef ref) async {
+    if (!order.status.canShowAssociatedChats) return;
     if (!order.rider.isAssigned) return;
     final riderId = order.rider.assignedRiderId;
     if (riderId == null || riderId.isEmpty) return;
@@ -1703,6 +1695,7 @@ class _OrderChatActions extends ConsumerWidget {
     required String sellerId,
     required String offerId,
   }) async {
+    if (!order.status.canShowAssociatedChats) return;
     final buyer = ref.read(profileProvider).value;
     if (buyer == null) return;
 
@@ -1771,6 +1764,10 @@ class _OrderChatActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!order.status.canShowAssociatedChats) {
+      return const SizedBox.shrink();
+    }
+
     final hasRider =
         order.rider.isAssigned &&
         (order.rider.assignedRiderId?.isNotEmpty ?? false);
@@ -1844,8 +1841,7 @@ class _OrderChatActions extends ConsumerWidget {
         _ChatChipButton(
           icon: Icons.storefront_outlined,
           label: singleSellerId != null
-              ? ((sellerName.isNotEmpty ? sellerName : 'Donador') +
-                    ' (Donador)')
+              ? '${sellerName.isNotEmpty ? sellerName : 'Donador'} (Donador)'
               : 'Donadores',
           badgeCount: sellerBadgeCount,
           onTap: () => _pickAndOpenSellerChat(context, ref),

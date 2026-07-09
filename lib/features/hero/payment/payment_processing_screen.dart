@@ -6,6 +6,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/config/mercadopago_config.dart';
+import '../../../data/providers/repository_providers.dart';
 import 'payment_result_screen.dart';
 
 class PaymentProcessingScreen extends ConsumerStatefulWidget {
@@ -31,6 +32,7 @@ class _PaymentProcessingScreenState
   bool _hasOpenedCheckout = false;
   bool _canSimulatePayment = false;
   bool _isSimulating = false;
+  bool _isCancelingPayment = false;
 
   Future<void> _openInExternalBrowser() async {
     final uri = Uri.tryParse(widget.initPoint);
@@ -47,9 +49,9 @@ class _PaymentProcessingScreenState
     final uri = Uri.tryParse(widget.initPoint);
     if (uri == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Link de pago inválido')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Link de pago inválido')));
       return;
     }
 
@@ -106,10 +108,9 @@ class _PaymentProcessingScreenState
     setState(() => _isSimulating = true);
 
     try {
-      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable(
-        'simulatePaymentApproved',
-      );
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('simulatePaymentApproved');
 
       await callable.call({
         'orderId': widget.orderId,
@@ -128,11 +129,9 @@ class _PaymentProcessingScreenState
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo simular el pago: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo simular el pago: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSimulating = false);
@@ -238,8 +237,8 @@ class _PaymentProcessingScreenState
                         _isOpeningCheckout
                             ? 'Abriendo...'
                             : _hasOpenedCheckout
-                                ? 'Reabrir Mercado Pago'
-                                : 'Abrir Mercado Pago',
+                            ? 'Reabrir Mercado Pago'
+                            : 'Abrir Mercado Pago',
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryOrange,
@@ -284,7 +283,7 @@ class _PaymentProcessingScreenState
           style: TextStyle(fontWeight: FontWeight.w800, color: textGray900),
         ),
         content: const Text(
-          'Si cancelas ahora, tu orden quedará pendiente de pago por 5 minutos. Después se cancelará y el stock volverá a estar disponible.',
+          'Si cancelas ahora, la orden se cancelará y el stock volverá a estar disponible.',
           style: TextStyle(color: textGray700),
         ),
         actions: [
@@ -310,8 +309,21 @@ class _PaymentProcessingScreenState
     );
 
     if (shouldCancel == true && mounted) {
-      Navigator.of(context).pop();
+      if (_isCancelingPayment) return;
+      setState(() => _isCancelingPayment = true);
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? 'buyer';
+        await ref
+            .read(ordersRepositoryProvider)
+            .cancelOrder(widget.orderId, 'Pago cancelado por el usuario', uid);
+        if (mounted) Navigator.of(context).pop();
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _isCancelingPayment = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo cancelar el pago: $e')),
+        );
+      }
     }
   }
 }
-

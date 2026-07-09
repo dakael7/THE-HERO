@@ -14,7 +14,6 @@ import 'cart_item.dart';
 import 'cart_summary_provider.dart';
 
 class OrderBuilder {
-
   static Order buildOrderFromCart({
     String orderId = '',
     required List<CartItem> cartItems,
@@ -41,6 +40,7 @@ class OrderBuilder {
     bool useConcierge = false,
     ConciergeInfo? conciergeInfo,
     bool inPersonPickup = false,
+    Map<String, dynamic>? coupon,
   }) {
     if (cartItems.isEmpty) {
       throw Exception('Cannot create order from empty cart');
@@ -82,7 +82,8 @@ class OrderBuilder {
       final geo = item.pickupGeo;
       if (geo == null) continue;
       if (geo.latitude == 0.0 && geo.longitude == 0.0) continue;
-      final key = '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
+      final key =
+          '${geo.latitude.toStringAsFixed(6)},${geo.longitude.toStringAsFixed(6)}';
       (byKey[key] ??= <String>{}).add(item.offerId);
 
       final snapshot = (item.pickupAddressSnapshot ?? '').trim();
@@ -108,8 +109,8 @@ class OrderBuilder {
     // Create order requirements
     final safeEstimatedKm =
         estimatedDistanceKm.isNaN || estimatedDistanceKm.isInfinite
-            ? 0.0
-            : estimatedDistanceKm;
+        ? 0.0
+        : estimatedDistanceKm;
 
     final requiredVehicle = (() {
       try {
@@ -169,6 +170,7 @@ class OrderBuilder {
       useConcierge: useConcierge,
       conciergeInfo: conciergeInfo,
       inPersonPickup: inPersonPickup,
+      coupon: coupon,
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/models/chat_model.dart';
+import '../../data/models/order_model.dart';
 import '../../domain/entities/chat.dart';
 import '../../features/hero/orders/presentation/views/order_receipt_screen.dart';
 import '../../features/rider/presentation/views/rider_home_screen.dart';
@@ -19,8 +20,7 @@ class NotificationHandler {
 
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  final List<Map<String, dynamic>> _pendingPayloads =
-      <Map<String, dynamic>>[];
+  final List<Map<String, dynamic>> _pendingPayloads = <Map<String, dynamic>>[];
   Timer? _pendingFlushTimer;
   int _pendingFlushAttempts = 0;
   static const int _maxPendingFlushAttempts = 30;
@@ -29,7 +29,7 @@ class NotificationHandler {
     final normalized = _normalizeData(data);
     final type = _readString(normalized, 'type') ?? 'system';
     final action = _readString(normalized, 'action') ?? '';
-    print('Handling notification tap: type=$type, action=$action');
+    debugPrint('Handling notification tap: type=$type, action=$action');
 
     final navigator = navigatorKey.currentState;
     if (navigator == null) {
@@ -48,37 +48,36 @@ class NotificationHandler {
   void _schedulePendingFlush() {
     if (_pendingFlushTimer != null) return;
 
-    _pendingFlushTimer = Timer.periodic(
-      const Duration(milliseconds: 250),
-      (timer) {
-        final navigator = navigatorKey.currentState;
-        if (navigator == null) {
-          _pendingFlushAttempts += 1;
-          if (_pendingFlushAttempts >= _maxPendingFlushAttempts) {
-            print(
-              'NotificationHandler: navigator still unavailable, dropping pending notification taps.',
-            );
-            _pendingPayloads.clear();
-            _pendingFlushAttempts = 0;
-            timer.cancel();
-            _pendingFlushTimer = null;
-          }
-          return;
+    _pendingFlushTimer = Timer.periodic(const Duration(milliseconds: 250), (
+      timer,
+    ) {
+      final navigator = navigatorKey.currentState;
+      if (navigator == null) {
+        _pendingFlushAttempts += 1;
+        if (_pendingFlushAttempts >= _maxPendingFlushAttempts) {
+          debugPrint(
+            'NotificationHandler: navigator still unavailable, dropping pending notification taps.',
+          );
+          _pendingPayloads.clear();
+          _pendingFlushAttempts = 0;
+          timer.cancel();
+          _pendingFlushTimer = null;
         }
+        return;
+      }
 
-        final payload = _pendingPayloads.isNotEmpty
-            ? _pendingPayloads.last
-            : null;
-        _pendingPayloads.clear();
-        _pendingFlushAttempts = 0;
-        timer.cancel();
-        _pendingFlushTimer = null;
+      final payload = _pendingPayloads.isNotEmpty
+          ? _pendingPayloads.last
+          : null;
+      _pendingPayloads.clear();
+      _pendingFlushAttempts = 0;
+      timer.cancel();
+      _pendingFlushTimer = null;
 
-        if (payload != null) {
-          unawaited(_handleNavigation(navigator, payload));
-        }
-      },
-    );
+      if (payload != null) {
+        unawaited(_handleNavigation(navigator, payload));
+      }
+    });
   }
 
   Future<void> _handleNavigation(
@@ -125,19 +124,12 @@ class NotificationHandler {
     }
 
     await navigator.push(
-      MaterialPageRoute(
-        builder: (_) => OrderReceiptScreen(orderId: orderId),
-      ),
+      MaterialPageRoute(builder: (_) => OrderReceiptScreen(orderId: orderId)),
     );
   }
 
-  void _openNearbyOrders(
-    NavigatorState navigator,
-    Map<String, dynamic> data,
-  ) {
-    navigator.push(
-      MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
-    );
+  void _openNearbyOrders(NavigatorState navigator, Map<String, dynamic> data) {
+    navigator.push(MaterialPageRoute(builder: (_) => const RiderHomeScreen()));
   }
 
   Future<void> _openSystemNotificationTarget(
@@ -182,36 +174,46 @@ class NotificationHandler {
       final chat = await _fetchChat(chatId);
       if (chat != null) {
         await navigator.push(
-          MaterialPageRoute(
-            builder: (_) => ChatConversationScreen(chat: chat),
-          ),
+          MaterialPageRoute(builder: (_) => ChatConversationScreen(chat: chat)),
         );
         return;
       }
     } catch (e) {
-      print('NotificationHandler: failed to open chatId=$chatId error=$e');
+      debugPrint('NotificationHandler: failed to open chatId=$chatId error=$e');
     }
 
     _openChatList(navigator);
   }
 
   Future<Chat?> _fetchChat(String chatId) async {
-    final snap = await FirebaseFirestore.instance
-        .collection('chats')
-        .doc(chatId)
-        .get();
+    final firestore = FirebaseFirestore.instance;
+    final snap = await firestore.collection('chats').doc(chatId).get();
     if (!snap.exists) return null;
 
     final data = snap.data();
     if (data == null) return null;
 
-    return ChatModel.fromJson({'chatId': snap.id, ...data}).toEntity();
+    final chat = ChatModel.fromJson({'chatId': snap.id, ...data}).toEntity();
+    final orderId = chat.orderId?.trim() ?? '';
+    if (orderId.isEmpty) return chat;
+
+    final orderSnap = await firestore.collection('orders').doc(orderId).get();
+    final orderData = orderSnap.data();
+    if (!orderSnap.exists || orderData == null) return null;
+
+    final hasOrderId =
+        orderData['orderId']?.toString().trim().isNotEmpty ?? false;
+    final order = OrderModel.fromJson({
+      ...orderData,
+      if (!hasOrderId) 'orderId': orderSnap.id,
+    }).toEntity();
+    if (!order.status.canShowAssociatedChats) return null;
+
+    return chat;
   }
 
   void _openChatList(NavigatorState navigator) {
-    navigator.push(
-      MaterialPageRoute(builder: (_) => const ChatListScreen()),
-    );
+    navigator.push(MaterialPageRoute(builder: (_) => const ChatListScreen()));
   }
 
   void _openNotifications(NavigatorState navigator) {
@@ -241,7 +243,8 @@ class NotificationHandler {
       'targetScreen': message.data['targetScreen'],
       if (message.notification?.title != null)
         'title': message.notification?.title,
-      if (message.notification?.body != null) 'body': message.notification?.body,
+      if (message.notification?.body != null)
+        'body': message.notification?.body,
       ...message.data,
     };
     return _normalizeData(normalized);

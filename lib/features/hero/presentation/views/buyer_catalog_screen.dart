@@ -14,6 +14,8 @@ import '../../../offers/presentation/providers/offer_comments_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../moderation/presentation/widgets/report_offer_bottom_sheet.dart';
 import '../../../moderation/presentation/widgets/report_user_bottom_sheet.dart';
+import '../../cart/cart_item.dart';
+import '../../cart/cart_monthly_gate.dart';
 import '../../cart/checkout_screen.dart';
 import '../../cart/cart_provider.dart';
 import '../../../offers/presentation/providers/offers_provider.dart';
@@ -169,9 +171,7 @@ class BuyerCatalogScreen extends ConsumerWidget {
                       const SizedBox(height: 10),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: const [SortOptionsButton()],
-                        ),
+                        child: Row(children: const [SortOptionsButton()]),
                       ),
                       const ActiveFiltersIndicator(),
                     ],
@@ -214,64 +214,57 @@ class BuyerCatalogScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                   sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final offer = offers[index];
-                        final sellerAsync =
-                            ref.watch(userByIdStreamProvider(offer.heroId));
-                        final sellerName = _sellerNameFor(sellerAsync);
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: GestureDetector(
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      OfferDetailScreen(offer: offer),
-                                ),
-                              );
-                            },
-                            child: ProductCard(
-                              offerId: offer.offerId,
-                              name: offer.title,
-                              sellerHeroId: offer.heroId,
-                              moderationStatus: offer.moderationStatus,
-                              condition: offer.condition.displayName,
-                              colorCondition:
-                                  _conditionColor(offer.condition),
-                              category: offer.category,
-                              availableQty: offer.availableQty,
-                              viewCount: offer.viewCount,
-                              orderCount: offer.orderCount,
-                              weight: offer.weight,
-                              pickupGeo:
-                                  offer.itemLocationSnapshot?.geopoint,
-                              pickupAddressSnapshot:
-                                  offer.itemLocationSnapshot?.fullAddress,
-                              pickupCountryCode:
-                                  offer.itemLocationSnapshot?.countryCode,
-                              allowInPersonPickup: offer.allowInPersonPickup,
-                              showShadow: false,
-                              imageUrl: offer.displayImageUrl,
-                              avgRating: offer.avgRating,
-                              ratingCount: offer.ratingCount,
-                              sellerName: sellerName,
-                              sellerHeroRating: sellerAsync.maybeWhen(
-                                data: (u) =>
-                                    (u?.heroProfile?.rating) ?? 0.0,
-                                orElse: () => null,
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final offer = offers[index];
+                      final sellerAsync = ref.watch(
+                        userByIdStreamProvider(offer.heroId),
+                      );
+                      final sellerName = _sellerNameFor(sellerAsync);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => OfferDetailScreen(offer: offer),
                               ),
-                              sellerHeroRatingCount: sellerAsync.maybeWhen(
-                                data: (u) =>
-                                    (u?.heroProfile?.totalRatings) ?? 0,
-                                orElse: () => null,
-                              ),
+                            );
+                          },
+                          child: ProductCard(
+                            offerId: offer.offerId,
+                            name: offer.title,
+                            sellerHeroId: offer.heroId,
+                            moderationStatus: offer.moderationStatus,
+                            condition: offer.condition.displayName,
+                            colorCondition: _conditionColor(offer.condition),
+                            category: offer.category,
+                            availableQty: offer.availableQty,
+                            viewCount: offer.viewCount,
+                            orderCount: offer.orderCount,
+                            weight: offer.weight,
+                            pickupGeo: offer.itemLocationSnapshot?.geopoint,
+                            pickupAddressSnapshot:
+                                offer.itemLocationSnapshot?.fullAddress,
+                            pickupCountryCode:
+                                offer.itemLocationSnapshot?.countryCode,
+                            allowInPersonPickup: offer.allowInPersonPickup,
+                            showShadow: false,
+                            imageUrl: offer.displayImageUrl,
+                            avgRating: offer.avgRating,
+                            ratingCount: offer.ratingCount,
+                            sellerName: sellerName,
+                            sellerHeroRating: sellerAsync.maybeWhen(
+                              data: (u) => (u?.heroProfile?.rating) ?? 0.0,
+                              orElse: () => null,
+                            ),
+                            sellerHeroRatingCount: sellerAsync.maybeWhen(
+                              data: (u) => (u?.heroProfile?.totalRatings) ?? 0,
+                              orElse: () => null,
                             ),
                           ),
-                        );
-                      },
-                      childCount: offers.length,
-                    ),
+                        ),
+                      );
+                    }, childCount: offers.length),
                   ),
                 ),
               ],
@@ -306,9 +299,7 @@ class _Pill extends StatelessWidget {
       decoration: BoxDecoration(
         color: accent ? backgroundWhite : borderGray100,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: accent ? primaryOrange : borderGray100,
-        ),
+        border: Border.all(color: accent ? primaryOrange : borderGray100),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -343,10 +334,7 @@ class _LoadingState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(
-              color: primaryOrange,
-              strokeWidth: 3,
-            ),
+            CircularProgressIndicator(color: primaryOrange, strokeWidth: 3),
             SizedBox(height: 16),
             Text(
               'Cargando catálogo...',
@@ -405,11 +393,7 @@ class _EmptyState extends StatelessWidget {
             const Text(
               'Cuando se publiquen ofertas activas\naparecerán aquí.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: textGray600,
-                height: 1.5,
-              ),
+              style: TextStyle(fontSize: 14, color: textGray600, height: 1.5),
             ),
           ],
         ),
@@ -441,8 +425,7 @@ class _ErrorState extends StatelessWidget {
               decoration: BoxDecoration(
                 color: borderGray100,
                 shape: BoxShape.circle,
-                border: Border.all(
-                    color: const Color(0xFFFFCCCC), width: 2),
+                border: Border.all(color: const Color(0xFFFFCCCC), width: 2),
               ),
               child: const Icon(
                 Icons.warning_amber_rounded,
@@ -465,7 +448,9 @@ class _ErrorState extends StatelessWidget {
               onTap: onRetry,
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 24, vertical: 14),
+                  horizontal: 24,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: primaryOrange,
                   borderRadius: BorderRadius.circular(14),
@@ -480,8 +465,7 @@ class _ErrorState extends StatelessWidget {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.refresh_rounded,
-                        color: Colors.white, size: 18),
+                    Icon(Icons.refresh_rounded, color: Colors.white, size: 18),
                     SizedBox(width: 8),
                     Text(
                       'Reintentar',
@@ -546,8 +530,6 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   bool _hasCover = false;
 
   // ── Cart button state ──
-  int _cartQuantity = 0;
-
   @override
   void initState() {
     super.initState();
@@ -705,11 +687,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
       );
     }
     if (trimmed.startsWith('assets/')) {
-      return Image.asset(
-        trimmed,
-        fit: fit,
-        filterQuality: FilterQuality.low,
-      );
+      return Image.asset(trimmed, fit: fit, filterQuality: FilterQuality.low);
     }
     return CachedNetworkImage(
       imageUrl: trimmed,
@@ -767,9 +745,11 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                     minScale: 1.0,
                     maxScale: 4.0,
                     child: Center(
-                      child: _buildOfferImage(images[index],
-                          fit: BoxFit.contain,
-                          cacheSize: fullScreenCacheSize),
+                      child: _buildOfferImage(
+                        images[index],
+                        fit: BoxFit.contain,
+                        cacheSize: fullScreenCacheSize,
+                      ),
                     ),
                   );
                 },
@@ -809,14 +789,20 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   }
 
   // ── Cart helpers ──────────────────────────────────────────────
-  void _addToCart() {
+  int _cartQuantityFrom(List<CartItem> cartItems) {
+    for (final item in cartItems) {
+      if (item.offerId == widget.offer.offerId) return item.quantity;
+    }
+    return 0;
+  }
+
+  Future<void> _addToCart() async {
     final offer = widget.offer;
     final currentUserId = ref.read(currentUserIdProvider);
 
-    final currentUser = ref.read(profileProvider).maybeWhen(
-          data: (user) => user,
-          orElse: () => null,
-        );
+    final currentUser = ref
+        .read(profileProvider)
+        .maybeWhen(data: (user) => user, orElse: () => null);
     if (currentUser != null && currentUser.isSuspended) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -845,15 +831,39 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     if (pickupCc == null || pickupCc.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Este producto no tiene país de retiro configurado.',
-          ),
+          content: Text('Este producto no tiene país de retiro configurado.'),
           duration: Duration(seconds: 5),
         ),
       );
     }
 
-    ref.read(cartProvider.notifier).addItem(
+    final currentQuantity = _cartQuantityFrom(ref.read(cartProvider));
+    if (offer.availableQty <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este producto ya no tiene stock disponible.'),
+        ),
+      );
+      return;
+    }
+
+    if (currentQuantity >= offer.availableQty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Solo hay ${offer.availableQty} disponible${offer.availableQty == 1 ? '' : 's'}.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!await ensureCanAddItemToCart(context: context, ref: ref)) return;
+    if (!mounted) return;
+
+    ref
+        .read(cartProvider.notifier)
+        .addItem(
           offerId: offer.offerId,
           category: offer.category,
           name: offer.title,
@@ -869,8 +879,6 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
           sellerHeroId: offer.heroId,
           allowInPersonPickup: offer.allowInPersonPickup,
         );
-
-    setState(() => _cartQuantity++);
   }
 
   void _incrementCart() {
@@ -878,9 +886,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   }
 
   void _decrementCart() {
-    if (_cartQuantity <= 0) return;
+    if (_cartQuantityFrom(ref.read(cartProvider)) <= 0) return;
     ref.read(cartProvider.notifier).removeOneItem(widget.offer.offerId);
-    setState(() => _cartQuantity--);
   }
 
   @override
@@ -889,12 +896,14 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     final badgeColor = _conditionColor(offer.condition);
     const priceText = 'Donación';
     final currentUserId = ref.watch(currentUserIdProvider);
+    final cartQuantity = ref.watch(cartProvider.select(_cartQuantityFrom));
 
     final galleryImages = _galleryImages;
     final thumbnailImages = _thumbnailImages;
     final hasCover = _hasCover;
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final headerImageCacheSize = (MediaQuery.sizeOf(context).width * dpr).round();
+    final headerImageCacheSize = (MediaQuery.sizeOf(context).width * dpr)
+        .round();
     final thumbImageCacheSize = (120 * dpr).round();
 
     final showConditionChip = offer.condition != OfferCondition.newProduct;
@@ -902,8 +911,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     final viewsCount = offer.viewCount + _optimisticViewsDelta;
     final location = offer.itemLocationSnapshot;
 
-    final sellerProfileAsync =
-        ref.watch(userByIdStreamProvider(offer.heroId));
+    final sellerProfileAsync = ref.watch(userByIdStreamProvider(offer.heroId));
     final sellerName = sellerProfileAsync.maybeWhen(
       data: (user) => user?.fullName ?? 'Vendedor',
       orElse: () => 'Vendedor',
@@ -926,7 +934,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                 builder: (context, ref, _) {
                   final userId = ref.watch(currentUserIdProvider);
 
-                  final canReport = userId != null && userId != widget.offer.heroId;
+                  final canReport =
+                      userId != null && userId != widget.offer.heroId;
                   return Row(
                     children: [
                       if (canReport)
@@ -969,8 +978,11 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       ? Container(
                           color: borderGray100,
                           child: const Center(
-                            child: Icon(Icons.image_outlined,
-                                size: 64, color: textGray600),
+                            child: Icon(
+                              Icons.image_outlined,
+                              size: 64,
+                              color: textGray600,
+                            ),
                           ),
                         )
                       : GestureDetector(
@@ -1025,7 +1037,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                         builder: (context, currentIndex, _) {
                           return Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.6),
                               borderRadius: BorderRadius.circular(20),
@@ -1058,8 +1072,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                               final active = i == currentIndex;
                               return AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 3),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
                                 height: 6,
                                 width: active ? 20 : 6,
                                 decoration: BoxDecoration(
@@ -1082,7 +1097,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       left: 14,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: badgeColor,
                           borderRadius: BorderRadius.circular(10),
@@ -1150,7 +1167,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                           const SizedBox(width: 12),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
                               color: primaryOrange,
                               borderRadius: BorderRadius.circular(10),
@@ -1263,8 +1282,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           itemCount: thumbnailImages.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(width: 10),
+                          separatorBuilder: (_, _) => const SizedBox(width: 10),
                           itemBuilder: (context, index) {
                             final imageUrl = thumbnailImages[index];
                             final targetIndex = hasCover ? (index + 1) : index;
@@ -1295,8 +1313,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                   boxShadow: selected
                                       ? [
                                           BoxShadow(
-                                            color: primaryOrange
-                                                .withValues(alpha: 0.25),
+                                            color: primaryOrange.withValues(
+                                              alpha: 0.25,
+                                            ),
                                             blurRadius: 8,
                                             offset: const Offset(0, 3),
                                           ),
@@ -1359,10 +1378,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                 ),
 
                 // ── DESCRIPTION ──
-                _SectionHeader(
-                  label: 'Descripción',
-                  icon: Icons.notes_rounded,
-                ),
+                _SectionHeader(label: 'Descripción', icon: Icons.notes_rounded),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                   child: Container(
@@ -1470,8 +1486,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                 ),
                                 markers: {
                                   Marker(
-                                    markerId:
-                                        const MarkerId('offer_location'),
+                                    markerId: const MarkerId('offer_location'),
                                     position: LatLng(
                                       location.latitude,
                                       location.longitude,
@@ -1564,8 +1579,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       final commentsAsync = ref.watch(
                         offerCommentsProvider(offer.offerId),
                       );
-                      final currentUser =
-                          ref.watch(profileProvider).value;
+                      final currentUser = ref.watch(profileProvider).value;
                       final isOwner = currentUser?.id == offer.heroId;
 
                       return commentsAsync.when(
@@ -1573,22 +1587,23 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                           if (comments.isEmpty) {
                             return Padding(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 16),
+                                horizontal: 16,
+                              ),
                               child: Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(24),
                                 decoration: BoxDecoration(
                                   color: backgroundWhite,
                                   borderRadius: BorderRadius.circular(16),
-                                  border:
-                                      Border.all(color: borderGray100),
+                                  border: Border.all(color: borderGray100),
                                 ),
                                 child: const Column(
                                   children: [
                                     Icon(
-                                        Icons.chat_bubble_outline_rounded,
-                                        size: 36,
-                                        color: textGray600),
+                                      Icons.chat_bubble_outline_rounded,
+                                      size: 36,
+                                      color: textGray600,
+                                    ),
                                     SizedBox(height: 10),
                                     Text(
                                       'Sin preguntas aún',
@@ -1612,22 +1627,19 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                           }
 
                           return Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Column(
                               children: comments.map((comment) {
-                                final hasReply = comment.reply != null &&
+                                final hasReply =
+                                    comment.reply != null &&
                                     comment.reply!.isNotEmpty;
 
                                 return Container(
-                                  margin:
-                                      const EdgeInsets.only(bottom: 12),
+                                  margin: const EdgeInsets.only(bottom: 12),
                                   decoration: BoxDecoration(
                                     color: backgroundWhite,
-                                    borderRadius:
-                                        BorderRadius.circular(16),
-                                    border:
-                                        Border.all(color: borderGray100),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(color: borderGray100),
                                   ),
                                   child: Column(
                                     children: [
@@ -1640,8 +1652,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                             Container(
                                               width: 36,
                                               height: 36,
-                                              decoration:
-                                                  const BoxDecoration(
+                                              decoration: const BoxDecoration(
                                                 color: borderGray100,
                                                 shape: BoxShape.circle,
                                               ),
@@ -1655,8 +1666,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                             Expanded(
                                               child: Column(
                                                 crossAxisAlignment:
-                                                    CrossAxisAlignment
-                                                        .start,
+                                                    CrossAxisAlignment.start,
                                                 children: [
                                                   Row(
                                                     children: [
@@ -1672,7 +1682,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                                       const Spacer(),
                                                       Text(
                                                         _formatDate(
-                                                            comment.createdAt),
+                                                          comment.createdAt,
+                                                        ),
                                                         style: const TextStyle(
                                                           fontSize: 11,
                                                           color: textGray600,
@@ -1699,12 +1710,17 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                       if (hasReply)
                                         Container(
                                           margin: const EdgeInsets.fromLTRB(
-                                              16, 0, 16, 16),
+                                            16,
+                                            0,
+                                            16,
+                                            16,
+                                          ),
                                           padding: const EdgeInsets.all(14),
                                           decoration: BoxDecoration(
                                             color: backgroundGray50,
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             border: Border.all(
                                               color: borderGray100,
                                             ),
@@ -1716,8 +1732,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                               Container(
                                                 width: 28,
                                                 height: 28,
-                                                decoration:
-                                                    const BoxDecoration(
+                                                decoration: const BoxDecoration(
                                                   color: primaryOrange,
                                                   shape: BoxShape.circle,
                                                 ),
@@ -1731,8 +1746,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                               Expanded(
                                                 child: Column(
                                                   crossAxisAlignment:
-                                                      CrossAxisAlignment
-                                                          .start,
+                                                      CrossAxisAlignment.start,
                                                   children: [
                                                     Text(
                                                       comment.replyBy ??
@@ -1763,7 +1777,11 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                       if (isOwner && !hasReply)
                                         Padding(
                                           padding: const EdgeInsets.fromLTRB(
-                                              16, 0, 16, 12),
+                                            16,
+                                            0,
+                                            16,
+                                            12,
+                                          ),
                                           child: GestureDetector(
                                             onTap: () => _showReplyDialog(
                                               context,
@@ -1774,9 +1792,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                                             child: Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: 14,
-                                                vertical: 8,
-                                              ),
+                                                    horizontal: 14,
+                                                    vertical: 8,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 border: Border.all(
                                                   color: primaryOrange,
@@ -1875,7 +1893,8 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
                   child: _AddToCartButton(
-                    quantity: _cartQuantity,
+                    quantity: cartQuantity,
+                    maxQuantity: offer.availableQty,
                     onAdd: _addToCart,
                     onIncrement: _incrementCart,
                     onDecrement: _decrementCart,
@@ -1884,8 +1903,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                       final matching = cartItems
                           .where((item) => item.offerId == widget.offer.offerId)
                           .toList();
-                      final selectedItem =
-                          matching.isNotEmpty ? matching.first : null;
+                      final selectedItem = matching.isNotEmpty
+                          ? matching.first
+                          : null;
 
                       Navigator.of(context).push(
                         MaterialPageRoute(
@@ -1922,13 +1942,15 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
   }
 
   void _showAddQuestionDialog(
-      BuildContext context, WidgetRef ref, String offerId) {
+    BuildContext context,
+    WidgetRef ref,
+    String offerId,
+  ) {
     final textController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Hacer una pregunta',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -1937,9 +1959,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
           controller: textController,
           decoration: InputDecoration(
             hintText: '¿Cuál es tu pregunta?',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: primaryOrange),
@@ -1951,8 +1971,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar',
-                style: TextStyle(color: textGray600)),
+            child: const Text('Cancelar', style: TextStyle(color: textGray600)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -1960,7 +1979,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
               if (text.isEmpty) return;
               final user = ref.read(profileProvider).value;
               if (user == null) return;
-              await ref.read(addCommentProvider.notifier).addComment(
+              await ref
+                  .read(addCommentProvider.notifier)
+                  .addComment(
                     offerId: offerId,
                     userId: user.id,
                     userName: user.fullName,
@@ -1978,24 +1999,30 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
               backgroundColor: primaryOrange,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Enviar',
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            child: const Text(
+              'Enviar',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
     );
   }
 
-  void _showReplyDialog(BuildContext context, WidgetRef ref,
-      String commentId, String offerId) {
+  void _showReplyDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String commentId,
+    String offerId,
+  ) {
     final textController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Responder pregunta',
           style: TextStyle(fontWeight: FontWeight.w800),
@@ -2004,8 +2031,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
           controller: textController,
           decoration: InputDecoration(
             hintText: 'Escribe tu respuesta',
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: primaryOrange),
@@ -2017,8 +2043,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar',
-                style: TextStyle(color: textGray600)),
+            child: const Text('Cancelar', style: TextStyle(color: textGray600)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -2026,7 +2051,9 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
               if (text.isEmpty) return;
               final user = ref.read(profileProvider).value;
               if (user == null) return;
-              await ref.read(addCommentProvider.notifier).replyToComment(
+              await ref
+                  .read(addCommentProvider.notifier)
+                  .replyToComment(
                     offerId: offerId,
                     commentId: commentId,
                     reply: text,
@@ -2043,10 +2070,13 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
               backgroundColor: primaryOrange,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Enviar',
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            child: const Text(
+              'Enviar',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -2121,7 +2151,9 @@ class _OfferFavoriteActionButtonState
                   });
 
                   try {
-                    await ref.read(favoritesNotifierProvider.notifier).setFavorite(
+                    await ref
+                        .read(favoritesNotifierProvider.notifier)
+                        .setFavorite(
                           userId: userId,
                           offerId: widget.offerId,
                           shouldBeFavorite: nextFavorite,
@@ -2139,9 +2171,7 @@ class _OfferFavoriteActionButtonState
                   }
                 },
           icon: Icon(
-            isFavorite
-                ? Icons.favorite_rounded
-                : Icons.favorite_border_rounded,
+            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
             color: isFavorite ? primaryOrange : textGray900,
           ),
         ),
@@ -2153,6 +2183,7 @@ class _OfferFavoriteActionButtonState
 class _AddToCartButton extends StatelessWidget {
   const _AddToCartButton({
     required this.quantity,
+    required this.maxQuantity,
     required this.onAdd,
     required this.onIncrement,
     required this.onDecrement,
@@ -2160,6 +2191,7 @@ class _AddToCartButton extends StatelessWidget {
   });
 
   final int quantity;
+  final int maxQuantity;
   final VoidCallback onAdd;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
@@ -2184,29 +2216,36 @@ class _AddToCartButton extends StatelessWidget {
   }
 
   Widget _buildAddButton() {
+    final hasStock = maxQuantity > 0;
     return GestureDetector(
-      onTap: onAdd,
+      onTap: hasStock ? onAdd : null,
       child: Container(
         height: 52,
         decoration: BoxDecoration(
-          color: primaryOrange,
+          color: hasStock ? primaryOrange : textGray600,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: primaryOrange.withValues(alpha: 0.35),
+              color: (hasStock ? primaryOrange : textGray600).withValues(
+                alpha: 0.35,
+              ),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.shopping_cart_outlined, color: Colors.white, size: 20),
-            SizedBox(width: 10),
+            const Icon(
+              Icons.shopping_cart_outlined,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
             Text(
-              'Agregar al carrito',
-              style: TextStyle(
+              hasStock ? 'Agregar al carrito' : 'Sin stock',
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w800,
                 fontSize: 15,
@@ -2219,6 +2258,7 @@ class _AddToCartButton extends StatelessWidget {
   }
 
   Widget _buildCartControl() {
+    final canIncrement = quantity < maxQuantity;
     return Row(
       children: [
         // ── Counter ──
@@ -2260,7 +2300,10 @@ class _AddToCartButton extends StatelessWidget {
                 ),
               ),
               Container(width: 1, height: 24, color: borderGray100),
-              _CounterBtn(icon: Icons.add_rounded, onTap: onIncrement),
+              _CounterBtn(
+                icon: Icons.add_rounded,
+                onTap: canIncrement ? onIncrement : null,
+              ),
             ],
           ),
         ),
@@ -2287,8 +2330,11 @@ class _AddToCartButton extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.arrow_forward_rounded,
-                      color: Colors.white, size: 16),
+                  const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Colors.white,
+                    size: 16,
+                  ),
                   const SizedBox(width: 8),
                   const Text(
                     'Procesar pago',
@@ -2301,7 +2347,9 @@ class _AddToCartButton extends StatelessWidget {
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 2),
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
@@ -2338,7 +2386,7 @@ class _CounterBtn extends StatelessWidget {
   const _CounterBtn({required this.icon, required this.onTap});
 
   final IconData icon;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2347,7 +2395,11 @@ class _CounterBtn extends StatelessWidget {
       child: SizedBox(
         width: 44,
         height: 52,
-        child: Icon(icon, size: 18, color: primaryOrange),
+        child: Icon(
+          icon,
+          size: 18,
+          color: onTap == null ? textGray600 : primaryOrange,
+        ),
       ),
     );
   }

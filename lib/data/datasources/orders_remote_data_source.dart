@@ -76,7 +76,10 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
 
   double _cashAmountToCollectFromOrder(Map<String, dynamic> orderData) {
     final total = (orderData['amountTotal'] as num?)?.toDouble() ?? 0.0;
-    return total.clamp(0.0, double.infinity); // incluye propina — el rider cobra el total completo
+    return total.clamp(
+      0.0,
+      double.infinity,
+    ); 
   }
 
   int _toCents(num value) {
@@ -456,7 +459,6 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                   paymentSnap.exists &&
                   _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
 
-
               final riderRef = _firestore.collection('users').doc(riderId);
               final riderSnap = await transaction.get(riderRef);
               if (!riderSnap.exists) {
@@ -499,10 +501,18 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                 });
 
                 transaction.update(riderRef, {
-                  'riderWallet.earningsBalance': FieldValue.increment(earningsAmount),
-                  'riderWallet.earningsBalanceCents': FieldValue.increment(earningsCents),
-                  'riderWallet.totalEarnings': FieldValue.increment(earningsAmount),
-                  'riderWallet.totalEarningsCents': FieldValue.increment(earningsCents),
+                  'riderWallet.earningsBalance': FieldValue.increment(
+                    earningsAmount,
+                  ),
+                  'riderWallet.earningsBalanceCents': FieldValue.increment(
+                    earningsCents,
+                  ),
+                  'riderWallet.totalEarnings': FieldValue.increment(
+                    earningsAmount,
+                  ),
+                  'riderWallet.totalEarningsCents': FieldValue.increment(
+                    earningsCents,
+                  ),
                 });
               } else {
                 // ── PAGO EFECTIVO: el rider ya cobró en mano ──
@@ -535,12 +545,22 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                   transaction.update(riderRef, {
                     // Liberar el hold y descontar del saldo en una sola operación
                     'riderWallet.cashOnHold': FieldValue.increment(-cashAmount),
-                    'riderWallet.cashOnHoldCents': FieldValue.increment(-_toCents(cashAmount)),
-                    'riderWallet.earningsBalance': FieldValue.increment(-cashAmount),
-                    'riderWallet.earningsBalanceCents': FieldValue.increment(-cashCents),
+                    'riderWallet.cashOnHoldCents': FieldValue.increment(
+                      -_toCents(cashAmount),
+                    ),
+                    'riderWallet.earningsBalance': FieldValue.increment(
+                      -cashAmount,
+                    ),
+                    'riderWallet.earningsBalanceCents': FieldValue.increment(
+                      -cashCents,
+                    ),
                     // totalEarnings para estadísticas (netEarnings del envío, sin registrar en balance)
-                    'riderWallet.totalEarnings': FieldValue.increment(earnings.netEarnings),
-                    'riderWallet.totalEarningsCents': FieldValue.increment(_toCents(earnings.netEarnings)),
+                    'riderWallet.totalEarnings': FieldValue.increment(
+                      earnings.netEarnings,
+                    ),
+                    'riderWallet.totalEarningsCents': FieldValue.increment(
+                      _toCents(earnings.netEarnings),
+                    ),
                   });
 
                   updateData['cashSettlementProcessed'] = true;
@@ -764,6 +784,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                   final newQty = currentQty + qtyInt;
 
                   final update = <String, Object?>{
+                    'stock': newQty,
                     'availableQty': newQty,
                     'updatedAt': FieldValue.serverTimestamp(),
                   };
@@ -800,6 +821,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                 final newQty = currentQty + qtyInt;
 
                 final update = <String, Object?>{
+                  'stock': newQty,
                   'availableQty': newQty,
                   'updatedAt': FieldValue.serverTimestamp(),
                 };

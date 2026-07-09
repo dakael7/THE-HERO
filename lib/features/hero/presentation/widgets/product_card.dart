@@ -8,6 +8,7 @@ import '../../../../domain/providers/favorites_providers.dart';
 import '../../../moderation/presentation/widgets/report_offer_bottom_sheet.dart';
 import '../../../offers/presentation/widgets/star_rating_widget.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../../cart/cart_monthly_gate.dart';
 import '../../cart/cart_provider.dart';
 
 class ProductCard extends ConsumerWidget {
@@ -92,19 +93,19 @@ class ProductCard extends ConsumerWidget {
             ),
             clipBehavior: Clip.none,
             child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Imagen grande a la izquierda ──────────────────────────
-                  SizedBox(
-                    width: imageSize,
-                    height: imageSize,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _ProductImage(
-                          imageUrl: imageUrl,
-                          targetCacheSize: targetCacheSize,
-                        ),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Imagen grande a la izquierda ──────────────────────────
+                SizedBox(
+                  width: imageSize,
+                  height: imageSize,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _ProductImage(
+                        imageUrl: imageUrl,
+                        targetCacheSize: targetCacheSize,
+                      ),
                       if (moderationStatus != ModerationStatus.visible)
                         Positioned.fill(
                           child: Container(
@@ -126,8 +127,7 @@ class ProductCard extends ConsumerWidget {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    moderationStatus ==
-                                            ModerationStatus.blocked
+                                    moderationStatus == ModerationStatus.blocked
                                         ? Icons.gpp_bad_outlined
                                         : Icons.visibility_off_outlined,
                                     color: Colors.white,
@@ -156,10 +156,7 @@ class ProductCard extends ConsumerWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _FavoriteButton(
-                              offerId: offerId,
-                              userId: userId,
-                            ),
+                            _FavoriteButton(offerId: offerId, userId: userId),
                             const SizedBox(width: 6),
                             _OverflowMenu(
                               offerId: offerId,
@@ -170,180 +167,173 @@ class ProductCard extends ConsumerWidget {
                           ],
                         ),
                       ),
-                      ],
-                    ),
+                    ],
                   ),
+                ),
 
-                  // ── Contenido derecho ─────────────────────────────────────
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            name,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: textGray900,
-                              height: 1.25,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                // ── Contenido derecho ─────────────────────────────────────
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: textGray900,
+                            height: 1.25,
                           ),
-                          const SizedBox(height: 4),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.store_mall_directory_outlined,
+                              size: 12,
+                              color: textGray600,
+                            ),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text(
+                                sellerName != null &&
+                                        sellerName!.trim().isNotEmpty
+                                    ? sellerName!
+                                    : 'Vendedor',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: textGray600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (showSellerHeroRating) ...[
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.star_rounded,
+                                size: 13,
+                                color: Color(0xFFF59E0B),
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                (sellerHeroRating!).toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: textGray600,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            _Chip(label: category),
+                            _Chip(label: 'x$availableQty disponibles'),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        if (ratingCount > 0) ...[
                           Row(
                             children: [
-                              const Icon(
-                                Icons.store_mall_directory_outlined,
-                                size: 12,
-                                color: textGray600,
-                              ),
+                              StarRatingWidget(rating: avgRating, size: 12.0),
                               const SizedBox(width: 3),
-                              Expanded(
-                                child: Text(
-                                  sellerName != null &&
-                                          sellerName!.trim().isNotEmpty
-                                      ? sellerName!
-                                      : 'Vendedor',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: textGray600,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                              Text(
+                                '($ratingCount)',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: textGray600,
                                 ),
                               ),
-                              if (showSellerHeroRating) ...[
-                                const SizedBox(width: 6),
-                                const Icon(
-                                  Icons.star_rounded,
-                                  size: 13,
-                                  color: Color(0xFFF59E0B),
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  (sellerHeroRating!).toStringAsFixed(1),
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: textGray600,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: [
-                              _Chip(label: category),
-                              _Chip(label: 'x$availableQty disponibles'),
                             ],
                           ),
                           const SizedBox(height: 6),
-                          if (ratingCount > 0) ...[
-                            Row(
-                              children: [
-                                StarRatingWidget(
-                                  rating: avgRating,
-                                  size: 12.0,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  '($ratingCount)',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: textGray600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                          ],
-                          Row(
-                            children: [
-                              _StatItem(
-                                icon: Icons.remove_red_eye_outlined,
-                                value: '$viewCount',
-                              ),
-                              const SizedBox(width: 10),
-                              _StatItem(
-                                icon: Icons.volunteer_activism_outlined,
-                                value: '$orderCount',
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            child: GestureDetector(
-                              onTap: () =>
-                                  _handleAddToCart(context, ref, userId),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: primaryOrange,
-                                  borderRadius: BorderRadius.circular(10),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: primaryOrange.withValues(
-                                        alpha: 0.28,
-                                      ),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.add_shopping_cart_rounded,
-                                      color: backgroundWhite,
-                                      size: 15,
-                                    ),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Agregar al carrito',
-                                      style: TextStyle(
-                                        color: backgroundWhite,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 0.2,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
                         ],
-                      ),
+                        Row(
+                          children: [
+                            _StatItem(
+                              icon: Icons.remove_red_eye_outlined,
+                              value: '$viewCount',
+                            ),
+                            const SizedBox(width: 10),
+                            _StatItem(
+                              icon: Icons.volunteer_activism_outlined,
+                              value: '$orderCount',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: GestureDetector(
+                            onTap: () => _handleAddToCart(context, ref, userId),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: primaryOrange,
+                                borderRadius: BorderRadius.circular(10),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: primaryOrange.withValues(
+                                      alpha: 0.28,
+                                    ),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.add_shopping_cart_rounded,
+                                    color: backgroundWhite,
+                                    size: 15,
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Agregar al carrito',
+                                    style: TextStyle(
+                                      color: backgroundWhite,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ), // Row
+                ),
+              ],
+            ), // Row
           );
         },
       ),
     );
   }
 
-  void _handleAddToCart(
+  Future<void> _handleAddToCart(
     BuildContext context,
     WidgetRef ref,
     String? userId,
-  ) {
-    final currentUser = ref.read(profileProvider).maybeWhen(
-          data: (user) => user,
-          orElse: () => null,
-        );
+  ) async {
+    final currentUser = ref
+        .read(profileProvider)
+        .maybeWhen(data: (user) => user, orElse: () => null);
 
     if (currentUser != null && currentUser.isSuspended) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -385,7 +375,21 @@ class ProductCard extends ConsumerWidget {
       );
     }
 
-    ref.read(cartProvider.notifier).addItem(
+    if (availableQty <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este producto ya no tiene stock disponible.'),
+        ),
+      );
+      return;
+    }
+
+    if (!await ensureCanAddItemToCart(context: context, ref: ref)) return;
+    if (!context.mounted) return;
+
+    ref
+        .read(cartProvider.notifier)
+        .addItem(
           offerId: offerId,
           category: category,
           name: name,
@@ -411,10 +415,7 @@ class _ProductImage extends StatelessWidget {
   final String? imageUrl;
   final int targetCacheSize;
 
-  const _ProductImage({
-    required this.imageUrl,
-    required this.targetCacheSize,
-  });
+  const _ProductImage({required this.imageUrl, required this.targetCacheSize});
 
   @override
   Widget build(BuildContext context) {
@@ -525,18 +526,11 @@ class _OverflowMenu extends StatelessWidget {
           );
         },
         itemBuilder: (context) => const [
-          PopupMenuItem<String>(
-            value: 'report',
-            child: Text('Denunciar'),
-          ),
+          PopupMenuItem<String>(value: 'report', child: Text('Denunciar')),
         ],
         child: const Padding(
           padding: EdgeInsets.all(7),
-          child: Icon(
-            Icons.more_horiz,
-            color: textGray600,
-            size: 18,
-          ),
+          child: Icon(Icons.more_horiz, color: textGray600, size: 18),
         ),
       ),
     );
@@ -547,10 +541,7 @@ class _FavoriteButton extends ConsumerStatefulWidget {
   final String offerId;
   final String? userId;
 
-  const _FavoriteButton({
-    required this.offerId,
-    required this.userId,
-  });
+  const _FavoriteButton({required this.offerId, required this.userId});
 
   @override
   ConsumerState<_FavoriteButton> createState() => _FavoriteButtonState();

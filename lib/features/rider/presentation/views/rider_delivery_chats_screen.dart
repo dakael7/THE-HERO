@@ -66,12 +66,23 @@ class RiderDeliveryChatsScreen extends ConsumerWidget {
           }
 
           if (riderId == null || riderId.trim().isEmpty) {
-            return const Center(child: Text('Inicia sesión para ver los chats'));
+            return const Center(
+              child: Text('Inicia sesión para ver los chats'),
+            );
+          }
+
+          if (!order.status.canShowAssociatedChats) {
+            return const Center(
+              child: Text(
+                'Los chats estarán disponibles cuando el pedido esté pagado',
+              ),
+            );
           }
 
           final stops = order.pickupStops ?? const [];
           final offerIds = <String>{
-            for (final s in stops) ...s.offerIds.where((id) => id.trim().isNotEmpty),
+            for (final s in stops)
+              ...s.offerIds.where((id) => id.trim().isNotEmpty),
           }.toList();
 
           final buyerAsync = ref.watch(userByIdProvider(order.heroId));
@@ -79,11 +90,12 @@ class RiderDeliveryChatsScreen extends ConsumerWidget {
             data: (u) => u?.phoneNumber,
             orElse: () => null,
           );
-          final clientPhone = (buyerPhone != null && buyerPhone.trim().isNotEmpty)
+          final clientPhone =
+              (buyerPhone != null && buyerPhone.trim().isNotEmpty)
               ? buyerPhone
               : (order.delivery.recipientPhone.trim().isNotEmpty
-                  ? order.delivery.recipientPhone
-                  : null);
+                    ? order.delivery.recipientPhone
+                    : null);
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -115,26 +127,31 @@ class RiderDeliveryChatsScreen extends ConsumerWidget {
                   final docLegacy = docNew.exists
                       ? null
                       : await FirebaseFirestore.instance
-                          .collection('chats')
-                          .doc(legacyChatId)
-                          .get();
+                            .collection('chats')
+                            .doc(legacyChatId)
+                            .get();
 
                   final legacyOk = (() {
                     if (!(docLegacy?.exists ?? false)) return false;
                     final data = docLegacy!.data() ?? <String, dynamic>{};
-                    final legacyBuyerId = (data['buyerId'] as String?) ??
+                    final legacyBuyerId =
+                        (data['buyerId'] as String?) ??
                         (data['heroId'] as String?) ??
                         '';
                     final legacyRiderId = (data['riderId'] as String?) ?? '';
                     final rawParticipantIds = data['participantIds'];
                     final participantIds = rawParticipantIds is List
                         ? rawParticipantIds
-                            .map((e) => e.toString().trim())
-                            .where((e) => e.isNotEmpty)
-                            .toList()
+                              .map((e) => e.toString().trim())
+                              .where((e) => e.isNotEmpty)
+                              .toList()
                         : <String>[];
-                    final expected = <String>[order.heroId.trim(), riderId.trim()];
-                    final hasOnlyExpected = participantIds.length == 2 &&
+                    final expected = <String>[
+                      order.heroId.trim(),
+                      riderId.trim(),
+                    ];
+                    final hasOnlyExpected =
+                        participantIds.length == 2 &&
                         participantIds.toSet().containsAll(expected) &&
                         expected.toSet().containsAll(participantIds.toSet());
 
@@ -145,8 +162,9 @@ class RiderDeliveryChatsScreen extends ConsumerWidget {
                         hasOnlyExpected;
                   })();
 
-                  final chatId =
-                      docNew.exists ? newChatId : (legacyOk ? legacyChatId : newChatId);
+                  final chatId = docNew.exists
+                      ? newChatId
+                      : (legacyOk ? legacyChatId : newChatId);
 
                   final chat = Chat(
                     chatId: chatId,
@@ -166,6 +184,7 @@ class RiderDeliveryChatsScreen extends ConsumerWidget {
                     unreadCount: 0,
                   );
 
+                  if (!context.mounted) return;
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => ChatConversationScreen(chat: chat),
@@ -174,7 +193,9 @@ class RiderDeliveryChatsScreen extends ConsumerWidget {
 
                   Future.microtask(() async {
                     try {
-                      await ref.read(chatActionsProvider).ensureChatExists(chat);
+                      await ref
+                          .read(chatActionsProvider)
+                          .ensureChatExists(chat);
                     } catch (_) {
                       // Silently ignore
                     }
@@ -256,9 +277,8 @@ class _DonorTile extends ConsumerWidget {
 
         final donorAsync = ref.watch(userByIdProvider(donorId));
         final donorName = donorAsync.maybeWhen(
-          data: (u) => u?.fullName.trim().isNotEmpty == true
-              ? u!.fullName
-              : 'Donador',
+          data: (u) =>
+              u?.fullName.trim().isNotEmpty == true ? u!.fullName : 'Donador',
           orElse: () => 'Donador',
         );
 
@@ -283,7 +303,9 @@ class _DonorTile extends ConsumerWidget {
                   final ok = await launchUrl(uri);
                   if (!ok && context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('No se pudo abrir la llamada')),
+                      const SnackBar(
+                        content: Text('No se pudo abrir la llamada'),
+                      ),
                     );
                   }
                 },
@@ -305,6 +327,7 @@ class _DonorTile extends ConsumerWidget {
               unreadCount: 0,
             );
 
+            if (!context.mounted) return;
             // Navigate immediately, ensure chat in background
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -408,7 +431,8 @@ class _ChatTargetTileState extends ConsumerState<_ChatTargetTile> {
       orElse: () => '',
     );
 
-    final effectiveSubtitle = (widget.subtitle != null && widget.subtitle!.trim().isNotEmpty)
+    final effectiveSubtitle =
+        (widget.subtitle != null && widget.subtitle!.trim().isNotEmpty)
         ? widget.subtitle!.trim()
         : null;
 
@@ -431,9 +455,9 @@ class _ChatTargetTileState extends ConsumerState<_ChatTargetTile> {
             ? () async {
                 if (_isNavigating) return;
                 _isNavigating = true;
-                
+
                 await widget.onOpen!();
-                
+
                 if (mounted) {
                   setState(() => _isNavigating = false);
                 }
@@ -537,7 +561,8 @@ class _ChatTargetTileState extends ConsumerState<_ChatTargetTile> {
             ),
           ],
         ),
-        trailing: widget.trailing ??
+        trailing:
+            widget.trailing ??
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [

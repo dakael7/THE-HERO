@@ -11,7 +11,8 @@ class DonationQuestionsScreen extends StatefulWidget {
   const DonationQuestionsScreen({super.key, this.initialOffer});
 
   @override
-  State<DonationQuestionsScreen> createState() => _DonationQuestionsScreenState();
+  State<DonationQuestionsScreen> createState() =>
+      _DonationQuestionsScreenState();
 }
 
 class _DonationQuestionsScreenState extends State<DonationQuestionsScreen> {
@@ -26,7 +27,25 @@ class _DonationQuestionsScreenState extends State<DonationQuestionsScreen> {
     _worksCorrectly = offer?.worksCorrectly;
   }
 
-  bool get _canContinue => _isInGoodState != null && _worksCorrectly != null;
+  bool get _hasAnsweredBoth =>
+      _isInGoodState != null && _worksCorrectly != null;
+
+  bool get _canContinue => donationPublicationAnswersAreYes(
+    isInGoodState: _isInGoodState,
+    worksCorrectly: _worksCorrectly,
+  );
+
+  void _showCannotPublishMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Para publicar la donacion, el producto tiene que estar en buen estado y funcional.',
+        ),
+        backgroundColor: Color(0xFFDC2626),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +118,9 @@ class _DonationQuestionsScreenState extends State<DonationQuestionsScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _canContinue
+                  onPressed: !_hasAnsweredBoth
+                      ? null
+                      : _canContinue
                       ? () async {
                           final result = await Navigator.of(context).push<bool>(
                             MaterialPageRoute(
@@ -115,7 +136,7 @@ class _DonationQuestionsScreenState extends State<DonationQuestionsScreen> {
                           if (!context.mounted) return;
                           Navigator.of(context).pop(result);
                         }
-                      : null,
+                      : _showCannotPublishMessage,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryOrange,
                     foregroundColor: backgroundWhite,

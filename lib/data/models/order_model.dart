@@ -55,6 +55,7 @@ class OrderModel {
   final double? buyerRating;
   final String? buyerRatingComment;
   final String? buyerRatingBySellerId;
+  final Map<String, dynamic>? coupon;
 
   OrderModel({
     required this.orderId,
@@ -100,6 +101,7 @@ class OrderModel {
     this.buyerRating,
     this.buyerRatingComment,
     this.buyerRatingBySellerId,
+    this.coupon,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
@@ -125,13 +127,14 @@ class OrderModel {
     final pickupProgressStopIndex = (pickupProgressStopIndexRaw is int)
         ? pickupProgressStopIndexRaw
         : (pickupProgressStopIndexRaw is num)
-            ? pickupProgressStopIndexRaw.toInt()
-            : null;
+        ? pickupProgressStopIndexRaw.toInt()
+        : null;
 
     return OrderModel(
       orderId: json['orderId'] as String? ?? '',
       heroId: json['heroId'] as String? ?? '',
-      sellerHeroIds: (json['sellerHeroIds'] as List<dynamic>?)
+      sellerHeroIds:
+          (json['sellerHeroIds'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
@@ -153,8 +156,8 @@ class OrderModel {
           (billing?['documentType'] as String?)?.trim().isNotEmpty == true
           ? (billing?['documentType'] as String).trim()
           : ((json['documentType'] as String?)?.trim().isNotEmpty == true
-              ? (json['documentType'] as String).trim()
-              : 'boleta'),
+                ? (json['documentType'] as String).trim()
+                : 'boleta'),
       invoiceBusinessName: (json['invoiceBusinessName'] as String?)?.trim(),
       invoiceRut: (json['invoiceRut'] as String?)?.trim(),
       invoiceGiro: (json['invoiceGiro'] as String?)?.trim(),
@@ -163,10 +166,10 @@ class OrderModel {
       invoicePhone: (json['invoicePhone'] as String?)?.trim(),
       billingInvoiceId:
           (billing?['invoiceId'] as String?)?.trim() ??
-              (json['billingInvoiceId'] as String?)?.trim(),
+          (json['billingInvoiceId'] as String?)?.trim(),
       billingInvoiceStatus:
           (billing?['invoiceStatus'] as String?)?.trim() ??
-              (json['billingInvoiceStatus'] as String?)?.trim(),
+          (json['billingInvoiceStatus'] as String?)?.trim(),
       pickup: OrderPickupModel.fromJson(
         json['pickup'] as Map<String, dynamic>? ?? {},
       ),
@@ -213,6 +216,9 @@ class OrderModel {
       buyerRating: (json['buyerRating'] as num?)?.toDouble(),
       buyerRatingComment: json['buyerRatingComment'] as String?,
       buyerRatingBySellerId: json['buyerRatingBySellerId'] as String?,
+      coupon: (json['coupon'] is Map)
+          ? (json['coupon'] as Map).cast<String, dynamic>()
+          : null,
     );
   }
 
@@ -262,6 +268,7 @@ class OrderModel {
       'buyerRating': buyerRating,
       'buyerRatingComment': buyerRatingComment,
       'buyerRatingBySellerId': buyerRatingBySellerId,
+      'coupon': coupon,
     };
   }
 
@@ -310,6 +317,7 @@ class OrderModel {
       buyerRating: buyerRating,
       buyerRatingComment: buyerRatingComment,
       buyerRatingBySellerId: buyerRatingBySellerId,
+      coupon: coupon,
     );
   }
 
@@ -338,7 +346,9 @@ class OrderModel {
       billingInvoiceId: entity.billingInvoiceId,
       billingInvoiceStatus: entity.billingInvoiceStatus,
       pickup: OrderPickupModel.fromEntity(entity.pickup),
-      pickupStops: entity.pickupStops?.map(OrderPickupStopModel.fromEntity).toList(),
+      pickupStops: entity.pickupStops
+          ?.map(OrderPickupStopModel.fromEntity)
+          .toList(),
       delivery: OrderDeliveryModel.fromEntity(entity.delivery),
       requirements: OrderRequirementsModel.fromEntity(entity.requirements),
       rider: OrderRiderModel.fromEntity(entity.rider),
@@ -365,6 +375,7 @@ class OrderModel {
       buyerRating: entity.buyerRating,
       buyerRatingComment: entity.buyerRatingComment,
       buyerRatingBySellerId: entity.buyerRatingBySellerId,
+      coupon: entity.coupon,
     );
   }
 

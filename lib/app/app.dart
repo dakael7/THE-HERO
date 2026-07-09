@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants/app_colors.dart';
+import '../core/firebase/firebase_config.dart';
 import '../core/services/notification_handler.dart';
 import '../domain/entities/user.dart';
 import '../features/auth/presentation/views/login_page.dart';
@@ -9,7 +10,6 @@ import '../features/auth/presentation/providers/session_provider.dart';
 import '../features/auth/presentation/views/unverified_email_screen.dart';
 import '../features/hero/presentation/views/hero_home_screen.dart';
 import '../features/rider/presentation/views/rider_home_screen.dart';
-import '../data/providers/network_providers.dart';
 
 class App extends ConsumerWidget {
   const App({super.key});
@@ -22,6 +22,9 @@ class App extends ConsumerWidget {
       title: 'THE HERO',
       navigatorKey: NotificationHandler().navigatorKey,
       scrollBehavior: const _NoStretchScrollBehavior(),
+      builder: (context, child) {
+        return SafeArea(child: child ?? const SizedBox.shrink());
+      },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: primaryOrange),
         useMaterial3: true,
@@ -57,8 +60,7 @@ class App extends ConsumerWidget {
         },
         loading: _buildLoadingScreen,
         error: (error, stackTrace) {
-          final hasFirebaseSession =
-              ref.read(firebaseAuthProvider).currentUser != null;
+          final hasFirebaseSession = FirebaseConfig.auth.currentUser != null;
           if (hasFirebaseSession) {
             return _buildLoadingScreen();
           }

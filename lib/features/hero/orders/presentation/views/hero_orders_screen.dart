@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../data/providers/repository_providers.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
 import '../../../../billing/domain/entities/invoice_entity.dart';
@@ -56,7 +56,7 @@ class HeroOrdersScreen extends ConsumerWidget {
             )
           : Builder(
               builder: (context) {
-                final uid = userId!;
+                final uid = userId;
                 final ordersAsync = ref.watch(myOrdersProvider(uid));
                 return ordersAsync.when(
                   loading: () => const Center(
@@ -100,7 +100,7 @@ class HeroOrdersScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                         itemCount: sorted.length,
                         itemBuilder: (context, index) {
-                          return _OrderTile(order: sorted[index]);
+                          return _OrderTile(order: sorted[index], uid: uid);
                         },
                       ),
                     );
@@ -114,8 +114,9 @@ class HeroOrdersScreen extends ConsumerWidget {
 
 class _OrderTile extends ConsumerWidget {
   final Order order;
+  final String uid;
 
-  const _OrderTile({required this.order});
+  const _OrderTile({required this.order, required this.uid});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -356,13 +357,13 @@ class _OrderTile extends ConsumerWidget {
                                     size: 48,
                                   ),
                                   title: const Text(
-                                    'Eliminar orden',
+                                    'Cancelar orden',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                   content: const Text(
-                                    '¿Eliminar esta orden pendiente? Esta acción no se puede deshacer.',
+                                    '¿Cancelar esta orden pendiente? El stock volverá a estar disponible.',
                                     textAlign: TextAlign.center,
                                   ),
                                   actions: [
@@ -378,7 +379,7 @@ class _OrderTile extends ConsumerWidget {
                                         foregroundColor: Colors.red,
                                       ),
                                       child: const Text(
-                                        'Eliminar',
+                                        'Cancelar orden',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w800,
                                         ),
@@ -390,136 +391,18 @@ class _OrderTile extends ConsumerWidget {
 
                               if (confirmed == true && context.mounted) {
                                 try {
-                                  // Restore stock for all items in the order
-                                  // Delete order from Firestore
-                                  final db =
-                                      firestore.FirebaseFirestore.instance;
-
-                                  await db.runTransaction((tx) async {
-                                    final orderRef = db
-                                        .collection('orders')
-                                        .doc(order.orderId);
-                                    final reservationRef = db
-                                        .collection('stockReservations')
-                                        .doc(order.orderId);
-
-                                    // 1. READ: Get reservation
-                                    final reservationSnap = await tx.get(
-                                      reservationRef,
-                                    );
-
-                                    // Map to store offer snapshots: offerId -> DocumentSnapshot
-                                    final offerSnaps =
-                                        <String, firestore.DocumentSnapshot>{};
-                                    List<dynamic>? itemsRaw;
-
-                                    if (reservationSnap.exists) {
-                                      final data = reservationSnap.data();
-                                      final status = data?['status'] as String?;
-                                      itemsRaw =
-                                          data?['items'] as List<dynamic>?;
-
-                                      if (status == 'reserved' &&
-                                          itemsRaw != null) {
-                                        // 2. READ: Get all offers related to this reservation
-                                        for (final raw in itemsRaw) {
-                                          if (raw is! Map) continue;
-                                          final offerId =
-                                              raw['offerId'] as String?;
-                                          if (offerId == null ||
-                                              offerId.isEmpty) {
-                                            continue;
-                                          }
-
-                                          // Avoid reading the same doc twice
-                                          if (!offerSnaps.containsKey(
-                                            offerId,
-                                          )) {
-                                            final offerRef = db
-                                                .collection('offers')
-                                                .doc(offerId);
-                                            final offerSnap = await tx.get(
-                                              offerRef,
-                                            );
-                                            offerSnaps[offerId] = offerSnap;
-                                          }
-                                        }
-                                      }
-                                    }
-
-                                    // 3. WRITE: Perform all updates
-                                    if (reservationSnap.exists &&
-                                        itemsRaw != null) {
-                                      final data = reservationSnap.data();
-                                      final status = data?['status'] as String?;
-
-                                      if (status == 'reserved') {
-                                        for (final raw in itemsRaw) {
-                                          if (raw is! Map) continue;
-                                          final offerId =
-                                              raw['offerId'] as String?;
-                                          final qty = raw['qty'] as int?;
-
-                                          if (offerId == null ||
-                                              !offerSnaps.containsKey(
-                                                offerId,
-                                              )) {
-                                            continue;
-                                          }
-
-                                          final qtyInt =
-                                              (qty == null || qty <= 0)
-                                              ? 1
-                                              : qty;
-                                          final offerSnap =
-                                              offerSnaps[offerId]!;
-
-                                          if (!offerSnap.exists) continue;
-
-                                          final offerData =
-                                              offerSnap.data()
-                                                  as Map<String, dynamic>?;
-                                          final currentQty =
-                                              (offerData?['availableQty']
-                                                  as int?) ??
-                                              0;
-                                          final newQty = currentQty + qtyInt;
-                                          final currentStatus =
-                                              offerData?['status'] as String?;
-
-                                          final update = <String, Object?>{
-                                            'availableQty': newQty,
-                                            'updatedAt': firestore
-                                                .FieldValue.serverTimestamp(),
-                                          };
-
-                                          if (currentStatus == 'sold_out' &&
-                                              newQty > 0) {
-                                            update['status'] = 'active';
-                                          }
-
-                                          tx.update(
-                                            offerSnap.reference,
-                                            update,
-                                          );
-                                        }
-
-                                        tx.update(reservationRef, {
-                                          'status': 'released',
-                                          'releasedAt': firestore
-                                              .FieldValue.serverTimestamp(),
-                                        });
-                                      }
-                                    }
-
-                                    // 4. WRITE: Delete order
-                                    tx.delete(orderRef);
-                                  });
+                                  await ref
+                                      .read(ordersRepositoryProvider)
+                                      .cancelOrder(
+                                        order.orderId,
+                                        'Cancelado por el usuario',
+                                        uid,
+                                      );
 
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text('Orden eliminada'),
+                                        content: Text('Orden cancelada'),
                                         backgroundColor: categoryTextGreen,
                                       ),
                                     );
@@ -536,9 +419,9 @@ class _OrderTile extends ConsumerWidget {
                                 }
                               }
                             },
-                            icon: const Icon(Icons.delete_outline, size: 18),
+                            icon: const Icon(Icons.cancel_outlined, size: 18),
                             label: const Text(
-                              'Eliminar',
+                              'Cancelar',
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 13,
@@ -634,60 +517,6 @@ class _OrderTile extends ConsumerWidget {
       default:
         return textGray600;
     }
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final String label;
-  final int count;
-  final Color color;
-
-  const _SectionHeader({
-    required this.label,
-    required this.count,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 4,
-          height: 20,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          label,
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: textGray900,
-            fontSize: 16,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              color: color,
-            ),
-          ),
-        ),
-      ],
-    );
   }
 }
 

@@ -244,6 +244,10 @@ class _RiderDeliveryMapScreenState
     required String buyerId,
     required String buyerName,
   }) async {
+    if (!order.status.canShowAssociatedChats) {
+      throw Exception('El chat estará disponible cuando el pedido esté pagado');
+    }
+
     final riderId = order.rider.assignedRiderId;
     if (riderId == null || riderId.isEmpty) {
       throw Exception('Pedido sin rider asignado');
@@ -1031,7 +1035,10 @@ class _BottomPanel extends ConsumerWidget {
 
     final _ = targetPhone;
     final buyerIdResolved = chatBuyerId;
-    final canChat = buyerIdResolved != null && buyerIdResolved.trim().isNotEmpty;
+    final canChat =
+        order.status.canShowAssociatedChats &&
+        buyerIdResolved != null &&
+        buyerIdResolved.trim().isNotEmpty;
 
     final riderUid = ref.watch(firebaseAuthProvider).currentUser?.uid;
     final chatBadgeCount = (() {
@@ -1089,12 +1096,13 @@ class _BottomPanel extends ConsumerWidget {
                   ),
                 ),
               ),
-              IconButton(
-                tooltip: 'Abrir chat',
-                onPressed: onOpenChats,
-                icon: _ChatIconWithBadge(count: chatBadgeCount),
-                color: primaryOrange,
-              ),
+              if (order.status.canShowAssociatedChats)
+                IconButton(
+                  tooltip: 'Abrir chat',
+                  onPressed: onOpenChats,
+                  icon: _ChatIconWithBadge(count: chatBadgeCount),
+                  color: primaryOrange,
+                ),
             ],
           ),
           Row(

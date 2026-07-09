@@ -1428,6 +1428,7 @@ class _SellerChatActions extends ConsumerWidget {
   }
 
   Future<void> _openRiderChat(NavigatorState navigator, WidgetRef ref) async {
+    if (!order.status.canShowAssociatedChats) return;
     if (!order.rider.isAssigned) return;
     final riderId = order.rider.assignedRiderId;
     if (riderId == null || riderId.isEmpty) return;
@@ -1471,6 +1472,7 @@ class _SellerChatActions extends ConsumerWidget {
     WidgetRef ref,
     String buyerNameFallback,
   ) async {
+    if (!order.status.canShowAssociatedChats) return;
     final seller = ref.read(profileProvider).value;
     if (seller == null) return;
 
@@ -1530,6 +1532,10 @@ class _SellerChatActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!order.status.canShowAssociatedChats) {
+      return const SizedBox.shrink();
+    }
+
     final hasRider = order.rider.isAssigned &&
         (order.rider.assignedRiderId?.isNotEmpty ?? false);
     final riderName = order.rider.riderNameSnapshot ?? 'Rider';

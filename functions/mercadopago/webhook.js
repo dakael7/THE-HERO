@@ -607,6 +607,7 @@ exports.mercadopagoWebhook = onRequest(
             const newQty = currentQty + Number(delta ?? 0);
 
             const updateData = {
+              stock: newQty,
               availableQty: newQty,
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             };

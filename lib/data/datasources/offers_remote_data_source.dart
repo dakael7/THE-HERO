@@ -101,7 +101,9 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
         throw Exception('Subida incompleta: ${snapshot.state}');
       }
 
-      final url = await ref.getDownloadURL().timeout(const Duration(seconds: 15));
+      final url = await ref.getDownloadURL().timeout(
+        const Duration(seconds: 15),
+      );
       if (url.trim().isEmpty) {
         throw Exception('URL de descarga vacía');
       }
@@ -118,10 +120,7 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
       data.remove('moderationStatus');
       data.remove('reportCount');
       data.remove('lastReportedAt');
-      await _firestore
-          .collection('offers')
-          .doc(offer.offerId)
-          .update(data);
+      await _firestore.collection('offers').doc(offer.offerId).update(data);
       return offer;
     } catch (e) {
       throw Exception('Error al actualizar oferta: $e');
@@ -195,7 +194,9 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
                   (doc) =>
                       OfferModel.fromJson(doc.data() as Map<String, dynamic>),
                 )
-                .where((offer) => offer.moderationStatus == ModerationStatus.visible)
+                .where(
+                  (offer) => offer.moderationStatus == ModerationStatus.visible,
+                )
                 .take(limit)
                 .toList(),
           );
@@ -236,8 +237,9 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
         final data = offerDoc.data()!;
         final currentAvailableQty = data['availableQty'] as int;
         final currentStock = (data['stock'] as int?) ?? currentAvailableQty;
-        final currentQty =
-            currentAvailableQty < currentStock ? currentAvailableQty : currentStock;
+        final currentQty = currentAvailableQty < currentStock
+            ? currentAvailableQty
+            : currentStock;
         final newQty = currentQty - qty;
 
         if (newQty < 0) {
@@ -277,6 +279,7 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
         final newQty = currentQty + qty;
 
         final updateData = {
+          'stock': newQty,
           'availableQty': newQty,
           'orderCount': FieldValue.increment(-1),
           'updatedAt': FieldValue.serverTimestamp(),

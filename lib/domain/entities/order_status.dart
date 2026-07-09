@@ -37,20 +37,24 @@ enum OrderStatus {
 
   bool get isActive {
     return this == OrderStatus.assigned ||
-           this == OrderStatus.pickedUp ||
-           this == OrderStatus.inTransit;
+        this == OrderStatus.pickedUp ||
+        this == OrderStatus.inTransit;
   }
 
   bool get isCompleted {
     return this == OrderStatus.delivered ||
-           this == OrderStatus.canceled ||
-           this == OrderStatus.failed;
+        this == OrderStatus.canceled ||
+        this == OrderStatus.failed;
+  }
+
+  bool get canShowAssociatedChats {
+    return this != OrderStatus.created &&
+        this != OrderStatus.pendingPayment &&
+        this != OrderStatus.failed;
   }
 
   bool get canBeCanceled {
     return this == OrderStatus.created ||
-           this == OrderStatus.pendingPayment ||
-           this == OrderStatus.paid ||
-           this == OrderStatus.queued;
+        this == OrderStatus.pendingPayment;
   }
 }

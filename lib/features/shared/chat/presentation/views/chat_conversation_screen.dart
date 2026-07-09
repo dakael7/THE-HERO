@@ -14,6 +14,7 @@ import '../../../../../domain/entities/chat_type.dart';
 import '../../../../../domain/entities/chat_message.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/user.dart';
+import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../profile/presentation/providers/profile_provider.dart';
 import '../providers/chat_providers.dart';
 
@@ -33,9 +34,6 @@ class _ChatConversationScreenState
   final ScrollController _scrollController = ScrollController();
   final FocusNode _inputFocus = FocusNode();
 
-  // Order completion — checked once on open to avoid repeated Firestore listeners.
-  bool _isOrderCompleted = false;
-
   Timer? _typingStopTimer;
   DateTime? _lastTypingWriteAt;
   DateTime? _lastAutoReadAt;
@@ -46,9 +44,14 @@ class _ChatConversationScreenState
   // ── Helpers ─────────────────────────────────────────────────────────────────
   String _friendlyError(Object error) {
     final raw = error.toString();
-    if (raw.contains('Usuario no autenticado')) return 'Inicia sesión para ver mensajes.';
+    if (raw.contains('Usuario no autenticado')) {
+      return 'Inicia sesión para ver mensajes.';
+    }
+    if (raw.contains('Chat bloqueado')) return 'Este chat está bloqueado.';
     if (error is FirebaseException) {
-      if (error.code == 'permission-denied') return 'Sin permisos para este chat.';
+      if (error.code == 'permission-denied') {
+        return 'Sin permisos para este chat.';
+      }
       if (error.code == 'unavailable') return 'Sin conexión a internet.';
     }
     return 'Error al cargar los mensajes.';
@@ -58,8 +61,18 @@ class _ChatConversationScreenState
 
   String _formatDateHeader(DateTime dt) {
     const months = [
-      'enero','febrero','marzo','abril','mayo','junio',
-      'julio','agosto','septiembre','octubre','noviembre','diciembre',
+      'enero',
+      'febrero',
+      'marzo',
+      'abril',
+      'mayo',
+      'junio',
+      'julio',
+      'agosto',
+      'septiembre',
+      'octubre',
+      'noviembre',
+      'diciembre',
     ];
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -71,7 +84,11 @@ class _ChatConversationScreenState
   }
 
   String _initials(String value) {
-    final parts = value.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    final parts = value
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((e) => e.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return '?';
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
     return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
@@ -99,10 +116,9 @@ class _ChatConversationScreenState
     _typingStopTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     try {
-      ref.read(chatActionsProvider).setTyping(
-        chatId: widget.chat.chatId,
-        isTyping: false,
-      );
+      ref
+          .read(chatActionsProvider)
+          .setTyping(chatId: widget.chat.chatId, isTyping: false);
     } catch (_) {}
     FCMService().setActiveChatId(null);
     _controller.dispose();
@@ -145,10 +161,9 @@ class _ChatConversationScreenState
       _typingStopTimer?.cancel();
       Future.microtask(() async {
         try {
-          await ref.read(chatActionsProvider).setTyping(
-            chatId: widget.chat.chatId,
-            isTyping: false,
-          );
+          await ref
+              .read(chatActionsProvider)
+              .setTyping(chatId: widget.chat.chatId, isTyping: false);
         } catch (_) {}
       });
       return;
@@ -156,14 +171,14 @@ class _ChatConversationScreenState
 
     final now = DateTime.now();
     final last = _lastTypingWriteAt;
-    if (last == null || now.difference(last) > const Duration(milliseconds: 900)) {
+    if (last == null ||
+        now.difference(last) > const Duration(milliseconds: 900)) {
       _lastTypingWriteAt = now;
       Future.microtask(() async {
         try {
-          await ref.read(chatActionsProvider).setTyping(
-            chatId: widget.chat.chatId,
-            isTyping: true,
-          );
+          await ref
+              .read(chatActionsProvider)
+              .setTyping(chatId: widget.chat.chatId, isTyping: true);
         } catch (_) {}
       });
     }
@@ -172,23 +187,28 @@ class _ChatConversationScreenState
     _typingStopTimer = Timer(const Duration(seconds: 2), () {
       Future.microtask(() async {
         try {
-          await ref.read(chatActionsProvider).setTyping(
-            chatId: widget.chat.chatId,
-            isTyping: false,
-          );
+          await ref
+              .read(chatActionsProvider)
+              .setTyping(chatId: widget.chat.chatId, isTyping: false);
         } catch (_) {}
       });
     });
   }
 
-  void _maybeAutoMarkRead({required String? currentUserId, required List<ChatMessage> messages}) {
+  void _maybeAutoMarkRead({
+    required String? currentUserId,
+    required List<ChatMessage> messages,
+  }) {
     if (currentUserId == null || !mounted) return;
-    final hasUnread = messages.any((m) =>
-        m.senderId.isNotEmpty && m.senderId != currentUserId && !m.isRead);
+    final hasUnread = messages.any(
+      (m) => m.senderId.isNotEmpty && m.senderId != currentUserId && !m.isRead,
+    );
     if (!hasUnread) return;
     final now = DateTime.now();
     final last = _lastAutoReadAt;
-    if (last != null && now.difference(last) < const Duration(seconds: 2)) return;
+    if (last != null && now.difference(last) < const Duration(seconds: 2)) {
+      return;
+    }
     _lastAutoReadAt = now;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -202,16 +222,14 @@ class _ChatConversationScreenState
     HapticFeedback.lightImpact();
     _controller.clear();
     try {
-      await ref.read(chatActionsProvider).setTyping(
-        chatId: widget.chat.chatId,
-        isTyping: false,
-      );
+      await ref
+          .read(chatActionsProvider)
+          .setTyping(chatId: widget.chat.chatId, isTyping: false);
     } catch (_) {}
     try {
-      await ref.read(chatActionsProvider).sendTextMessage(
-        chatId: widget.chat.chatId,
-        text: text,
-      );
+      await ref
+          .read(chatActionsProvider)
+          .sendTextMessage(chatId: widget.chat.chatId, text: text);
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     } catch (e) {
       if (!mounted) return;
@@ -228,16 +246,27 @@ class _ChatConversationScreenState
   // ── Build ────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final isOrderCompleted = _isOrderCompleted;
-
     final currentUserId = ref.watch(firebaseAuthProvider).currentUser?.uid;
     final typingAsync = ref.watch(chatTypingProvider(widget.chat.chatId));
+    final orderId = widget.chat.orderId?.trim();
+    final orderAsync = orderId != null && orderId.isNotEmpty
+        ? ref.watch(orderByIdProvider(orderId))
+        : null;
+    final orderStatus = orderAsync?.value?.status;
+    final isChatLocked =
+        orderAsync != null &&
+        (orderStatus == null ||
+            orderStatus.isCompleted ||
+            !orderStatus.canShowAssociatedChats);
 
-    final isBuyer = currentUserId != null && currentUserId == widget.chat.buyerId;
-    final isRider = currentUserId != null && currentUserId == widget.chat.riderId;
+    final isBuyer =
+        currentUserId != null && currentUserId == widget.chat.buyerId;
+    final isRider =
+        currentUserId != null && currentUserId == widget.chat.riderId;
 
     final sellerId = widget.chat.sellerId;
-    final sellerAsync = (widget.chat.type == ChatType.heroSeller && sellerId != null)
+    final sellerAsync =
+        (widget.chat.type == ChatType.heroSeller && sellerId != null)
         ? ref.watch(userByIdProvider(sellerId))
         : null;
 
@@ -259,20 +288,27 @@ class _ChatConversationScreenState
           : (widget.chat.buyerName ?? 'Cliente');
     }
 
-    final contextLabel = (widget.chat.orderId != null && widget.chat.orderId!.isNotEmpty)
+    final contextLabel =
+        (widget.chat.orderId != null && widget.chat.orderId!.isNotEmpty)
         ? 'Pedido #${widget.chat.orderId!.length > 8 ? widget.chat.orderId!.substring(0, 8).toUpperCase() : widget.chat.orderId!.toUpperCase()}'
         : (widget.chat.offerId != null && widget.chat.offerId!.isNotEmpty)
-            ? 'Oferta #${widget.chat.offerId!.length > 8 ? widget.chat.offerId!.substring(0, 8).toUpperCase() : widget.chat.offerId!.toUpperCase()}'
-            : (widget.chat.type == ChatType.heroRider ? 'Chat con Rider' : 'Chat con Vendedor');
+        ? 'Oferta #${widget.chat.offerId!.length > 8 ? widget.chat.offerId!.substring(0, 8).toUpperCase() : widget.chat.offerId!.toUpperCase()}'
+        : (widget.chat.type == ChatType.heroRider
+              ? 'Chat con Rider'
+              : 'Chat con Vendedor');
 
     // Who is the other participant?
     final otherUserId = (() {
       final me = currentUserId;
       if (me == null || me.isEmpty) return null;
       if (widget.chat.type == ChatType.heroRider) {
-        return me == widget.chat.buyerId ? widget.chat.riderId : widget.chat.buyerId;
+        return me == widget.chat.buyerId
+            ? widget.chat.riderId
+            : widget.chat.buyerId;
       }
-      return me == widget.chat.buyerId ? widget.chat.sellerId : widget.chat.buyerId;
+      return me == widget.chat.buyerId
+          ? widget.chat.sellerId
+          : widget.chat.buyerId;
     })();
 
     final otherUserAsync = otherUserId == null
@@ -289,7 +325,8 @@ class _ChatConversationScreenState
         if (otherUserId == null) return false;
         final lastTypedAt = map[otherUserId];
         if (lastTypedAt == null) return false;
-        return DateTime.now().difference(lastTypedAt) < const Duration(seconds: 5);
+        return DateTime.now().difference(lastTypedAt) <
+            const Duration(seconds: 5);
       },
       orElse: () => false,
     );
@@ -301,8 +338,8 @@ class _ChatConversationScreenState
         final subtitle = isOtherTyping
             ? 'Escribiendo...'
             : (offerTitle != null && offerTitle.trim().isNotEmpty
-                ? '$contextLabel • $offerTitle'
-                : contextLabel);
+                  ? '$contextLabel • $offerTitle'
+                  : contextLabel);
 
         return Scaffold(
           backgroundColor: const Color(0xFFF0F2F5),
@@ -318,60 +355,66 @@ class _ChatConversationScreenState
               Column(
                 children: [
                   Expanded(
-                    child: Builder(builder: (context) {
-                      final messagesAsync = ref.watch(
-                        chatMessagesProvider(widget.chat.chatId),
-                      );
-                      return messagesAsync.when(
-                        loading: () => const Center(
-                          child: CircularProgressIndicator(color: primaryOrange),
-                        ),
-                        error: (error, _) => Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              _friendlyError(error),
-                              style: const TextStyle(color: textGray600),
-                              textAlign: TextAlign.center,
+                    child: Builder(
+                      builder: (context) {
+                        final messagesAsync = ref.watch(
+                          chatMessagesProvider(widget.chat.chatId),
+                        );
+                        return messagesAsync.when(
+                          loading: () => const Center(
+                            child: CircularProgressIndicator(
+                              color: primaryOrange,
                             ),
                           ),
-                        ),
-                        data: (messages) {
-                          _maybeAutoMarkRead(
-                            currentUserId: currentUserId,
-                            messages: messages,
-                          );
-                          if (messages.length != _lastMessageCount) {
-                            _lastMessageCount = messages.length;
-                            if (_isAtBottom) {
-                              WidgetsBinding.instance.addPostFrameCallback(
-                                (_) => _scrollToBottom(animate: false),
+                          error: (error, _) => Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                _friendlyError(error),
+                                style: const TextStyle(color: textGray600),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                          data: (messages) {
+                            _maybeAutoMarkRead(
+                              currentUserId: currentUserId,
+                              messages: messages,
+                            );
+                            if (messages.length != _lastMessageCount) {
+                              _lastMessageCount = messages.length;
+                              if (_isAtBottom) {
+                                WidgetsBinding.instance.addPostFrameCallback(
+                                  (_) => _scrollToBottom(animate: false),
+                                );
+                              }
+                            }
+                            if (messages.isEmpty) {
+                              return _EmptyChat(
+                                participantName: participantName,
                               );
                             }
-                          }
-                          if (messages.isEmpty) {
-                            return _EmptyChat(participantName: participantName);
-                          }
-                          return _MessageList(
-                            messages: messages,
-                            currentUserId: currentUserId,
-                            chat: widget.chat,
-                            sellerAsync: sellerAsync,
-                            scrollController: _scrollController,
-                            formatTime: _formatTime,
-                            formatDateHeader: _formatDateHeader,
-                            initials: _initials,
-                          );
-                        },
-                      );
-                    }),
+                            return _MessageList(
+                              messages: messages,
+                              currentUserId: currentUserId,
+                              chat: widget.chat,
+                              sellerAsync: sellerAsync,
+                              scrollController: _scrollController,
+                              formatTime: _formatTime,
+                              formatDateHeader: _formatDateHeader,
+                              initials: _initials,
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ),
                   SafeArea(
                     top: false,
                     child: _InputArea(
                       controller: _controller,
                       focusNode: _inputFocus,
-                      isLocked: isOrderCompleted,
+                      isLocked: isChatLocked,
                       onChanged: _onTextChanged,
                       onSend: _send,
                     ),
@@ -429,7 +472,11 @@ class _ChatConversationScreenState
       titleSpacing: 0,
       leadingWidth: 44,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Colors.white),
+        icon: const Icon(
+          Icons.arrow_back_ios_new_rounded,
+          size: 18,
+          color: Colors.white,
+        ),
         onPressed: () => Navigator.of(context).pop(),
       ),
       title: Row(
@@ -452,7 +499,7 @@ class _ChatConversationScreenState
                       width: 38,
                       height: 38,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Text(
+                      errorBuilder: (_, _, _) => Text(
                         _initials(participantName),
                         style: const TextStyle(
                           fontWeight: FontWeight.w900,
@@ -560,15 +607,16 @@ class _MessageList extends StatelessWidget {
         final senderName = isMe
             ? 'Tú'
             : (message.senderId == chat.buyerId
-                ? (chat.buyerName ?? 'Cliente')
-                : (chat.type == ChatType.heroRider
-                    ? (chat.riderName ?? 'Rider')
-                    : (sellerAsync?.value?.fullName ?? 'Vendedor')));
+                  ? (chat.buyerName ?? 'Cliente')
+                  : (chat.type == ChatType.heroRider
+                        ? (chat.riderName ?? 'Rider')
+                        : (sellerAsync?.value?.fullName ?? 'Vendedor')));
 
         // Check if next message is from same sender (for tail logic)
         final nextItem = index < items.length - 1 ? items[index + 1] : null;
         final nextMsg = nextItem is ChatMessage ? nextItem : null;
-        final isLastInGroup = nextMsg == null || nextMsg.senderId != message.senderId;
+        final isLastInGroup =
+            nextMsg == null || nextMsg.senderId != message.senderId;
 
         return _MessageBubble(
           key: ValueKey(message.messageId),
@@ -595,7 +643,9 @@ class _DateHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          const Expanded(child: Divider(color: Color(0xFFE5E7EB), thickness: 1)),
+          const Expanded(
+            child: Divider(color: Color(0xFFE5E7EB), thickness: 1),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Container(
@@ -615,7 +665,9 @@ class _DateHeader extends StatelessWidget {
               ),
             ),
           ),
-          const Expanded(child: Divider(color: Color(0xFFE5E7EB), thickness: 1)),
+          const Expanded(
+            child: Divider(color: Color(0xFFE5E7EB), thickness: 1),
+          ),
         ],
       ),
     );
@@ -652,7 +704,9 @@ class _MessageBubble extends StatelessWidget {
         right: isMe ? 0 : 48,
       ),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // Other user's avatar (only on last in group)
@@ -701,8 +755,16 @@ class _MessageBubble extends StatelessWidget {
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
-                  bottomLeft: isMe ? const Radius.circular(16) : (isLastInGroup ? const Radius.circular(4) : const Radius.circular(16)),
-                  bottomRight: isMe ? (isLastInGroup ? const Radius.circular(4) : const Radius.circular(16)) : const Radius.circular(16),
+                  bottomLeft: isMe
+                      ? const Radius.circular(16)
+                      : (isLastInGroup
+                            ? const Radius.circular(4)
+                            : const Radius.circular(16)),
+                  bottomRight: isMe
+                      ? (isLastInGroup
+                            ? const Radius.circular(4)
+                            : const Radius.circular(16))
+                      : const Radius.circular(16),
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -890,8 +952,12 @@ class _InputAreaState extends State<_InputArea> {
               Icon(Icons.lock_outline_rounded, color: textGray600, size: 16),
               SizedBox(width: 8),
               Text(
-                'Chat bloqueado — pedido completado',
-                style: TextStyle(color: textGray600, fontSize: 13, fontWeight: FontWeight.w600),
+                'Chat bloqueado — pedido cerrado',
+                style: TextStyle(
+                  color: textGray600,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -932,7 +998,10 @@ class _InputAreaState extends State<_InputArea> {
                   hintText: 'Escribe un mensaje...',
                   hintStyle: TextStyle(color: textGray600, fontSize: 14),
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                 ),
               ),
             ),

@@ -72,10 +72,7 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
   void initState() {
     super.initState();
     SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-      ),
+      const SystemUiOverlayStyle(statusBarIconBrightness: Brightness.dark),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(heroHomeViewModelProvider.notifier).reset();
@@ -160,7 +157,8 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                       child: RepaintBoundary(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: paddingNormal),
+                            horizontal: paddingNormal,
+                          ),
                           child: _ActionCardsRow(),
                         ),
                       ),
@@ -173,8 +171,9 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
                     // not rebuilt when the offer list updates.
                     const SliverToBoxAdapter(
                       child: Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: paddingNormal),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: paddingNormal,
+                        ),
                         child: _CatalogHeader(),
                       ),
                     ),
@@ -398,9 +397,9 @@ class _MyDonationsCard extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             borderRadius: BorderRadius.circular(cornerRadius),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const MyProductsScreen()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const MyProductsScreen())),
             child: Padding(
               padding: EdgeInsets.all(cardPadding),
               child: Column(
@@ -408,7 +407,8 @@ class _MyDonationsCard extends StatelessWidget {
                 children: [
                   Container(
                     padding: EdgeInsets.all(
-                        (10.0 * scale).clamp(7.0, 10.0).toDouble()),
+                      (10.0 * scale).clamp(7.0, 10.0).toDouble(),
+                    ),
                     decoration: BoxDecoration(
                       color: primaryOrange.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(14),
@@ -419,8 +419,7 @@ class _MyDonationsCard extends StatelessWidget {
                       size: (24.0 * scale).clamp(20.0, 26.0).toDouble(),
                     ),
                   ),
-                  SizedBox(
-                      height: (8.0 * scale).clamp(6.0, 8.0).toDouble()),
+                  SizedBox(height: (8.0 * scale).clamp(6.0, 8.0).toDouble()),
                   Text(
                     'Mis Donaciones',
                     maxLines: 1,
@@ -431,8 +430,7 @@ class _MyDonationsCard extends StatelessWidget {
                       color: textGray900,
                     ),
                   ),
-                  SizedBox(
-                      height: (6.0 * scale).clamp(4.0, 6.0).toDouble()),
+                  SizedBox(height: (6.0 * scale).clamp(4.0, 6.0).toDouble()),
                   Expanded(
                     child: Align(
                       alignment: Alignment.topLeft,
@@ -440,15 +438,19 @@ class _MyDonationsCard extends StatelessWidget {
                         'Publica y edita tus productos',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style:
-                            TextStyle(fontSize: bodySize, color: textGray700),
+                        style: TextStyle(
+                          fontSize: bodySize,
+                          color: textGray700,
+                        ),
                       ),
                     ),
                   ),
                   const Align(
                     alignment: Alignment.centerRight,
-                    child: Icon(Icons.chevron_right_rounded,
-                        color: primaryOrange),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      color: primaryOrange,
+                    ),
                   ),
                 ],
               ),
@@ -591,7 +593,9 @@ class _OfferSliverGroup extends StatelessWidget {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(
-                horizontal: paddingNormal, vertical: 4),
+              horizontal: paddingNormal,
+              vertical: 4,
+            ),
             child: Text(
               '${offers.length} producto${offers.length != 1 ? 's' : ''} '
               'encontrado${offers.length != 1 ? 's' : ''}',
@@ -606,8 +610,7 @@ class _OfferSliverGroup extends StatelessWidget {
 
         // Card container + items
         SliverPadding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: paddingNormal),
+          padding: const EdgeInsets.symmetric(horizontal: paddingNormal),
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
@@ -740,11 +743,11 @@ class _OfferListItem extends ConsumerWidget {
           GestureDetector(
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
-                  builder: (_) => OfferDetailScreen(offer: offer)),
+                builder: (_) => OfferDetailScreen(offer: offer),
+              ),
             ),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
               child: ProductCard(
                 key: ValueKey<String>('product_${offer.offerId}'),
                 offerId: offer.offerId,
@@ -759,10 +762,8 @@ class _OfferListItem extends ConsumerWidget {
                 orderCount: offer.orderCount,
                 weight: offer.weight,
                 pickupGeo: offer.itemLocationSnapshot?.geopoint,
-                pickupAddressSnapshot:
-                    offer.itemLocationSnapshot?.fullAddress,
-                pickupCountryCode:
-                    offer.itemLocationSnapshot?.countryCode,
+                pickupAddressSnapshot: offer.itemLocationSnapshot?.fullAddress,
+                pickupCountryCode: offer.itemLocationSnapshot?.countryCode,
                 allowInPersonPickup: offer.allowInPersonPickup,
                 showShadow: false,
                 imageUrl: offer.displayImageUrl,
@@ -795,8 +796,9 @@ class _CenterDockedWithOffset extends FloatingActionButtonLocation {
 
   @override
   Offset getOffset(ScaffoldPrelayoutGeometry scaffoldGeometry) {
-    final base =
-        FloatingActionButtonLocation.centerDocked.getOffset(scaffoldGeometry);
+    final base = FloatingActionButtonLocation.centerDocked.getOffset(
+      scaffoldGeometry,
+    );
     return Offset(base.dx, base.dy + dy);
   }
 }

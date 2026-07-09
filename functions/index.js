@@ -4154,6 +4154,37 @@ async function sendNotificationToUsers(userIds, notification, data = {}) {
   }
 }
 
+async function closeChatsForCanceledOrder(orderId, orderData) {
+  const db = admin.firestore();
+  const snapshot = await db
+    .collection("chats")
+    .where("orderId", "==", String(orderId))
+    .get();
+
+  if (snapshot.empty) return;
+
+  const batch = db.batch();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const cancelReason = orderData?.cancelReason || "Pedido cancelado";
+  const closedBy = orderData?.canceledBy || "system:order_canceled";
+
+  snapshot.docs.forEach((doc) => {
+    batch.set(
+      doc.ref,
+      {
+        isClosed: true,
+        closedAt: now,
+        closedReason: cancelReason,
+        closedBy,
+        updatedAt: now,
+      },
+      {merge: true},
+    );
+  });
+
+  await batch.commit();
+}
+
 /**
  * Trigger: Send notification when order status changes
  * Notifies hero and rider about order status updates
@@ -4180,6 +4211,10 @@ exports.notifyOrderStatusChange = onDocumentWritten(
     console.log(
       `Order ${orderId} status changed: ${oldStatus} -> ${newStatus}`,
     );
+
+    if (newStatus === "canceled") {
+      await closeChatsForCanceledOrder(orderId, after);
+    }
 
     // Define notification messages for each status
     const statusMessages = {

@@ -10,9 +10,17 @@ class OffersRepositoryImpl implements OffersRepository {
   OffersRepositoryImpl({required OffersRemoteDataSource remoteDataSource})
     : _remoteDataSource = remoteDataSource;
 
+  void _ensureDonationCanBePublished(Offer offer) {
+    if (offer.hasRequiredDonationPublicationAnswers) return;
+    throw Exception(
+      'Para publicar la donacion, el producto tiene que estar en buen estado y funcional.',
+    );
+  }
+
   @override
   Future<Offer> createOffer(Offer offer) async {
     try {
+      if (offer.isPublished) _ensureDonationCanBePublished(offer);
       final model = OfferMapper.toModel(offer);
       final createdModel = await _remoteDataSource.createOffer(model);
       return OfferMapper.toEntity(createdModel);
@@ -24,6 +32,7 @@ class OffersRepositoryImpl implements OffersRepository {
   @override
   Future<Offer> updateOffer(Offer offer) async {
     try {
+      if (offer.isPublished) _ensureDonationCanBePublished(offer);
       final model = OfferMapper.toModel(offer);
       final updatedModel = await _remoteDataSource.updateOffer(model);
       return OfferMapper.toEntity(updatedModel);
@@ -76,6 +85,11 @@ class OffersRepositoryImpl implements OffersRepository {
   @override
   Future<void> updateOfferStatus(String offerId, String status) async {
     try {
+      if (status.trim().toLowerCase() == 'active') {
+        final model = await _remoteDataSource.getOfferById(offerId);
+        if (model == null) throw Exception('Oferta no encontrada');
+        _ensureDonationCanBePublished(OfferMapper.toEntity(model));
+      }
       await _remoteDataSource.updateOfferStatus(offerId, status);
     } catch (e) {
       throw Exception('Error al actualizar estado de oferta: $e');

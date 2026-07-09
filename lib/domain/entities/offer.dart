@@ -6,6 +6,11 @@ import 'concierge_info.dart';
 
 enum ModerationStatus { visible, hidden, blocked }
 
+bool donationPublicationAnswersAreYes({
+  required bool? isInGoodState,
+  required bool? worksCorrectly,
+}) => isInGoodState == true && worksCorrectly == true;
+
 class Offer {
   final String offerId;
   final String heroId;
@@ -19,7 +24,7 @@ class Offer {
   final String currency;
   final int stock;
   final int availableQty;
-  final double weight; 
+  final double weight;
   final String coverImageUrl;
   final List<String> imageUrls;
   final OfferStatus status;
@@ -84,6 +89,11 @@ class Offer {
   });
 
   bool get isPublished => status.isPublished;
+  bool get hasRequiredDonationPublicationAnswers =>
+      donationPublicationAnswersAreYes(
+        isInGoodState: isInGoodState,
+        worksCorrectly: worksCorrectly,
+      );
   bool get isVisible => status.isVisible;
   bool get canBeEdited => status.canBeEdited;
   bool get isAvailable => availableQty > 0 && status == OfferStatus.active;

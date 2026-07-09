@@ -134,12 +134,10 @@ const releaseExpiredReservation = async (reservationRef) => {
 
       const offer = entry.doc.data() || {};
       const currentQty = Number(offer.availableQty ?? 0);
-      const stock = Number(offer.stock ?? NaN);
-      const restoredQty = Number.isFinite(stock) ?
-        Math.min(currentQty + delta, stock) :
-        currentQty + delta;
+      const restoredQty = currentQty + delta;
 
       const updateData = {
+        stock: restoredQty,
         availableQty: restoredQty,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };

@@ -86,6 +86,7 @@ exports.createPaymentPreference = onCall(
         const newQty = currentQty + Number(delta ?? 0);
 
         const updateData = {
+          stock: newQty,
           availableQty: newQty,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
@@ -205,6 +206,7 @@ exports.createPaymentPreference = onCall(
       tip,
       heroId,
       delivery,
+      coupon,
     } = request.data || {};
 
     orderIdForLogs = orderId ?? null;
@@ -229,6 +231,50 @@ exports.createPaymentPreference = onCall(
     };
 
     const toOfferId = (value) => String(value ?? "").trim();
+
+    const readCouponDiscount = async (discountBase) => {
+      const source =
+        orderDataAtStart?.coupon && typeof orderDataAtStart.coupon === "object" ?
+          orderDataAtStart.coupon :
+          coupon;
+      const code = String(source?.code ?? "").trim().toUpperCase();
+      if (!code) return {amount: 0, coupon: null};
+
+      const couponDoc = await admin.firestore().collection("cupos").doc(code).get();
+      if (!couponDoc.exists) {
+        throw new HttpsError("not-found", "Cupo no encontrado");
+      }
+
+      const data = couponDoc.data() || {};
+      if (data.active !== true && data.isActive !== true) {
+        throw new HttpsError("failed-precondition", "Cupo inactivo");
+      }
+
+      const rawType = String(
+        data.type ?? data.discountType ?? data.tipo ?? "",
+      ).trim().toLowerCase();
+      const type =
+        ["percent", "percentage", "porcentual", "porcentaje"].includes(rawType) ?
+          "percent" :
+          ["fixed", "amount", "fijo", "monto"].includes(rawType) ?
+            "fixed" :
+            null;
+      const value = Number(
+        data.value ?? data.discountValue ?? data.amount ?? data.valor ?? 0,
+      );
+      if (!type || !Number.isFinite(value) || value <= 0) {
+        throw new HttpsError("failed-precondition", "Cupo mal configurado");
+      }
+
+      const rawAmount = type === "percent" ?
+        Math.round(discountBase * Math.min(value, 100) / 100) :
+        Math.round(value);
+      const amount = Math.min(Math.max(0, rawAmount), Math.max(0, discountBase));
+      return {
+        amount,
+        coupon: {code, type, value, discountAmount: amount},
+      };
+    };
 
     if (!orderId) {
       throw new HttpsError(
@@ -479,6 +525,7 @@ exports.createPaymentPreference = onCall(
           }
 
           const updateData = {
+            stock: newQty,
             availableQty: newQty,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           };
@@ -588,8 +635,10 @@ exports.createPaymentPreference = onCall(
     );
     const serverTax = toInt(orderDataAtStart.tax ?? requestedTax);
     const serverTip = toInt(orderDataAtStart.tip ?? requestedTip);
+    const discountBase = serverDeliveryFee + serverServiceFee + serverTax;
+    const serverCoupon = await readCouponDiscount(discountBase);
     const serverAmountTotal = toInt(
-      serverSubtotal + serverDeliveryFee + serverServiceFee + serverTax + serverTip,
+      serverSubtotal + discountBase - serverCoupon.amount + serverTip,
     );
 
     if (requestedAmountTotal > 0 && requestedAmountTotal !== serverAmountTotal) {
@@ -613,6 +662,15 @@ exports.createPaymentPreference = onCall(
     // rely on delivery/service/tax/tip items to represent the payable amount.
     const skippedZeroPricedItems = [];
     const mpItems = [];
+    let remainingDiscount = serverCoupon.amount;
+    const applyCoupon = (amount) => {
+      const discount = Math.min(amount, remainingDiscount);
+      remainingDiscount -= discount;
+      return amount - discount;
+    };
+    const payableDeliveryFee = applyCoupon(serverDeliveryFee);
+    const payableServiceFee = applyCoupon(serverServiceFee);
+    const payableTax = applyCoupon(serverTax);
 
     for (const pricedItem of pricedItems) {
       if (pricedItem.unitPrice <= 0) {
@@ -635,40 +693,40 @@ exports.createPaymentPreference = onCall(
     }
 
     // Add delivery fee as a separate item
-    if (serverDeliveryFee > 0) {
+    if (payableDeliveryFee > 0) {
       mpItems.push({
         id: "delivery_fee",
         category_id: "others",
         title: "Costo de envio",
         description: "Tarifa de entrega",
         quantity: 1,
-        unit_price: serverDeliveryFee,
+        unit_price: payableDeliveryFee,
         currency_id: "CLP",
       });
     }
 
     // Add service fee as a separate item
-    if (serverServiceFee > 0) {
+    if (payableServiceFee > 0) {
       mpItems.push({
         id: "service_fee",
         category_id: "others",
         title: "Tarifa de servicio",
         description: "Comision de plataforma",
         quantity: 1,
-        unit_price: serverServiceFee,
+        unit_price: payableServiceFee,
         currency_id: "CLP",
       });
     }
 
     // Add tax as a separate item
-    if (serverTax > 0) {
+    if (payableTax > 0) {
       mpItems.push({
         id: "tax",
         category_id: "others",
         title: "Impuestos",
         description: "IVA y otros impuestos",
         quantity: 1,
-        unit_price: serverTax,
+        unit_price: payableTax,
         currency_id: "CLP",
       });
     }
@@ -770,6 +828,7 @@ exports.createPaymentPreference = onCall(
           amount: serverAmountTotal,
           currency: "CLP",
           heroId: String(heroId),
+          ...(serverCoupon.coupon ? {coupon: serverCoupon.coupon} : {}),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           expiresAt: admin.firestore.Timestamp.fromDate(preferenceExpiresAt),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),

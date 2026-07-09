@@ -53,6 +53,7 @@ class Order {
   final double? buyerRating;
   final String? buyerRatingComment;
   final String? buyerRatingBySellerId;
+  final Map<String, dynamic>? coupon;
 
   Order({
     required this.orderId,
@@ -98,6 +99,7 @@ class Order {
     this.buyerRating,
     this.buyerRatingComment,
     this.buyerRatingBySellerId,
+    this.coupon,
   });
 
   bool get isAssigned => rider.isAssigned;
@@ -163,6 +165,7 @@ class Order {
     double? buyerRating,
     String? buyerRatingComment,
     String? buyerRatingBySellerId,
+    Map<String, dynamic>? coupon,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -208,6 +211,7 @@ class Order {
       buyerRatingComment: buyerRatingComment ?? this.buyerRatingComment,
       buyerRatingBySellerId:
           buyerRatingBySellerId ?? this.buyerRatingBySellerId,
+      coupon: coupon ?? this.coupon,
     );
   }
 }

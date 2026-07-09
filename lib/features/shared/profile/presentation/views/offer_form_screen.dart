@@ -137,10 +137,12 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       _titleController.text = offer.title;
       _descriptionController.text = offer.description;
       final cents = (offer.price * 100).round();
-      _priceController.text = CurrencyInputFormatter().formatEditUpdate(
-        const TextEditingValue(text: ''),
-        TextEditingValue(text: cents.toString()),
-      ).text;
+      _priceController.text = CurrencyInputFormatter()
+          .formatEditUpdate(
+            const TextEditingValue(text: ''),
+            TextEditingValue(text: cents.toString()),
+          )
+          .text;
       _stockController.text = offer.stock.toString();
       _weightController.text = offer.weight.toStringAsFixed(2);
       _category = offer.category;
@@ -219,8 +221,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             (_additionalImageBytes.length +
                 _existingAdditionalImageUrls.length)) {
       if (hoveredIndex < _additionalImageBytes.length) {
-        return Image.memory(_additionalImageBytes[hoveredIndex],
-            fit: BoxFit.cover);
+        return Image.memory(
+          _additionalImageBytes[hoveredIndex],
+          fit: BoxFit.cover,
+        );
       }
       final existingIndex = hoveredIndex - _additionalImageBytes.length;
       if (existingIndex >= 0 &&
@@ -233,8 +237,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
         return Image.network(
           url,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) =>
-              const Center(child: Icon(Icons.image, color: textGray600, size: 44)),
+          errorBuilder: (_, _, _) => const Center(
+            child: Icon(Icons.image, color: textGray600, size: 44),
+          ),
         );
       }
     }
@@ -261,7 +266,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
   }
 
   Widget _buildGalleryThumb({required int index}) {
-    final hasImage = index <
+    final hasImage =
+        index <
         (_additionalImageBytes.length + _existingAdditionalImageUrls.length);
     final selected = _hoveredAdditionalIndex == index;
 
@@ -293,7 +299,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                 url,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => const Center(
-                    child: Icon(Icons.image, color: textGray600, size: 44)),
+                  child: Icon(Icons.image, color: textGray600, size: 44),
+                ),
               ),
       );
     }
@@ -599,6 +606,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
     return user.address;
   }
 
+  bool get _hasRequiredPublicationAnswers => donationPublicationAnswersAreYes(
+    isInGoodState: _isInGoodState,
+    worksCorrectly: _worksCorrectly,
+  );
+
   Future<void> _save() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
@@ -608,7 +620,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Debes aceptar los Términos y Condiciones para guardar la oferta'),
+              'Debes aceptar los Términos y Condiciones para guardar la oferta',
+            ),
             backgroundColor: Color(0xFFDC2626),
             duration: Duration(seconds: 3),
           ),
@@ -617,7 +630,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       }
 
       final userCached = ref.read(profileStreamProvider).value;
-      final user = userCached ??
+      final user =
+          userCached ??
           await ref
               .read(profileStreamProvider.future)
               .timeout(const Duration(seconds: 3), onTimeout: () => null);
@@ -625,8 +639,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       if (user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content:
-                  Text('Debes iniciar sesión para crear o editar ofertas')),
+            content: Text('Debes iniciar sesión para crear o editar ofertas'),
+          ),
         );
         return;
       }
@@ -650,8 +664,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
         if (!isEmailVerified || !user.contact.emailVerified) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content:
-                  Text('Debes verificar tu correo para publicar una oferta'),
+              content: Text(
+                'Debes verificar tu correo para publicar una oferta',
+              ),
               duration: Duration(seconds: 3),
             ),
           );
@@ -667,11 +682,12 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
           return;
         }
 
-        if (_isInGoodState == null || _worksCorrectly == null) {
+        if (!_hasRequiredPublicationAnswers) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                  'Responde si está en buen estado y si funciona correctamente'),
+                'Para publicar la donacion, el producto tiene que estar en buen estado y funcional.',
+              ),
               backgroundColor: Color(0xFFDC2626),
               duration: Duration(seconds: 3),
             ),
@@ -684,7 +700,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                  'Debes agregar una imagen de portada para publicar la oferta'),
+                'Debes agregar una imagen de portada para publicar la oferta',
+              ),
               backgroundColor: Color(0xFFDC2626),
               duration: Duration(seconds: 3),
             ),
@@ -815,7 +832,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             nextImageUrls.removeWhere((e) => e.trim() == oldCover);
           }
           latest = await notifier.updateOffer(
-            latest.copyWith(coverImageUrl: normalized, imageUrls: nextImageUrls),
+            latest.copyWith(
+              coverImageUrl: normalized,
+              imageUrls: nextImageUrls,
+            ),
           );
         }
         if (hasNewAdditional) {
@@ -874,10 +894,12 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             if (k.isNotEmpty) nextByKey[k] = normalized;
           }
           currentImageUrls = nextByKey.values.toList();
-          latest = await notifier.updateOffer(latest.copyWith(
-            coverImageUrl: normalized,
-            imageUrls: currentImageUrls,
-          ));
+          latest = await notifier.updateOffer(
+            latest.copyWith(
+              coverImageUrl: normalized,
+              imageUrls: currentImageUrls,
+            ),
+          );
         }
         if (hasNewAdditional) {
           final repo = ref.read(offersRepositoryProvider);
@@ -947,8 +969,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.initialOffer != null;
-    final hasCover =
-        _coverImageBytes != null || _coverAsset.trim().isNotEmpty;
+    final hasCover = _coverImageBytes != null || _coverAsset.trim().isNotEmpty;
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -969,7 +990,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
               children: [
                 // ── SECTION: IMÁGENES ──────────────────────
                 _SectionHeader(
-                    label: 'Imágenes', icon: Icons.photo_library_rounded),
+                  label: 'Imágenes',
+                  icon: Icons.photo_library_rounded,
+                ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                   child: _buildImagesSection(hasCover),
@@ -979,8 +1002,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
                 // ── SECTION: INFORMACIÓN BÁSICA ────────────
                 _SectionHeader(
-                    label: 'Información básica',
-                    icon: Icons.info_rounded),
+                  label: 'Información básica',
+                  icon: Icons.info_rounded,
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
@@ -995,9 +1019,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                           enableSuggestions: true,
                           autocorrect: true,
                           style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A)),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
                           decoration: _inputDeco(
                             hint: 'Nombre del producto',
                             helper: 'Sé claro y específico (mín. 4 caracteres)',
@@ -1025,11 +1050,13 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                           enableSuggestions: true,
                           autocorrect: true,
                           style: const TextStyle(
-                              fontSize: 14,
-                              color: Color(0xFF333333),
-                              height: 1.5),
+                            fontSize: 14,
+                            color: Color(0xFF333333),
+                            height: 1.5,
+                          ),
                           decoration: _inputDeco(
-                            hint: 'Describe el estado y detalles del artículo...',
+                            hint:
+                                'Describe el estado y detalles del artículo...',
                             helper:
                                 'Incluye accesorios, fallas o uso (mín. 10 caracteres)',
                           ),
@@ -1051,16 +1078,23 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                           value: _category,
                           isExpanded: true,
                           style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A)),
-                          decoration: _inputDeco(hint: 'Selecciona una categoría'),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                          decoration: _inputDeco(
+                            hint: 'Selecciona una categoría',
+                          ),
                           items: _categories
-                              .map((c) => DropdownMenuItem(
-                                    value: c,
-                                    child: Text(c,
-                                        overflow: TextOverflow.ellipsis),
-                                  ))
+                              .map(
+                                (c) => DropdownMenuItem(
+                                  value: c,
+                                  child: Text(
+                                    c,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
                               .toList(),
                           onChanged: (val) {
                             if (val != null) setState(() => _category = val);
@@ -1075,8 +1109,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
                 // ── SECTION: INVENTARIO ────────────────────
                 _SectionHeader(
-                    label: 'Inventario y estado',
-                    icon: Icons.inventory_2_rounded),
+                  label: 'Inventario y estado',
+                  icon: Icons.inventory_2_rounded,
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
@@ -1090,14 +1125,16 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                                 controller: _stockController,
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
-                                        decimal: false),
+                                      decimal: false,
+                                    ),
                                 inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly
+                                  FilteringTextInputFormatter.digitsOnly,
                                 ],
                                 style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF1A1A1A)),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1A1A1A),
+                                ),
                                 decoration: _inputDeco(hint: '1'),
                                 validator: (value) {
                                   final parsed = int.tryParse(value ?? '');
@@ -1120,21 +1157,22 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                                       controller: _weightController,
                                       keyboardType:
                                           const TextInputType.numberWithOptions(
-                                              decimal: true),
+                                            decimal: true,
+                                          ),
                                       inputFormatters: [
-                                        CurrencyInputFormatter()
+                                        CurrencyInputFormatter(),
                                       ],
                                       style: const TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w700,
-                                          color: Color(0xFF1A1A1A)),
-                                      decoration:
-                                          _inputDeco(hint: '0.5'),
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF1A1A1A),
+                                      ),
+                                      decoration: _inputDeco(hint: '0.5'),
                                       validator: (value) {
-                                        final parsed =
-                                            parseLocalizedPrice(value);
-                                        if (parsed == null ||
-                                            parsed <= 0) {
+                                        final parsed = parseLocalizedPrice(
+                                          value,
+                                        );
+                                        if (parsed == null || parsed <= 0) {
                                           return 'Peso inválido';
                                         }
                                         return null;
@@ -1146,23 +1184,22 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                                   GestureDetector(
                                     onTap: () {
                                       setState(() {
-                                        _weightUnit =
-                                            _weightUnit == 'kg'
-                                                ? 'g'
-                                                : 'kg';
+                                        _weightUnit = _weightUnit == 'kg'
+                                            ? 'g'
+                                            : 'kg';
                                       });
                                     },
                                     child: AnimatedContainer(
                                       duration: const Duration(
-                                          milliseconds: 200),
-                                      padding: const EdgeInsets
-                                          .symmetric(
-                                          horizontal: 10,
-                                          vertical: 6),
+                                        milliseconds: 200,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: primaryOrange,
-                                        borderRadius:
-                                            BorderRadius.circular(8),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
                                         _weightUnit,
@@ -1213,8 +1250,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                 // ── SECTION: ESTADO ────────────────────────
                 if (!widget.hideConditionQuestions) ...[
                   _SectionHeader(
-                      label: 'Estado del artículo',
-                      icon: Icons.checklist_rounded),
+                    label: 'Estado del artículo',
+                    icon: Icons.checklist_rounded,
+                  ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
@@ -1224,8 +1262,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                           value: _isInGoodState,
                           onChanged: _isSaving
                               ? null
-                              : (v) =>
-                                  setState(() => _isInGoodState = v),
+                              : (v) => setState(() => _isInGoodState = v),
                         ),
                         const SizedBox(height: 12),
                         _ConditionQuestion(
@@ -1233,8 +1270,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                           value: _worksCorrectly,
                           onChanged: _isSaving
                               ? null
-                              : (v) =>
-                                  setState(() => _worksCorrectly = v),
+                              : (v) => setState(() => _worksCorrectly = v),
                         ),
                       ],
                     ),
@@ -1244,8 +1280,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
                 // ── SECTION: UBICACIÓN ─────────────────────
                 _SectionHeader(
-                    label: 'Ubicación del producto',
-                    icon: Icons.location_on_rounded),
+                  label: 'Ubicación del producto',
+                  icon: Icons.location_on_rounded,
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: _buildLocationSection(),
@@ -1255,8 +1292,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
                 // ── SECTION: HORARIOS ──────────────────────
                 _SectionHeader(
-                    label: 'Horarios de retiro',
-                    icon: Icons.schedule_rounded),
+                  label: 'Horarios de retiro',
+                  icon: Icons.schedule_rounded,
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
@@ -1285,12 +1323,13 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: backgroundWhite,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                              color: borderGray100),
+                          border: Border.all(color: borderGray100),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.04),
@@ -1303,8 +1342,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                           value: _allowInPersonPickup,
                           onChanged: _isSaving
                               ? null
-                              : (val) => setState(
-                                  () => _allowInPersonPickup = val),
+                              : (val) =>
+                                    setState(() => _allowInPersonPickup = val),
                           title: const Text(
                             'Permitir retiro en persona',
                             style: TextStyle(
@@ -1318,7 +1357,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                                 ? 'Los compradores podrán coordinar retiro presencial.'
                                 : 'Solo envío o retiro vía concierge (si aplica).',
                             style: const TextStyle(
-                                color: textGray600, fontSize: 12),
+                              color: textGray600,
+                              fontSize: 12,
+                            ),
                           ),
                           activeColor: primaryOrange,
                           contentPadding: EdgeInsets.zero,
@@ -1332,7 +1373,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
 
                 // ── SECTION: PUBLICACIÓN ───────────────────
                 _SectionHeader(
-                    label: 'Publicación', icon: Icons.rocket_launch_rounded),
+                  label: 'Publicación',
+                  icon: Icons.rocket_launch_rounded,
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: _buildPublicationSection(),
@@ -1361,17 +1404,18 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                         color: _isSaving
                             ? primaryOrange.withOpacity(0.6)
                             : _publishNow
-                                ? primaryOrange
-                                : textGray900,
+                            ? primaryOrange
+                            : textGray900,
                         borderRadius: BorderRadius.circular(18),
                         boxShadow: _isSaving
                             ? []
                             : [
                                 BoxShadow(
-                                  color: (_publishNow
-                                          ? primaryOrange
-                                          : textGray900)
-                                      .withOpacity(0.30),
+                                  color:
+                                      (_publishNow
+                                              ? primaryOrange
+                                              : textGray900)
+                                          .withOpacity(0.30),
                                   blurRadius: 18,
                                   offset: const Offset(0, 8),
                                 ),
@@ -1402,11 +1446,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                                 Text(
                                   _publishNow
                                       ? (isEdit
-                                          ? 'Guardar y publicar'
-                                          : 'Crear y publicar')
+                                            ? 'Guardar y publicar'
+                                            : 'Crear y publicar')
                                       : (isEdit
-                                          ? 'Guardar cambios'
-                                          : 'Guardar borrador'),
+                                            ? 'Guardar cambios'
+                                            : 'Guardar borrador'),
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w900,
@@ -1436,9 +1480,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
         color: backgroundWhite,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-            color: hasCover
-                ? primaryOrange.withOpacity(0.4)
-                : borderGray100),
+          color: hasCover ? primaryOrange.withOpacity(0.4) : borderGray100,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -1472,16 +1515,19 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                                 color: textGray900.withOpacity(0.04),
                                 borderRadius: BorderRadius.circular(14),
                                 border: Border.all(
-                                    color: borderGray100,
-                                    style: BorderStyle.solid),
+                                  color: borderGray100,
+                                  style: BorderStyle.solid,
+                                ),
                               ),
                               child: const Center(
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.add_a_photo_rounded,
-                                        size: 36,
-                                        color: textGray600),
+                                    Icon(
+                                      Icons.add_a_photo_rounded,
+                                      size: 36,
+                                      color: textGray600,
+                                    ),
                                     SizedBox(height: 8),
                                     Text(
                                       'Toca para agregar\nportada',
@@ -1502,7 +1548,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                               right: 8,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: primaryOrange,
                                   borderRadius: BorderRadius.circular(8),
@@ -1510,15 +1558,19 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                                 child: const Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.check_circle_rounded,
-                                        color: Colors.white, size: 12),
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      color: Colors.white,
+                                      size: 12,
+                                    ),
                                     SizedBox(width: 4),
                                     Text(
                                       'Portada',
                                       style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800),
+                                        fontSize: 11,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1539,28 +1591,36 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                     Row(
                       children: [
                         Expanded(
-                            child: AspectRatio(
-                                aspectRatio: 1,
-                                child: _buildGalleryThumb(index: 0))),
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: _buildGalleryThumb(index: 0),
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
-                            child: AspectRatio(
-                                aspectRatio: 1,
-                                child: _buildGalleryThumb(index: 1))),
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: _buildGalleryThumb(index: 1),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
-                            child: AspectRatio(
-                                aspectRatio: 1,
-                                child: _buildGalleryThumb(index: 2))),
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: _buildGalleryThumb(index: 2),
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
-                            child: AspectRatio(
-                                aspectRatio: 1,
-                                child: _buildGalleryThumb(index: 3))),
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: _buildGalleryThumb(index: 3),
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -1590,8 +1650,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.camera_alt_rounded,
-                            color: Colors.white, size: 18),
+                        Icon(
+                          Icons.camera_alt_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                         SizedBox(width: 8),
                         Text(
                           'Elegir portada',
@@ -1644,9 +1707,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
           const Text(
             'Toca + para agregar desde cámara o galería. Mantén presionado para eliminar.',
             style: TextStyle(
-                fontSize: 11,
-                color: textGray600,
-                fontStyle: FontStyle.italic),
+              fontSize: 11,
+              color: textGray600,
+              fontStyle: FontStyle.italic,
+            ),
           ),
         ],
       ),
@@ -1663,9 +1727,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
         color: backgroundWhite,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-            color: hasAddress
-                ? primaryOrange.withOpacity(0.4)
-                : borderGray100),
+          color: hasAddress ? primaryOrange.withOpacity(0.4) : borderGray100,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -1697,7 +1760,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                             user.addressSlots.isNotEmpty) {
                           _selectedAccountAddressSlot =
                               user.primaryAddressSlot ??
-                                  user.addressSlots.keys.first;
+                              user.addressSlots.keys.first;
                         }
                         _setLocationFromAccountAddress(user);
                       } else {
@@ -1779,8 +1842,10 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                         },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
                       color: sel
                           ? primaryOrange.withOpacity(0.10)
@@ -1810,8 +1875,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             Builder(
               builder: (context) {
                 final selectedAddr = _resolveSelectedAccountAddress(user);
-                final slot = _selectedAccountAddressSlot ??
-                    user.primaryAddressSlot;
+                final slot =
+                    _selectedAccountAddressSlot ?? user.primaryAddressSlot;
                 final title = _formatSavedAddressLabel(
                   selectedAddr,
                   fallbackSlot: slot,
@@ -1883,8 +1948,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                               decoration: BoxDecoration(
                                 color: backgroundGray50,
                                 borderRadius: BorderRadius.circular(10),
-                                border:
-                                    Border.all(color: const Color(0xFFECECEC)),
+                                border: Border.all(
+                                  color: const Color(0xFFECECEC),
+                                ),
                               ),
                               child: Text(
                                 unitLine,
@@ -1919,8 +1985,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                     label: 'Elegir en mapa',
                     icon: Icons.map_rounded,
                     color: primaryOrange,
-                    onTap:
-                        (_isSaving || _useAccountAddress) ? null : _openMapPicker,
+                    onTap: (_isSaving || _useAccountAddress)
+                        ? null
+                        : _openMapPicker,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1938,7 +2005,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                             if (user == null) return;
 
                             _manualAddress = _addressController.text;
-                            _manualUnitIdentifier = _unitIdentifierController.text;
+                            _manualUnitIdentifier =
+                                _unitIdentifierController.text;
                             _manualPostalCode = _postalCodeController.text;
                             _manualLat = _latController.text;
                             _manualLng = _lngController.text;
@@ -1949,7 +2017,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                                 user.addressSlots.isNotEmpty) {
                               _selectedAccountAddressSlot =
                                   user.primaryAddressSlot ??
-                                      user.addressSlots.keys.first;
+                                  user.addressSlots.keys.first;
                             }
                             _setLocationFromAccountAddress(user);
                           },
@@ -1976,7 +2044,9 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                     },
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 8),
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: backgroundGray50,
                   borderRadius: BorderRadius.circular(10),
@@ -1985,8 +2055,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.clear_rounded,
-                        size: 14, color: textGray600),
+                    Icon(Icons.clear_rounded, size: 14, color: textGray600),
                     SizedBox(width: 6),
                     Text(
                       'Limpiar ubicación',
@@ -2067,9 +2136,8 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
         color: backgroundWhite,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-            color: _publishNow
-                ? primaryOrange.withOpacity(0.4)
-                : borderGray100),
+          color: _publishNow ? primaryOrange.withOpacity(0.4) : borderGray100,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -2119,12 +2187,18 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             ),
             const SizedBox(height: 10),
             ...[
-              ('Imagen de portada',
-                  _coverImageBytes != null || _coverAsset.trim().isNotEmpty),
-              ('Ubicación válida (mapa o perfil)',
-                  _addressController.text.trim().isNotEmpty),
-              ('Estado y funcionamiento confirmados',
-                  _isInGoodState != null && _worksCorrectly != null),
+              (
+                'Imagen de portada',
+                _coverImageBytes != null || _coverAsset.trim().isNotEmpty,
+              ),
+              (
+                'Ubicación válida (mapa o perfil)',
+                _addressController.text.trim().isNotEmpty,
+              ),
+              (
+                'Estado y funcionamiento confirmados',
+                _hasRequiredPublicationAnswers,
+              ),
             ].map(
               (item) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -2135,18 +2209,12 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                       width: 22,
                       height: 22,
                       decoration: BoxDecoration(
-                        color: item.$2
-                            ? primaryOrange
-                            : backgroundGray50,
+                        color: item.$2 ? primaryOrange : backgroundGray50,
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        item.$2
-                            ? Icons.check_rounded
-                            : Icons.remove_rounded,
-                        color: item.$2
-                            ? Colors.white
-                            : textGray600,
+                        item.$2 ? Icons.check_rounded : Icons.remove_rounded,
+                        color: item.$2 ? Colors.white : textGray600,
                         size: 14,
                       ),
                     ),
@@ -2156,9 +2224,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: item.$2
-                            ? textGray900
-                            : textGray600,
+                        color: item.$2 ? textGray900 : textGray600,
                       ),
                     ),
                   ],
@@ -2193,8 +2259,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
             value: _acceptedTerms,
             onChanged: _isSaving
                 ? null
-                : (value) =>
-                    setState(() => _acceptedTerms = value ?? false),
+                : (value) => setState(() => _acceptedTerms = value ?? false),
             activeColor: primaryOrange,
             checkColor: Colors.white,
             controlAffinity: ListTileControlAffinity.leading,
@@ -2238,8 +2303,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
               padding: const EdgeInsets.only(left: 40, bottom: 8),
               child: Row(
                 children: const [
-                  Icon(Icons.warning_amber_rounded,
-                      size: 14, color: textGray600),
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 14,
+                    color: textGray600,
+                  ),
                   SizedBox(width: 6),
                   Text(
                     'Requerido para guardar.',
@@ -2261,16 +2329,15 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
     return InputDecoration(
       hintText: hint,
       helperText: helper,
-      hintStyle: TextStyle(
-        color: textGray600.withOpacity(0.45),
-        fontSize: 14,
+      hintStyle: TextStyle(color: textGray600.withOpacity(0.45), fontSize: 14),
+      helperStyle: TextStyle(
+        color: textGray600.withOpacity(0.7),
+        fontSize: 11,
+        height: 1.3,
       ),
-      helperStyle:
-          TextStyle(color: textGray600.withOpacity(0.7), fontSize: 11, height: 1.3),
       filled: true,
       fillColor: backgroundWhite,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: borderGray100),
@@ -2285,13 +2352,11 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide:
-            const BorderSide(color: Color(0xFFDC2626), width: 1.5),
+        borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.5),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide:
-            const BorderSide(color: Color(0xFFDC2626), width: 2),
+        borderSide: const BorderSide(color: Color(0xFFDC2626), width: 2),
       ),
     );
   }
@@ -2522,8 +2587,7 @@ class _YesNoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accentColor =
-        yes ? const Color(0xFF10B981) : const Color(0xFFDC2626);
+    final accentColor = yes ? const Color(0xFF10B981) : const Color(0xFFDC2626);
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(

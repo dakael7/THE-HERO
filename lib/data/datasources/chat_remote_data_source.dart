@@ -5,6 +5,31 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/chat_model.dart';
 import '../models/chat_message_model.dart';
 
+String _normalizeChatOrderStatus(String? status) {
+  return (status ?? '')
+      .trim()
+      .toLowerCase()
+      .replaceAll('_', '')
+      .replaceAll('-', '');
+}
+
+bool isClosedOrderStatusForChat(String? status) {
+  final normalized = _normalizeChatOrderStatus(status);
+  return normalized == 'canceled' ||
+      normalized == 'cancelled' ||
+      normalized == 'failed' ||
+      normalized == 'paymentfailed' ||
+      normalized == 'delivered';
+}
+
+bool canUseChatForOrderStatus(String? status) {
+  final normalized = _normalizeChatOrderStatus(status);
+  return normalized.isNotEmpty &&
+      normalized != 'created' &&
+      normalized != 'pendingpayment' &&
+      !isClosedOrderStatusForChat(status);
+}
+
 abstract class ChatRemoteDataSource {
   Stream<List<ChatModel>> watchUserChats(String userId);
   Stream<List<ChatMessageModel>> watchChatMessages(
@@ -99,19 +124,13 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       // If the chat document doesn't exist yet, create it with merge.
       if (e.code == 'not-found') {
         if (isTyping) {
-          await chatRef.set(
-            {
-              'typing': {userId: nowServer},
-            },
-            SetOptions(merge: true),
-          );
+          await chatRef.set({
+            'typing': {userId: nowServer},
+          }, SetOptions(merge: true));
         } else {
-          await chatRef.set(
-            {
-              'typing': {userId: FieldValue.delete()},
-            },
-            SetOptions(merge: true),
-          );
+          await chatRef.set({
+            'typing': {userId: FieldValue.delete()},
+          }, SetOptions(merge: true));
         }
         return;
       }
@@ -131,9 +150,14 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         .collection('messages');
 
     // Helper: map a QuerySnapshot to a sorted list.
-    List<ChatMessageModel> mapAndSort(QuerySnapshot<Map<String, dynamic>> snap) {
+    List<ChatMessageModel> mapAndSort(
+      QuerySnapshot<Map<String, dynamic>> snap,
+    ) {
       final models = snap.docs
-          .map((doc) => ChatMessageModel.fromJson({'messageId': doc.id, ...doc.data()}))
+          .map(
+            (doc) =>
+                ChatMessageModel.fromJson({'messageId': doc.id, ...doc.data()}),
+          )
           .toList();
       models.sort((a, b) => a.sentAt.compareTo(b.sentAt));
       if (models.length > limit) return models.sublist(models.length - limit);
@@ -161,13 +185,14 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           });
     } catch (_) {
       // Synchronous failure — use fallback directly.
-      return messagesRef
-          .snapshots()
-          .map(mapAndSort)
-          .handleError((Object error) {
-            if (error is FirebaseException && error.code == 'permission-denied') return;
-            throw error;
-          });
+      return messagesRef.snapshots().map(mapAndSort).handleError((
+        Object error,
+      ) {
+        if (error is FirebaseException && error.code == 'permission-denied') {
+          return;
+        }
+        throw error;
+      });
     }
 
     // Wrap the primary stream: on any FirebaseException, switch to the simple fallback.
@@ -176,13 +201,19 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         handleError: (error, stackTrace, sink) {
           if (error is FirebaseException) {
             // Swallow the error and subscribe to the fallback instead.
-            messagesRef.snapshots().map(mapAndSort).listen(
-              sink.add,
-              onError: (e) {
-                if (e is FirebaseException && e.code == 'permission-denied') return;
-                sink.addError(e, stackTrace);
-              },
-            );
+            messagesRef
+                .snapshots()
+                .map(mapAndSort)
+                .listen(
+                  sink.add,
+                  onError: (e) {
+                    if (e is FirebaseException &&
+                        e.code == 'permission-denied') {
+                      return;
+                    }
+                    sink.addError(e, stackTrace);
+                  },
+                );
             return;
           }
           sink.addError(error, stackTrace);
@@ -205,6 +236,26 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
 
       await _firestore.runTransaction((transaction) async {
         final nowServer = FieldValue.serverTimestamp();
+        final chatSnap = await transaction.get(chatRef);
+        if (!chatSnap.exists) {
+          throw Exception('Chat no encontrado');
+        }
+
+        final chatData = chatSnap.data() ?? <String, dynamic>{};
+        if (chatData['isClosed'] == true || chatData['closedAt'] != null) {
+          throw Exception('Chat bloqueado');
+        }
+
+        final orderId = (chatData['orderId'] as String?)?.trim() ?? '';
+        if (orderId.isNotEmpty) {
+          final orderSnap = await transaction.get(
+            _firestore.collection('orders').doc(orderId),
+          );
+          final orderStatus = orderSnap.data()?['status']?.toString();
+          if (!orderSnap.exists || !canUseChatForOrderStatus(orderStatus)) {
+            throw Exception('Chat bloqueado');
+          }
+        }
 
         transaction.set(messageDoc, {
           'messageId': messageDoc.id,
@@ -234,6 +285,18 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
   @override
   Future<void> ensureChatExists(ChatModel chat) async {
     try {
+      final orderId = chat.orderId?.trim() ?? '';
+      if (orderId.isNotEmpty) {
+        final orderSnap = await _firestore
+            .collection('orders')
+            .doc(orderId)
+            .get();
+        final orderStatus = orderSnap.data()?['status']?.toString();
+        if (!orderSnap.exists || !canUseChatForOrderStatus(orderStatus)) {
+          throw Exception('Chat bloqueado');
+        }
+      }
+
       final chatRef = _firestore.collection('chats').doc(chat.chatId);
       final existing = await chatRef.get();
 
