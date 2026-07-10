@@ -252,12 +252,12 @@ class _ChatConversationScreenState
     final orderAsync = orderId != null && orderId.isNotEmpty
         ? ref.watch(orderByIdProvider(orderId))
         : null;
-    final orderStatus = orderAsync?.value?.status;
+    final order = orderAsync?.value;
     final isChatLocked =
         orderAsync != null &&
-        (orderStatus == null ||
-            orderStatus.isCompleted ||
-            !orderStatus.canShowAssociatedChats);
+        (order == null ||
+            order.status.isCompleted ||
+            !order.canShowAssociatedChats);
 
     final isBuyer =
         currentUserId != null && currentUserId == widget.chat.buyerId;

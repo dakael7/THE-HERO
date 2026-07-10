@@ -207,7 +207,7 @@ class NotificationHandler {
       ...orderData,
       if (!hasOrderId) 'orderId': orderSnap.id,
     }).toEntity();
-    if (!order.status.canShowAssociatedChats) return null;
+    if (!order.canShowAssociatedChats) return null;
 
     return chat;
   }

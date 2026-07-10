@@ -54,16 +54,20 @@ final myDonationOrdersProvider = StreamProvider.family<List<Order>, String>((
 
               // Seller should only see orders that have been paid
               // and are actionable/traceable.
+              if (order.isFulfillmentBlocked) {
+                return null;
+              }
+
               final isVisibleForSeller = switch (order.status) {
                 OrderStatus.queued ||
                 OrderStatus.assigned ||
                 OrderStatus.pickedUp ||
                 OrderStatus.inTransit ||
                 OrderStatus.delivered ||
-                OrderStatus.canceled ||
                 OrderStatus.paid => true,
                 OrderStatus.created ||
                 OrderStatus.pendingPayment ||
+                OrderStatus.canceled ||
                 OrderStatus.failed => false,
               };
 
@@ -109,23 +113,25 @@ final orderByIdProvider = StreamProvider.autoDispose.family<Order?, String>((
     final data = doc.data();
     if (data == null) return null;
 
-    final order = OrderModel.fromJson(data).toEntity();
+    final storedOrderId = data['orderId']?.toString().trim() ?? '';
+    final normalizedData = storedOrderId.isNotEmpty
+        ? data
+        : <String, dynamic>{...data, 'orderId': doc.id};
+    final order = OrderModel.fromJson(normalizedData).toEntity();
     return order;
   });
 });
 
-final orderByIdFutureProvider = FutureProvider.autoDispose.family<Order?, String>((
-  ref,
-  orderId,
-) async {
-  final currentUid = ref.watch(currentUserIdProvider);
-  if (currentUid == null) {
-    return null;
-  }
+final orderByIdFutureProvider = FutureProvider.autoDispose
+    .family<Order?, String>((ref, orderId) async {
+      final currentUid = ref.watch(currentUserIdProvider);
+      if (currentUid == null) {
+        return null;
+      }
 
-  final repository = ref.read(ordersRepositoryProvider);
-  return repository.getOrderById(orderId);
-});
+      final repository = ref.read(ordersRepositoryProvider);
+      return repository.getOrderById(orderId);
+    });
 
 final availableOrdersProvider = StreamProvider.autoDispose
     .family<List<Order>, VehicleType>((ref, riderVehicleType) {
@@ -306,19 +312,22 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
         throw Exception('Este pedido no es de retiro en persona.');
       }
 
-      final sellerIds = (data['sellerHeroIds'] as List<dynamic>?)
+      final sellerIds =
+          (data['sellerHeroIds'] as List<dynamic>?)
               ?.map((value) => value.toString().trim())
               .where((value) => value.isNotEmpty)
               .toSet() ??
           const <String>{};
-      final itemSellerIds = (data['items'] as List<dynamic>?)
+      final itemSellerIds =
+          (data['items'] as List<dynamic>?)
               ?.whereType<Map>()
               .map((item) => item['sellerHeroIdSnapshot']?.toString().trim())
               .whereType<String>()
               .where((value) => value.isNotEmpty)
               .toSet() ??
           const <String>{};
-      final canRate = sellerIds.contains(normalizedSellerId) ||
+      final canRate =
+          sellerIds.contains(normalizedSellerId) ||
           itemSellerIds.contains(normalizedSellerId);
       if (!canRate) {
         throw Exception('Este donador no pertenece al pedido.');

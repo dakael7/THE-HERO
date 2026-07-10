@@ -10,6 +10,14 @@ const PENDING_ORDER_STATUSES = new Set([
   "pendingpayment",
 ]);
 
+const normalizeStatus = (value) => {
+  return String(value || "").trim().toLowerCase().replace(/[_-]/g, "");
+};
+
+const isApprovedPaymentDoc = (data) => {
+  return normalizeStatus(data?.status) === "approved" || Boolean(data?.approvedAt);
+};
+
 const toMillis = (value) => {
   if (!value) return 0;
   if (typeof value.toMillis === "function") return value.toMillis();
@@ -28,6 +36,19 @@ const qtyInt = (value) => {
   if (!Number.isFinite(parsed)) return 1;
   const rounded = Math.round(parsed);
   return rounded > 0 ? rounded : 1;
+};
+
+const readPaymentDocsForOrder = async (transaction, db, orderIds) => {
+  const ids = [...new Set(orderIds
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))].slice(0, 10);
+  if (ids.length === 0) return [];
+
+  const query = ids.length === 1 ?
+    db.collection("payments").where("orderId", "==", ids[0]) :
+    db.collection("payments").where("orderId", "in", ids);
+  const snap = await transaction.get(query);
+  return snap.docs.map((doc) => doc.data() || {});
 };
 
 const updatePendingPaymentDocs = async (db, orderId) => {
@@ -98,6 +119,36 @@ const releaseExpiredReservation = async (reservationRef) => {
     const orderData = orderDoc.exists ? (orderDoc.data() || {}) : {};
     const orderStatus = String(orderData.status || "").toLowerCase();
     const stockRestored = orderData.stockRestored === true;
+
+    const paymentDocs = await readPaymentDocsForOrder(transaction, db, [
+      orderId,
+      orderData.orderId,
+    ]);
+    if (paymentDocs.some(isApprovedPaymentDoc)) {
+      transaction.update(reservationRef, {
+        status: "consumed",
+        consumedAt: admin.firestore.FieldValue.serverTimestamp(),
+        consumedBy: "cancelExpiredPendingPayments",
+        consumedReason: "payment_already_approved",
+      });
+
+      if (orderDoc.exists) {
+        const approvedPayload = {
+          status: "queued",
+          paymentStatus: "approved",
+          "timestamps.paidAt": admin.firestore.FieldValue.serverTimestamp(),
+          "timestamps.queuedAt": admin.firestore.FieldValue.serverTimestamp(),
+          cancelReason: admin.firestore.FieldValue.delete(),
+          canceledBy: admin.firestore.FieldValue.delete(),
+          "timestamps.canceledAt": admin.firestore.FieldValue.delete(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        transaction.update(orderRef, approvedPayload);
+      }
+
+      result.skippedReason = "payment_already_approved";
+      return;
+    }
 
     const canReleaseForOrder =
       !orderDoc.exists ||

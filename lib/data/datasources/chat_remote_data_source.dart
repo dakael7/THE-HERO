@@ -30,6 +30,23 @@ bool canUseChatForOrderStatus(String? status) {
       !isClosedOrderStatusForChat(status);
 }
 
+bool canUseChatForOrderData(Map<String, dynamic>? orderData) {
+  if (orderData == null) return false;
+  final fulfillmentStatus = orderData['fulfillmentStatus']
+      ?.toString()
+      .trim()
+      .toLowerCase();
+  final fulfillmentBlockReason = orderData['fulfillmentBlockReason']
+      ?.toString()
+      .trim()
+      .toLowerCase();
+  if (fulfillmentStatus == 'blocked' ||
+      fulfillmentBlockReason == 'approved_payment_without_stock_reservation') {
+    return false;
+  }
+  return canUseChatForOrderStatus(orderData['status']?.toString());
+}
+
 abstract class ChatRemoteDataSource {
   Stream<List<ChatModel>> watchUserChats(String userId);
   Stream<List<ChatMessageModel>> watchChatMessages(
@@ -251,8 +268,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           final orderSnap = await transaction.get(
             _firestore.collection('orders').doc(orderId),
           );
-          final orderStatus = orderSnap.data()?['status']?.toString();
-          if (!orderSnap.exists || !canUseChatForOrderStatus(orderStatus)) {
+          if (!orderSnap.exists || !canUseChatForOrderData(orderSnap.data())) {
             throw Exception('Chat bloqueado');
           }
         }
@@ -291,8 +307,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
             .collection('orders')
             .doc(orderId)
             .get();
-        final orderStatus = orderSnap.data()?['status']?.toString();
-        if (!orderSnap.exists || !canUseChatForOrderStatus(orderStatus)) {
+        if (!orderSnap.exists || !canUseChatForOrderData(orderSnap.data())) {
           throw Exception('Chat bloqueado');
         }
       }

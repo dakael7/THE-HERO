@@ -191,10 +191,9 @@ class _RiderDeliveryMapScreenState
 
     if (confirmed != true) return;
 
-    await ref.read(orderNotifierProvider.notifier).unassignRiderAndRequeue(
-          orderId: order.orderId,
-          riderId: user.id,
-        );
+    await ref
+        .read(orderNotifierProvider.notifier)
+        .unassignRiderAndRequeue(orderId: order.orderId, riderId: user.id);
 
     await _trackingSub?.cancel();
     _trackingSub = null;
@@ -244,7 +243,7 @@ class _RiderDeliveryMapScreenState
     required String buyerId,
     required String buyerName,
   }) async {
-    if (!order.status.canShowAssociatedChats) {
+    if (!order.canShowAssociatedChats) {
       throw Exception('El chat estará disponible cuando el pedido esté pagado');
     }
 
@@ -288,7 +287,9 @@ class _RiderDeliveryMapScreenState
 
   Future<void> _setStatus(Order order, OrderStatus status) async {
     if (status == OrderStatus.delivered) {
-      final okToDeliver = await _maybeConfirmCashPayment(orderId: order.orderId);
+      final okToDeliver = await _maybeConfirmCashPayment(
+        orderId: order.orderId,
+      );
       if (!okToDeliver || !mounted) return;
     }
 
@@ -297,11 +298,13 @@ class _RiderDeliveryMapScreenState
       await notifier.updateStatus(order.orderId, _orderStatusToString(status));
     } catch (e) {
       // ignore: avoid_print
-      print('⚠️ [RiderDeliveryMap] Failed to set status=${status.name} for orderId=${order.orderId}: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo avanzar: $e')),
+      print(
+        '⚠️ [RiderDeliveryMap] Failed to set status=${status.name} for orderId=${order.orderId}: $e',
       );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo avanzar: $e')));
       return;
     }
     if (!mounted) return;
@@ -321,11 +324,13 @@ class _RiderDeliveryMapScreenState
     if (!mounted) return false;
     if (payment == null) return true;
 
-    final isCashPayment = payment.paymentMethod == PaymentMethod.cash ||
+    final isCashPayment =
+        payment.paymentMethod == PaymentMethod.cash ||
         (payment.paymentMethodId?.toLowerCase() == 'cash') ||
         (payment.statusDetail?.toLowerCase() == 'cash_on_delivery');
 
-    final shouldConfirm = isCashPayment && payment.status == PaymentStatus.pending;
+    final shouldConfirm =
+        isCashPayment && payment.status == PaymentStatus.pending;
     if (!shouldConfirm) return true;
 
     final confirm = await showDialog<bool>(
@@ -350,24 +355,12 @@ class _RiderDeliveryMapScreenState
 
     if (confirm != true || !mounted) return false;
 
-    final riderId = ref.read(profileProvider).value?.id;
-    final now = DateTime.now();
-    final existingMeta = payment.metadata ?? const <String, dynamic>{};
-
-    final updated = payment.copyWith(
-      status: PaymentStatus.approved,
-      statusDetail: 'cash_collected',
-      approvedAt: now,
-      updatedAt: now,
-      metadata: <String, dynamic>{
-        ...existingMeta,
-        'confirmedByRiderId': riderId,
-        'confirmedAt': now.toIso8601String(),
-      },
-    );
-
     try {
-      await paymentRepo.savePayment(updated);
+      await paymentRepo.updatePaymentStatus(
+        paymentId: payment.id,
+        status: PaymentStatus.approved,
+        statusDetail: 'cash_collected',
+      );
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cobro en efectivo confirmado')),
@@ -410,9 +403,12 @@ class _RiderDeliveryMapScreenState
   @override
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(orderByIdProvider(widget.orderId));
-    final paymentAsync = ref.watch(watchPaymentByOrderIdProvider(widget.orderId));
+    final paymentAsync = ref.watch(
+      watchPaymentByOrderIdProvider(widget.orderId),
+    );
     final payment = paymentAsync.asData?.value;
-    final isCashPayment = payment?.paymentMethod == PaymentMethod.cash ||
+    final isCashPayment =
+        payment?.paymentMethod == PaymentMethod.cash ||
         (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
         (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
     final canConfirmCash =
@@ -500,22 +496,23 @@ class _RiderDeliveryMapScreenState
 
           final stops = order.pickupStops ?? const [];
           final needsPickup = order.status == OrderStatus.assigned;
-          final needsDelivery = order.status == OrderStatus.pickedUp ||
+          final needsDelivery =
+              order.status == OrderStatus.pickedUp ||
               order.status == OrderStatus.inTransit;
 
           final effectivePickupStopIndex = (!needsPickup || stops.isEmpty)
               ? 0
               : _pickupStopIndex.clamp(0, stops.length - 1);
 
-          final isLastPickupStop = stops.isEmpty ||
-              effectivePickupStopIndex >= stops.length - 1;
+          final isLastPickupStop =
+              stops.isEmpty || effectivePickupStopIndex >= stops.length - 1;
           final arrivedAtPickup = needsPickup && _arrivedAtPickupStop;
 
           final pickupTargetGeo = (!needsPickup)
               ? order.pickup.geo
               : (stops.isNotEmpty
-                  ? stops[effectivePickupStopIndex].geo
-                  : order.pickup.geo);
+                    ? stops[effectivePickupStopIndex].geo
+                    : order.pickup.geo);
 
           final pickupLat = pickupTargetGeo.latitude;
           final pickupLng = pickupTargetGeo.longitude;
@@ -531,14 +528,17 @@ class _RiderDeliveryMapScreenState
           );
 
           // Prefer device GPS stream for the rider marker & routing.
-          final deviceRiderLocationAsync = ref.watch(riderLocationStreamProvider);
+          final deviceRiderLocationAsync = ref.watch(
+            riderLocationStreamProvider,
+          );
 
           final deviceLatLng = deviceRiderLocationAsync.maybeWhen(
             data: (loc) => gmap.LatLng(loc.latitude, loc.longitude),
             orElse: () => null,
           );
           final firestoreLatLng = riderLocationAsync.maybeWhen(
-            data: (loc) => loc == null ? null : gmap.LatLng(loc.latitude, loc.longitude),
+            data: (loc) =>
+                loc == null ? null : gmap.LatLng(loc.latitude, loc.longitude),
             orElse: () => null,
           );
 
@@ -561,7 +561,8 @@ class _RiderDeliveryMapScreenState
             );
 
             const farThresholdMeters = 200000.0;
-            final isImplausible = dToPickup > farThresholdMeters &&
+            final isImplausible =
+                dToPickup > farThresholdMeters &&
                 dToDelivery > farThresholdMeters;
 
             if (!isImplausible) return deviceLatLng;
@@ -607,7 +608,8 @@ class _RiderDeliveryMapScreenState
           // as their GPS updates, but avoid spamming camera animations.
           if (_mapController != null && riderLatLng != null) {
             final last = _lastCameraRider;
-            final movedEnough = last == null ||
+            final movedEnough =
+                last == null ||
                 (last.latitude - riderLatLng.latitude).abs() > 0.0005 ||
                 (last.longitude - riderLatLng.longitude).abs() > 0.0005;
             if (movedEnough) {
@@ -618,167 +620,168 @@ class _RiderDeliveryMapScreenState
             }
           }
 
-      final showRoute =
-          riderLatLngStable != null && (needsPickup || needsDelivery);
+          final showRoute =
+              riderLatLngStable != null && (needsPickup || needsDelivery);
 
-      final pickupWaypoints = () {
-        if (!needsPickup) return <DirectionsPoint>[];
+          final pickupWaypoints = () {
+            if (!needsPickup) return <DirectionsPoint>[];
 
-        // Build ordered stops: current pickup stop -> next pickup stops -> delivery.
-        // Destination stays as delivery; pickups are passed as waypoints.
-        if (stops.isEmpty) {
-          return <DirectionsPoint>[
-            DirectionsPoint(latitude: pickupLat, longitude: pickupLng),
-          ];
-        }
-
-        final remaining = stops.skip(effectivePickupStopIndex);
-        return remaining
-            .map(
-              (s) => DirectionsPoint(
-                latitude: s.geo.latitude,
-                longitude: s.geo.longitude,
-              ),
-            )
-            .toList();
-      }();
-
-      final pickupWaypointsKey = pickupWaypoints
-          .map(
-            (p) =>
-                '${_roundCoord(p.latitude)}:${_roundCoord(p.longitude)}',
-          )
-          .join('|');
-
-      final routeAsync = !showRoute
-          ? const AsyncValue<DirectionsRoute?>.data(null)
-          : ref.watch(
-              _routeProvider(
-                _RouteRequestParams(
-                  pickupLat: riderLatLngStable.latitude,
-                  pickupLng: riderLatLngStable.longitude,
-                  deliveryLat: deliveryLat,
-                  deliveryLng: deliveryLng,
-                  waypoints: pickupWaypoints,
-                  waypointsKey: pickupWaypointsKey,
-                ),
-              ),
-            );
-
-      final targetLatLng = !showRoute
-          ? null
-          : (needsPickup ? pickupLocation : deliveryLocation);
-
-      final routeColor = needsPickup ? primaryOrange : const Color(0xFF3B82F6);
-
-      final markers = <gmap.Marker>{
-        if (needsPickup)
-          ...(() {
+            // Build ordered stops: current pickup stop -> next pickup stops -> delivery.
+            // Destination stays as delivery; pickups are passed as waypoints.
             if (stops.isEmpty) {
-              return <gmap.Marker>[
-                gmap.Marker(
-                  markerId: const gmap.MarkerId('pickup'),
-                  position: pickupLocation,
-                  icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                    gmap.BitmapDescriptor.hueOrange,
-                  ),
-                  infoWindow: const gmap.InfoWindow(title: 'Recogida'),
-                ),
+              return <DirectionsPoint>[
+                DirectionsPoint(latitude: pickupLat, longitude: pickupLng),
               ];
             }
 
-            return List.generate(stops.length, (i) {
-              final stop = stops[i];
-              final isCurrent = i == effectivePickupStopIndex;
-              return gmap.Marker(
-                markerId: gmap.MarkerId('pickup_${i + 1}'),
-                position: gmap.LatLng(
-                  stop.geo.latitude,
-                  stop.geo.longitude,
-                ),
-                icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-                  isCurrent
-                      ? gmap.BitmapDescriptor.hueAzure
-                      : gmap.BitmapDescriptor.hueOrange,
-                ),
-                infoWindow: gmap.InfoWindow(
-                  title: 'Recogida ${i + 1}/${stops.length}',
-                ),
-              );
-            });
-          })(),
-        gmap.Marker(
-          markerId: const gmap.MarkerId('delivery'),
-          position: deliveryLocation,
-          icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-            gmap.BitmapDescriptor.hueGreen,
-          ),
-          infoWindow: const gmap.InfoWindow(title: 'Entrega'),
-        ),
-      };
+            final remaining = stops.skip(effectivePickupStopIndex);
+            return remaining
+                .map(
+                  (s) => DirectionsPoint(
+                    latitude: s.geo.latitude,
+                    longitude: s.geo.longitude,
+                  ),
+                )
+                .toList();
+          }();
 
-      if (riderLatLng != null) {
-        markers.add(
-          gmap.Marker(
-            markerId: const gmap.MarkerId('rider'),
-            position: riderLatLng,
-            icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
-              gmap.BitmapDescriptor.hueAzure,
+          final pickupWaypointsKey = pickupWaypoints
+              .map(
+                (p) => '${_roundCoord(p.latitude)}:${_roundCoord(p.longitude)}',
+              )
+              .join('|');
+
+          final routeAsync = !showRoute
+              ? const AsyncValue<DirectionsRoute?>.data(null)
+              : ref.watch(
+                  _routeProvider(
+                    _RouteRequestParams(
+                      pickupLat: riderLatLngStable.latitude,
+                      pickupLng: riderLatLngStable.longitude,
+                      deliveryLat: deliveryLat,
+                      deliveryLng: deliveryLng,
+                      waypoints: pickupWaypoints,
+                      waypointsKey: pickupWaypointsKey,
+                    ),
+                  ),
+                );
+
+          final targetLatLng = !showRoute
+              ? null
+              : (needsPickup ? pickupLocation : deliveryLocation);
+
+          final routeColor = needsPickup
+              ? primaryOrange
+              : const Color(0xFF3B82F6);
+
+          final markers = <gmap.Marker>{
+            if (needsPickup)
+              ...(() {
+                if (stops.isEmpty) {
+                  return <gmap.Marker>[
+                    gmap.Marker(
+                      markerId: const gmap.MarkerId('pickup'),
+                      position: pickupLocation,
+                      icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                        gmap.BitmapDescriptor.hueOrange,
+                      ),
+                      infoWindow: const gmap.InfoWindow(title: 'Recogida'),
+                    ),
+                  ];
+                }
+
+                return List.generate(stops.length, (i) {
+                  final stop = stops[i];
+                  final isCurrent = i == effectivePickupStopIndex;
+                  return gmap.Marker(
+                    markerId: gmap.MarkerId('pickup_${i + 1}'),
+                    position: gmap.LatLng(
+                      stop.geo.latitude,
+                      stop.geo.longitude,
+                    ),
+                    icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                      isCurrent
+                          ? gmap.BitmapDescriptor.hueAzure
+                          : gmap.BitmapDescriptor.hueOrange,
+                    ),
+                    infoWindow: gmap.InfoWindow(
+                      title: 'Recogida ${i + 1}/${stops.length}',
+                    ),
+                  );
+                });
+              })(),
+            gmap.Marker(
+              markerId: const gmap.MarkerId('delivery'),
+              position: deliveryLocation,
+              icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                gmap.BitmapDescriptor.hueGreen,
+              ),
+              infoWindow: const gmap.InfoWindow(title: 'Entrega'),
             ),
-            infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
-          ),
-        );
-      }
+          };
 
-      // Build polylines set
-      final polylines = <gmap.Polyline>{};
+          if (riderLatLng != null) {
+            markers.add(
+              gmap.Marker(
+                markerId: const gmap.MarkerId('rider'),
+                position: riderLatLng,
+                icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
+                  gmap.BitmapDescriptor.hueAzure,
+                ),
+                infoWindow: const gmap.InfoWindow(title: 'Rider (Tú)'),
+              ),
+            );
+          }
 
-      final routePoints = routeAsync.maybeWhen(
-        data: (route) => (route?.path ?? const <DirectionsPoint>[])
-            .map((p) => gmap.LatLng(p.latitude, p.longitude))
-            .toList(),
-        orElse: () => const <gmap.LatLng>[],
-      );
+          // Build polylines set
+          final polylines = <gmap.Polyline>{};
 
-      final routeStatusText = () {
-        if (!showRoute) return 'Ruta: esperando ubicación/estado';
-        return routeAsync.when(
-          data: (route) {
-            if (route == null || routePoints.isEmpty) {
-              return 'Ruta: fallback recta';
-            }
-            final mins = (route.durationSeconds / 60).round();
-            final km = route.distanceMeters / 1000.0;
-            return 'Ruta: $mins min • ${km.toStringAsFixed(1)} km';
-          },
-          loading: () => 'Ruta: calculando...',
-          error: (e, _) => 'Ruta: error ($e)',
-        );
-      }();
+          final routePoints = routeAsync.maybeWhen(
+            data: (route) => (route?.path ?? const <DirectionsPoint>[])
+                .map((p) => gmap.LatLng(p.latitude, p.longitude))
+                .toList(),
+            orElse: () => const <gmap.LatLng>[],
+          );
 
-      if (showRoute && routePoints.isNotEmpty) {
-        polylines.add(
-          gmap.Polyline(
-            polylineId: const gmap.PolylineId('follow_route'),
-            points: routePoints,
-            width: 7,
-            color: routeColor,
-            geodesic: true,
-            zIndex: 10,
-          ),
-        );
-      } else if (showRoute && targetLatLng != null) {
-        polylines.add(
-          gmap.Polyline(
-            polylineId: const gmap.PolylineId('fallback_route'),
-            points: [riderLatLngStable, targetLatLng],
-            width: 6,
-            color: routeColor,
-            geodesic: true,
-            zIndex: 5,
-          ),
-        );
-      }
+          final routeStatusText = () {
+            if (!showRoute) return 'Ruta: esperando ubicación/estado';
+            return routeAsync.when(
+              data: (route) {
+                if (route == null || routePoints.isEmpty) {
+                  return 'Ruta: fallback recta';
+                }
+                final mins = (route.durationSeconds / 60).round();
+                final km = route.distanceMeters / 1000.0;
+                return 'Ruta: $mins min • ${km.toStringAsFixed(1)} km';
+              },
+              loading: () => 'Ruta: calculando...',
+              error: (e, _) => 'Ruta: error ($e)',
+            );
+          }();
+
+          if (showRoute && routePoints.isNotEmpty) {
+            polylines.add(
+              gmap.Polyline(
+                polylineId: const gmap.PolylineId('follow_route'),
+                points: routePoints,
+                width: 7,
+                color: routeColor,
+                geodesic: true,
+                zIndex: 10,
+              ),
+            );
+          } else if (showRoute && targetLatLng != null) {
+            polylines.add(
+              gmap.Polyline(
+                polylineId: const gmap.PolylineId('fallback_route'),
+                points: [riderLatLngStable, targetLatLng],
+                width: 6,
+                color: routeColor,
+                geodesic: true,
+                zIndex: 5,
+              ),
+            );
+          }
 
           return Stack(
             children: [
@@ -831,49 +834,53 @@ class _RiderDeliveryMapScreenState
                   order: order,
                   stepTitle: needsPickup
                       ? (arrivedAtPickup && isLastPickupStop
-                          ? 'Siguiente: Retirar'
-                          : (stops.isEmpty
-                              ? 'Siguiente: Recoger'
-                              : 'Siguiente: Recoger ${effectivePickupStopIndex + 1}/${stops.length}'))
+                            ? 'Siguiente: Retirar'
+                            : (stops.isEmpty
+                                  ? 'Siguiente: Recoger'
+                                  : 'Siguiente: Recoger ${effectivePickupStopIndex + 1}/${stops.length}'))
                       : 'Siguiente: Entregar',
                   needsPickup: needsPickup,
                   arrivedAtPickupStop: arrivedAtPickup,
                   pickupStopsCount: stops.length,
                   pickupStopIndex: effectivePickupStopIndex,
-                  currentPickupOfferIds: (needsPickup &&
+                  currentPickupOfferIds:
+                      (needsPickup &&
                           stops.isNotEmpty &&
                           effectivePickupStopIndex < stops.length)
                       ? stops[effectivePickupStopIndex].offerIds
                       : const <String>[],
                   currentPickupAddressSnapshot: (!needsPickup)
                       ? ''
-                      : (stops.isNotEmpty && effectivePickupStopIndex < stops.length)
-                          ? stops[effectivePickupStopIndex].addressSnapshot
-                          : order.pickup.addressSnapshot,
+                      : (stops.isNotEmpty &&
+                            effectivePickupStopIndex < stops.length)
+                      ? stops[effectivePickupStopIndex].addressSnapshot
+                      : order.pickup.addressSnapshot,
                   deliveryAddressSnapshot: order.delivery.addressSnapshot,
-                  onOpenChat: ({
-                    required String buyerId,
-                    required String buyerName,
-                  }) async {
-                    try {
-                      await _openChat(
-                        order: order,
-                        buyerId: buyerId,
-                        buyerName: buyerName,
-                      );
-                    } catch (e) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('No se pudo abrir chat: $e')),
-                      );
-                    }
-                  },
+                  onOpenChat:
+                      ({
+                        required String buyerId,
+                        required String buyerName,
+                      }) async {
+                        try {
+                          await _openChat(
+                            order: order,
+                            buyerId: buyerId,
+                            buyerName: buyerName,
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('No se pudo abrir chat: $e'),
+                            ),
+                          );
+                        }
+                      },
                   onOpenChats: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => RiderDeliveryChatsScreen(
-                          orderId: order.orderId,
-                        ),
+                        builder: (_) =>
+                            RiderDeliveryChatsScreen(orderId: order.orderId),
                       ),
                     );
                   },
@@ -908,8 +915,8 @@ class _RiderDeliveryMapScreenState
 
                           if (!isLast) {
                             setState(() {
-                              _pickupStopIndex =
-                                  (effectivePickupStopIndex + 1).clamp(0, 9999);
+                              _pickupStopIndex = (effectivePickupStopIndex + 1)
+                                  .clamp(0, 9999);
                               _arrivedAtPickupStop = false;
                             });
                           } else {
@@ -918,13 +925,13 @@ class _RiderDeliveryMapScreenState
                         },
                   onPickedUp: order.status == OrderStatus.assigned
                       ? (stops.isNotEmpty &&
-                              effectivePickupStopIndex < stops.length - 1
-                          ? null
-                          : () async {
-                              await _setStatus(order, OrderStatus.pickedUp);
-                              if (!mounted) return;
-                              setState(() => _arrivedAtPickupStop = false);
-                            })
+                                effectivePickupStopIndex < stops.length - 1
+                            ? null
+                            : () async {
+                                await _setStatus(order, OrderStatus.pickedUp);
+                                if (!mounted) return;
+                                setState(() => _arrivedAtPickupStop = false);
+                              })
                       : null,
                   onInTransit: (order.status == OrderStatus.pickedUp)
                       ? () => _setStatus(order, OrderStatus.inTransit)
@@ -940,7 +947,6 @@ class _RiderDeliveryMapScreenState
       ),
     );
   }
-
 }
 
 class _BottomPanel extends ConsumerWidget {
@@ -953,7 +959,10 @@ class _BottomPanel extends ConsumerWidget {
   final List<String> currentPickupOfferIds;
   final String currentPickupAddressSnapshot;
   final String deliveryAddressSnapshot;
-  final Future<void> Function({required String buyerId, required String buyerName})
+  final Future<void> Function({
+    required String buyerId,
+    required String buyerName,
+  })
   onOpenChat;
   final VoidCallback onOpenChats;
   final VoidCallback? onArrivedAtPickupStop;
@@ -988,7 +997,8 @@ class _BottomPanel extends ConsumerWidget {
     final arrivedLabel = hasStops
         ? 'Llegué a la recogida $currentPickupHuman/$pickupStopsCount'
         : 'Llegué a la recogida';
-    final arrivedEnabled = needsPickup &&
+    final arrivedEnabled =
+        needsPickup &&
         onArrivedAtPickupStop != null &&
         !(arrivedAtPickupStop && isLastPickupStop);
     final pickedUpEnabled = onPickedUp != null;
@@ -1036,7 +1046,7 @@ class _BottomPanel extends ConsumerWidget {
     final _ = targetPhone;
     final buyerIdResolved = chatBuyerId;
     final canChat =
-        order.status.canShowAssociatedChats &&
+        order.canShowAssociatedChats &&
         buyerIdResolved != null &&
         buyerIdResolved.trim().isNotEmpty;
 
@@ -1065,7 +1075,6 @@ class _BottomPanel extends ConsumerWidget {
         orElse: () => 0,
       );
     })();
-
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1096,7 +1105,7 @@ class _BottomPanel extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (order.status.canShowAssociatedChats)
+              if (order.canShowAssociatedChats)
                 IconButton(
                   tooltip: 'Abrir chat',
                   onPressed: onOpenChats,
@@ -1236,14 +1245,15 @@ class _BottomPanel extends ConsumerWidget {
                               ),
                               tooltip: 'Ver dirección',
                               onPressed: () async {
-                                final address = (deliveryAddressSnapshot.trim().isNotEmpty
-                                        ? deliveryAddressSnapshot.trim()
-                                        : order.delivery.addressSnapshot)
-                                    .trim();
+                                final address =
+                                    (deliveryAddressSnapshot.trim().isNotEmpty
+                                            ? deliveryAddressSnapshot.trim()
+                                            : order.delivery.addressSnapshot)
+                                        .trim();
                                 if (address.isEmpty) return;
 
-                                final instructions =
-                                    order.delivery.instructions.trim();
+                                final instructions = order.delivery.instructions
+                                    .trim();
                                 final full = instructions.isNotEmpty
                                     ? '$address\n\nInstrucciones: $instructions'
                                     : address;
@@ -1262,17 +1272,23 @@ class _BottomPanel extends ConsumerWidget {
                                             );
                                             if (!ctx.mounted) return;
                                             Navigator.of(ctx).pop();
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               const SnackBar(
-                                                content: Text('Dirección copiada al portapapeles'),
-                                                behavior: SnackBarBehavior.floating,
+                                                content: Text(
+                                                  'Dirección copiada al portapapeles',
+                                                ),
+                                                behavior:
+                                                    SnackBarBehavior.floating,
                                               ),
                                             );
                                           },
                                           child: const Text('Copiar'),
                                         ),
                                         TextButton(
-                                          onPressed: () => Navigator.of(ctx).pop(),
+                                          onPressed: () =>
+                                              Navigator.of(ctx).pop(),
                                           child: const Text('Cerrar'),
                                         ),
                                       ],
@@ -1388,19 +1404,15 @@ class _StepPills extends StatelessWidget {
 
     if (pickupStopsCount > 0) {
       for (int i = 0; i < pickupStopsCount; i++) {
-        final isDone = !needsPickup ||
+        final isDone =
+            !needsPickup ||
             i < pickupStopIndex ||
             (arrivedAtPickupStop && i == pickupStopIndex);
-        final isCurrent = needsPickup &&
+        final isCurrent =
+            needsPickup &&
             i == pickupStopIndex &&
             !(arrivedAtPickupStop && i == pickupStopIndex);
-        pills.add(
-          _Pill(
-            text: '${i + 1}',
-            active: isCurrent,
-            done: isDone,
-          ),
-        );
+        pills.add(_Pill(text: '${i + 1}', active: isCurrent, done: isDone));
         if (i < pickupStopsCount - 1) pills.add(const SizedBox(width: 6));
       }
     } else {
@@ -1431,19 +1443,13 @@ class _Pill extends StatelessWidget {
   final bool active;
   final bool done;
 
-  const _Pill({
-    required this.text,
-    required this.active,
-    required this.done,
-  });
+  const _Pill({required this.text, required this.active, required this.done});
 
   @override
   Widget build(BuildContext context) {
     final Color bg = done
         ? Colors.green.withValues(alpha: 0.16)
-        : (active
-            ? primaryOrange.withValues(alpha: 0.16)
-            : borderGray100);
+        : (active ? primaryOrange.withValues(alpha: 0.16) : borderGray100);
     final Color fg = done
         ? Colors.green
         : (active ? primaryOrange : textGray600);
@@ -1456,17 +1462,13 @@ class _Pill extends StatelessWidget {
           color: done
               ? Colors.green.withValues(alpha: 0.35)
               : (active
-                  ? primaryOrange.withValues(alpha: 0.35)
-                  : borderGray100),
+                    ? primaryOrange.withValues(alpha: 0.35)
+                    : borderGray100),
         ),
       ),
       child: Text(
         text,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: fg),
       ),
     );
   }
@@ -1548,7 +1550,9 @@ class _DeliveryCompletedScreen extends StatelessWidget {
                 child: ElevatedButton(
                   onPressed: () {
                     Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const RiderHomeScreen(),
+                      ),
                       (_) => false,
                     );
                   },

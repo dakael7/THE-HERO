@@ -52,15 +52,10 @@ firebase-debug.log
 firebase-debug.*.log
 .firebase/
 .firebaserc
-firebase.json
 *.local
 .runtimeconfig.json
 moderation-flutter.md
 
-storage.rules
-
-
-Firebase.rules
 lib/.env
 docs
 functions/billing/Nota.md

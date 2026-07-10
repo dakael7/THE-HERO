@@ -217,24 +217,12 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
 
     if (confirm != true || !mounted) return false;
 
-    final riderId = ref.read(profile.profileProvider).value?.id;
-    final now = DateTime.now();
-    final existingMeta = payment.metadata ?? const <String, dynamic>{};
-
-    final updated = payment.copyWith(
-      status: PaymentStatus.approved,
-      statusDetail: 'cash_collected',
-      approvedAt: now,
-      updatedAt: now,
-      metadata: <String, dynamic>{
-        ...existingMeta,
-        'confirmedByRiderId': riderId,
-        'confirmedAt': now.toIso8601String(),
-      },
-    );
-
     try {
-      await paymentRepo.savePayment(updated);
+      await paymentRepo.updatePaymentStatus(
+        paymentId: payment.id,
+        status: PaymentStatus.approved,
+        statusDetail: 'cash_collected',
+      );
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cobro en efectivo confirmado')),
@@ -390,9 +378,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
         final riderProfile = user.riderProfile;
         final rating = riderProfile?.rating ?? 0.0;
 
-        final pendingAsync = ref.watch(
-          riderPendingEarningsProvider(user.id),
-        );
+        final pendingAsync = ref.watch(riderPendingEarningsProvider(user.id));
         final pendingAmount = pendingAsync.asData?.value;
         final cumulative = cumulativeAsync.asData?.value;
         final orders = ordersAsync.asData?.value ?? const <Order>[];
@@ -411,9 +397,9 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                 0
             ? 0.0
             : effectiveDeliveredTrips /
-                (effectiveDeliveredTrips +
-                    canceledTrips +
-                    effectiveFailedTrips);
+                  (effectiveDeliveredTrips +
+                      canceledTrips +
+                      effectiveFailedTrips);
 
         final headlineAmount = cumulative?.totalEarnings ?? 0.0;
         final secondaryAmount = pendingAmount ?? 0.0;

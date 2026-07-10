@@ -15,6 +15,21 @@ const _timestampToMillis = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const _normalizeOrderStatus = (value) => {
+  return String(value || "").trim().toLowerCase().replace(/[_-]/g, "");
+};
+
+const _isPaidOrLaterOrderStatus = (value) => {
+  return [
+    "paid",
+    "queued",
+    "assigned",
+    "pickedup",
+    "intransit",
+    "delivered",
+  ].includes(_normalizeOrderStatus(value));
+};
+
 const _getHeader = (req, key) => {
   const value =
     req.get?.(key) ??
@@ -628,25 +643,30 @@ exports.mercadopagoWebhook = onRequest(
       };
 
       const consumeReservationIfNeeded = async () => {
-        let consumed = false;
+        const result = {
+          consumed: false,
+          status: null,
+          exists: false,
+        };
         await admin.firestore().runTransaction(async (transaction) => {
           const reservationDoc = await transaction.get(reservationRef);
           if (!reservationDoc.exists) return;
 
-          const reservation = reservationDoc.data() || {};
-          if (reservation.status !== "reserved") return;
+          result.exists = true;
 
-          const expiresAtMs = _timestampToMillis(reservation.expiresAt);
-          if (expiresAtMs > 0 && expiresAtMs <= Date.now()) return;
+          const reservation = reservationDoc.data() || {};
+          result.status = String(reservation.status || "").trim().toLowerCase();
+          if (result.status !== "reserved") return;
 
           transaction.update(reservationRef, {
             status: "consumed",
             consumedAt: admin.firestore.FieldValue.serverTimestamp(),
             paymentId: paymentData.id?.toString?.() ?? null,
           });
-          consumed = true;
+          result.consumed = true;
+          result.status = "consumed";
         });
-        return consumed;
+        return result;
       };
 
       // Update payment document in Firestore
@@ -757,26 +777,45 @@ exports.mercadopagoWebhook = onRequest(
       const fallbackOrderId = prefixedOrderId;
 
       let newOrderStatus = null;
+      const currentOrderData = orderDoc?.exists ? (orderDoc.data() || {}) : {};
+      const currentOrderStatus = currentOrderData.status;
 
       switch (paymentData.status) {
       case "approved":
-        if (await consumeReservationIfNeeded()) {
-          newOrderStatus = "queued"; // Order is ready for riders
-        } else {
+        {
+          const reservationResult = await consumeReservationIfNeeded();
+          const canFulfillOrder =
+            reservationResult.consumed || reservationResult.status === "consumed";
+          if (!canFulfillOrder) {
+            console.warn(
+              `Approved payment received without consumable reservation order=${orderId} reservationStatus=${reservationResult.status || "missing"}`,
+            );
+          }
+          newOrderStatus = canFulfillOrder ? "queued" : "paid";
+        }
+        if (newOrderStatus !== "queued") {
           console.warn(
-            `Approved payment ignored for expired or released reservation order=${orderId}`,
+            `Approved payment kept out of rider queue order=${orderId} status=${newOrderStatus}`,
           );
         }
         break;
       case "rejected":
       case "cancelled":
-        newOrderStatus = "payment_failed";
-        await restoreReservationStockIfNeeded();
+        if (_isPaidOrLaterOrderStatus(currentOrderStatus)) {
+          console.warn(
+            `Ignoring ${paymentData.status} for paid order=${orderId} currentStatus=${currentOrderStatus}`,
+          );
+        } else {
+          newOrderStatus = "payment_failed";
+          await restoreReservationStockIfNeeded();
+        }
         break;
       case "pending":
       case "in_process":
       case "in_mediation":
-        newOrderStatus = "pending_payment";
+        if (!_isPaidOrLaterOrderStatus(currentOrderStatus)) {
+          newOrderStatus = "pending_payment";
+        }
         break;
       case "refunded":
       case "charged_back":
@@ -815,15 +854,92 @@ exports.mercadopagoWebhook = onRequest(
       const resolvedOrderRef = orderDoc.ref;
 
       if (newOrderStatus) {
-        await resolvedOrderRef.set(
-          {
-            status: newOrderStatus,
-            paymentId: paymentData.id.toString(),
-            paymentStatus: paymentData.status,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          },
-          {merge: true},
-        );
+        const isApprovedFulfillmentBlocked =
+          paymentData.status === "approved" && newOrderStatus === "paid";
+        const orderUpdate = {
+          status: newOrderStatus,
+          paymentId: paymentData.id.toString(),
+          paymentStatus: paymentData.status,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        if (paymentData.status === "approved") {
+          orderUpdate["timestamps.paidAt"] =
+            admin.firestore.FieldValue.serverTimestamp();
+          if (newOrderStatus === "queued") {
+            orderUpdate["timestamps.queuedAt"] =
+              admin.firestore.FieldValue.serverTimestamp();
+          } else {
+            orderUpdate.fulfillmentStatus = "blocked";
+            orderUpdate.fulfillmentBlockReason = "approved_payment_without_stock_reservation";
+            orderUpdate.supportReviewStatus = "pending";
+          }
+          orderUpdate.cancelReason = admin.firestore.FieldValue.delete();
+          orderUpdate.canceledBy = admin.firestore.FieldValue.delete();
+          orderUpdate["timestamps.canceledAt"] =
+            admin.firestore.FieldValue.delete();
+        }
+        await resolvedOrderRef.set(orderUpdate, {merge: true});
+
+        if (isApprovedFulfillmentBlocked) {
+          const incidentReason = "approved_payment_without_stock_reservation";
+          const now = admin.firestore.FieldValue.serverTimestamp();
+          const incidentRef = admin
+            .firestore()
+            .collection("orderSupportIncidents")
+            .doc(resolvedOrderRef.id);
+          const incidentDoc = await incidentRef.get();
+          await incidentRef.set(
+            {
+              orderId: resolvedOrderRef.id,
+              heroId: currentOrderData.heroId || null,
+              type: incidentReason,
+              status: "pending",
+              paymentId: paymentData.id?.toString?.() ?? String(paymentId),
+              preferenceId: preferenceIdForDoc || null,
+              paymentStatus: paymentData.status,
+              paymentStatusDetail: paymentData.status_detail || null,
+              amount: paymentData.transaction_amount || null,
+              currency: paymentData.currency_id || null,
+              ...(incidentDoc.exists ? {} : { firstSeenAt: now }),
+              updatedAt: now,
+            },
+            {merge: true},
+          );
+
+          const heroId = String(currentOrderData.heroId || "").trim();
+          if (heroId) {
+            const notificationRef = admin
+              .firestore()
+              .collection("notifications")
+              .doc(`${resolvedOrderRef.id}_payment_review`);
+            const notificationDoc = await notificationRef.get();
+            if (!notificationDoc.exists) {
+              await notificationRef.set(
+                {
+                  userId: heroId,
+                  type: "order_status",
+                  title: "Pago recibido, pedido en revision",
+                  body:
+                    "Tu pago fue confirmado. Soporte revisara el pedido y te dara una nueva asignacion o una devolucion.",
+                  data: {
+                    type: "order_status",
+                    action: "open_order",
+                    orderId: resolvedOrderRef.id,
+                    status: "paid",
+                    fulfillmentStatus: "blocked",
+                    fulfillmentBlockReason: incidentReason,
+                    priority: "high",
+                  },
+                  action: "open_order",
+                  imageUrl: null,
+                  priority: "high",
+                  createdAt: now,
+                  read: false,
+                },
+              );
+            }
+          }
+        }
       }
       console.log(`Order ${orderId} status updated to ${newOrderStatus}`);
 

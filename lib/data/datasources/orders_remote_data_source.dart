@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/order_model.dart';
 import '../../domain/services/rider_commission_calculator.dart';
 
@@ -31,56 +32,14 @@ abstract class OrdersRemoteDataSource {
 
 class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   final FirebaseFirestore _firestore;
+  final FirebaseFunctions _functions;
 
-  OrdersRemoteDataSourceImpl({required FirebaseFirestore firestore})
-    : _firestore = firestore;
-
-  bool _isVehicleCompatible({
-    required String riderVehicleType,
-    required String requiredVehicle,
-  }) {
-    final rider = riderVehicleType.toLowerCase().trim();
-    final required = requiredVehicle.toLowerCase().trim();
-
-    if (rider == 'car') {
-      return required == 'car' ||
-          required == 'motorcycle' ||
-          required == 'bicycle';
-    }
-    if (rider == 'truck') {
-      return required == 'truck' ||
-          required == 'car' ||
-          required == 'motorcycle' ||
-          required == 'bicycle';
-    }
-    if (rider == 'motorcycle') {
-      return required == 'motorcycle' || required == 'bicycle';
-    }
-    if (rider == 'bicycle') {
-      return required == 'bicycle';
-    }
-
-    return false;
-  }
-
-  bool _isCashPaymentDoc(Map<String, dynamic> paymentData) {
-    final methodId = paymentData['paymentMethodId']?.toString().toLowerCase();
-    final statusDetail = paymentData['statusDetail']?.toString().toLowerCase();
-    final method = paymentData['paymentMethod']?.toString().toLowerCase();
-
-    return methodId == 'cash' ||
-        statusDetail == 'cash_on_delivery' ||
-        statusDetail == 'cash_collected' ||
-        method == 'cash';
-  }
-
-  double _cashAmountToCollectFromOrder(Map<String, dynamic> orderData) {
-    final total = (orderData['amountTotal'] as num?)?.toDouble() ?? 0.0;
-    return total.clamp(
-      0.0,
-      double.infinity,
-    ); 
-  }
+  OrdersRemoteDataSourceImpl({
+    required FirebaseFirestore firestore,
+    FirebaseFunctions? functions,
+  }) : _firestore = firestore,
+       _functions =
+           functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
   int _toCents(num value) {
     return (value.toDouble() * 100).round();
@@ -146,14 +105,6 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
             throw Exception('No puedes cancelar: ya marcaste recogido');
           }
 
-          final paymentRef = _firestore
-              .collection('payments')
-              .doc('cash-$orderId');
-          final paymentSnap = await transaction.get(paymentRef);
-          final isCashOrder =
-              paymentSnap.exists &&
-              _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
-
           final riderRef = _firestore.collection('users').doc(riderId);
           final cancelEventRef = riderRef.collection('riderTripEvents').doc();
           transaction.set(cancelEventRef, {
@@ -163,11 +114,10 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
           });
 
           final holdAlreadyReleased = data['cashHoldReleased'] == true;
+          final holdRaw = riderMap?['cashHoldAmount'];
+          final holdAmount = (holdRaw is num) ? holdRaw.toDouble() : 0.0;
+          final isCashOrder = holdAmount > 0;
           if (isCashOrder && !holdAlreadyReleased) {
-            final holdRaw = riderMap?['cashHoldAmount'];
-            final holdAmount = (holdRaw is num)
-                ? holdRaw.toDouble()
-                : _cashAmountToCollectFromOrder(data);
             final holdCents = _toCents(holdAmount);
             transaction.update(riderRef, {
               'riderWallet.cashOnHold': FieldValue.increment(-holdAmount),
@@ -398,6 +348,20 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   }) async {
     try {
       if (orderId.trim().isEmpty) {
+        throw Exception('orderId invalido');
+      }
+
+      final callable = _functions.httpsCallable('updateOrderStatus');
+      await callable.call(<String, dynamic>{
+        'orderId': orderId,
+        'newStatus': status,
+        'riderServiceFeeCLP': riderServiceFeeCLP,
+        'riderTaxPercentage': riderTaxPercentage,
+      });
+      return;
+
+      // ignore: dead_code
+      if (orderId.trim().isEmpty) {
         throw Exception('orderId inválido');
       }
 
@@ -451,14 +415,6 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                     taxPercentage: riderTaxPercentage,
                   );
 
-              final paymentRef = _firestore
-                  .collection('payments')
-                  .doc('cash-$orderId');
-              final paymentSnap = await transaction.get(paymentRef);
-              final isCash =
-                  paymentSnap.exists &&
-                  _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
-
               final riderRef = _firestore.collection('users').doc(riderId);
               final riderSnap = await transaction.get(riderRef);
               if (!riderSnap.exists) {
@@ -473,6 +429,11 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                   (wallet['cashBalance'] as num?)?.toDouble() ?? 0.0;
               final cashOnHold =
                   (wallet['cashOnHold'] as num?)?.toDouble() ?? 0.0;
+              final holdRaw = riderMap?['cashHoldAmount'];
+              final cashHoldAmount = (holdRaw is num)
+                  ? holdRaw.toDouble()
+                  : 0.0;
+              final isCash = cashHoldAmount > 0;
 
               final txCollection = riderRef.collection(
                 'riderWalletTransactions',
@@ -521,10 +482,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
                 final cashSettlementProcessed =
                     data['cashSettlementProcessed'] == true;
                 if (!cashSettlementProcessed) {
-                  final holdRaw = riderMap?['cashHoldAmount'];
-                  final cashAmount = (holdRaw is num)
-                      ? holdRaw.toDouble()
-                      : _cashAmountToCollectFromOrder(data);
+                  final cashAmount = cashHoldAmount;
                   final cashCents = _toCents(cashAmount);
 
                   final settlementTxRef = txCollection.doc();
@@ -610,124 +568,10 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
       if (riderId.trim().isEmpty) {
         throw Exception('riderId inválido');
       }
-      await _withRetry(() async {
-        await _firestore.runTransaction((transaction) async {
-          final orderRef = _firestore.collection('orders').doc(orderId);
-          final orderDoc = await transaction.get(orderRef);
-
-          if (!orderDoc.exists) {
-            throw Exception('Pedido no encontrado');
-          }
-
-          final orderData = orderDoc.data()!;
-          if (orderData['status'] != 'queued') {
-            throw Exception('Pedido ya no está disponible');
-          }
-
-          if (orderData['rider']['assignedRiderId'] != null) {
-            throw Exception('Pedido ya tiene rider asignado');
-          }
-
-          final requirements = orderData['requirements'];
-          final requiredVehicle = requirements is Map
-              ? (requirements['requiredVehicle']?.toString() ?? '')
-              : '';
-          if (requiredVehicle.isEmpty) {
-            throw Exception('Pedido inválido: falta vehículo requerido');
-          }
-
-          if (!_isVehicleCompatible(
-            riderVehicleType: vehicleType,
-            requiredVehicle: requiredVehicle,
-          )) {
-            throw Exception(
-              'Tu vehículo ($vehicleType) no es compatible con este pedido (requiere $requiredVehicle)',
-            );
-          }
-
-          final paymentRef = _firestore
-              .collection('payments')
-              .doc('cash-$orderId');
-          final paymentSnap = await transaction.get(paymentRef);
-          final isCashOrder =
-              paymentSnap.exists &&
-              _isCashPaymentDoc(paymentSnap.data() ?? <String, dynamic>{});
-
-          double? cashHoldAmount;
-          if (isCashOrder) {
-            final holdAmount = _cashAmountToCollectFromOrder(orderData);
-            final holdCents = _toCents(holdAmount);
-            final riderRef = _firestore.collection('users').doc(riderId);
-            final riderSnap = await transaction.get(riderRef);
-            if (!riderSnap.exists) {
-              throw Exception('Rider no encontrado');
-            }
-
-            final riderData = riderSnap.data() ?? <String, dynamic>{};
-            final wallet = (riderData['riderWallet'] is Map)
-                ? (riderData['riderWallet'] as Map)
-                : const <String, dynamic>{};
-
-            final earningsBalanceCents =
-                (wallet['earningsBalanceCents'] as num?)?.toInt();
-            final earningsBalance = earningsBalanceCents != null
-                ? (earningsBalanceCents / 100.0)
-                : (wallet['earningsBalance'] as num?)?.toDouble() ?? 0.0;
-
-            final cashOnHoldCents = (wallet['cashOnHoldCents'] as num?)
-                ?.toInt();
-            final cashOnHold = cashOnHoldCents != null
-                ? (cashOnHoldCents / 100.0)
-                : (wallet['cashOnHold'] as num?)?.toDouble() ?? 0.0;
-
-            final available = (earningsBalance - cashOnHold).clamp(
-              0.0,
-              double.infinity,
-            );
-
-            if (available < holdAmount) {
-              throw Exception(
-                'Este pedido requiere pago en efectivo (\$${holdAmount.toStringAsFixed(0)}). '
-                'Tu pendiente por pagar (\$${available.toStringAsFixed(0)}) no alcanza para tomarlo. '
-                'Debes tener al menos \$${holdAmount.toStringAsFixed(0)} pendiente por pagar disponible.',
-              );
-            }
-
-            transaction.update(riderRef, {
-              'riderWallet.cashOnHold': FieldValue.increment(holdAmount),
-              'riderWallet.cashOnHoldCents': FieldValue.increment(holdCents),
-            });
-
-            final txRef = riderRef.collection('riderWalletTransactions').doc();
-            transaction.set(txRef, {
-              'type': 'cash_hold',
-              'orderId': orderId,
-              'amount': holdAmount,
-              'amountCents': holdCents,
-              'currency': orderData['currency']?.toString() ?? 'CLP',
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-
-            cashHoldAmount = holdAmount;
-          }
-
-          final riderUpdate = {
-            'assignedRiderId': riderId,
-            'assignedAt': FieldValue.serverTimestamp(),
-            'vehicleTypeSnapshot': vehicleType,
-            'riderNameSnapshot': riderName,
-            'riderPhoneSnapshot': riderPhone,
-            if (cashHoldAmount != null) 'cashHoldAmount': cashHoldAmount,
-          };
-
-          transaction.update(orderRef, {
-            'status': 'assigned',
-            'rider': riderUpdate,
-            'timestamps.assignedAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        });
-      });
+      final callable = _functions.httpsCallable('claimOrder');
+      await callable.call(<String, dynamic>{'orderId': orderId});
+    } on FirebaseFunctionsException catch (e) {
+      throw Exception(e.message ?? 'No se pudo aceptar el pedido');
     } catch (e) {
       throw Exception('Error al asignar rider: $e');
     }
@@ -740,113 +584,14 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     String canceledBy,
   ) async {
     try {
-      await _firestore.runTransaction((transaction) async {
-        final orderRef = _firestore.collection('orders').doc(orderId);
-        final orderSnap = await transaction.get(orderRef);
-
-        if (!orderSnap.exists) {
-          throw Exception('Pedido no encontrado');
-        }
-
-        final data = orderSnap.data() ?? <String, dynamic>{};
-        final currentStatus = (data['status'] as String?) ?? '';
-        final alreadyRestored = data['stockRestored'] == true;
-
-        final shouldTryReleaseReservation =
-            currentStatus == 'pending_payment' ||
-            currentStatus == 'pendingPayment' ||
-            currentStatus == 'pendingpayment';
-
-        if (!alreadyRestored) {
-          if (shouldTryReleaseReservation) {
-            final reservationRef = _firestore
-                .collection('stockReservations')
-                .doc(orderId);
-            final reservationSnap = await transaction.get(reservationRef);
-            if (reservationSnap.exists) {
-              final reservation = reservationSnap.data() ?? <String, dynamic>{};
-              final reservationStatus = reservation['status'] as String?;
-              final itemsRaw = reservation['items'] as List<dynamic>?;
-
-              if (reservationStatus == 'reserved' && itemsRaw != null) {
-                for (final raw in itemsRaw) {
-                  if (raw is! Map) continue;
-                  final offerId = raw['offerId'] as String?;
-                  final qty = raw['qty'] as int?;
-                  if (offerId == null || offerId.isEmpty) continue;
-                  final qtyInt = (qty == null || qty <= 0) ? 1 : qty;
-
-                  final offerRef = _firestore.collection('offers').doc(offerId);
-                  final offerSnap = await transaction.get(offerRef);
-                  if (!offerSnap.exists) continue;
-                  final offerData = offerSnap.data() ?? <String, dynamic>{};
-                  final currentQty = (offerData['availableQty'] as int?) ?? 0;
-                  final newQty = currentQty + qtyInt;
-
-                  final update = <String, Object?>{
-                    'stock': newQty,
-                    'availableQty': newQty,
-                    'updatedAt': FieldValue.serverTimestamp(),
-                  };
-
-                  final offerStatus = offerData['status'] as String?;
-                  if (offerStatus == 'sold_out' && newQty > 0) {
-                    update['status'] = 'active';
-                  }
-
-                  transaction.update(offerRef, update);
-                }
-
-                transaction.update(reservationRef, {
-                  'status': 'released',
-                  'releasedAt': FieldValue.serverTimestamp(),
-                });
-              }
-            }
-          } else {
-            final itemsRaw = data['items'] as List<dynamic>?;
-            if (itemsRaw != null) {
-              for (final raw in itemsRaw) {
-                if (raw is! Map) continue;
-                final offerId = raw['offerId'] as String?;
-                final qty = raw['qty'] as int?;
-                if (offerId == null || offerId.isEmpty) continue;
-                final qtyInt = (qty == null || qty <= 0) ? 1 : qty;
-
-                final offerRef = _firestore.collection('offers').doc(offerId);
-                final offerSnap = await transaction.get(offerRef);
-                if (!offerSnap.exists) continue;
-                final offerData = offerSnap.data() ?? <String, dynamic>{};
-                final currentQty = (offerData['availableQty'] as int?) ?? 0;
-                final newQty = currentQty + qtyInt;
-
-                final update = <String, Object?>{
-                  'stock': newQty,
-                  'availableQty': newQty,
-                  'updatedAt': FieldValue.serverTimestamp(),
-                };
-
-                final offerStatus = offerData['status'] as String?;
-                if (offerStatus == 'sold_out' && newQty > 0) {
-                  update['status'] = 'active';
-                }
-
-                transaction.update(offerRef, update);
-              }
-            }
-          }
-        }
-
-        transaction.update(orderRef, {
-          'status': 'canceled',
-          'cancelReason': reason,
-          'canceledBy': canceledBy,
-          'timestamps.canceledAt': FieldValue.serverTimestamp(),
-          'stockRestored': true,
-          'stockRestoredAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+      final callable = _functions.httpsCallable('cancelOrder');
+      await callable.call(<String, dynamic>{
+        'orderId': orderId,
+        'reason': reason,
+        'canceledBy': canceledBy,
       });
+    } on FirebaseFunctionsException catch (e) {
+      throw Exception(e.message ?? 'No se pudo cancelar el pedido');
     } catch (e) {
       throw Exception('Error al cancelar pedido: $e');
     }

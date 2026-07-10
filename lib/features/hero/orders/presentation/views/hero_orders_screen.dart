@@ -77,15 +77,13 @@ class HeroOrdersScreen extends ConsumerWidget {
                     }
 
                     final sorted = [...orders]
-                      ..sort(
-                        (a, b) {
-                          final byDate = b.timestamps.createdAt.compareTo(
-                            a.timestamps.createdAt,
-                          );
-                          if (byDate != 0) return byDate;
-                          return b.orderId.compareTo(a.orderId);
-                        },
-                      );
+                      ..sort((a, b) {
+                        final byDate = b.timestamps.createdAt.compareTo(
+                          a.timestamps.createdAt,
+                        );
+                        if (byDate != 0) return byDate;
+                        return b.orderId.compareTo(a.orderId);
+                      });
 
                     return RefreshIndicator(
                       color: primaryOrange,
@@ -132,13 +130,14 @@ class _OrderTile extends ConsumerWidget {
     final paymentRemaining = paymentExpiresAt.difference(DateTime.now());
     final isPaymentExpired =
         isPendingPayment && paymentRemaining.inSeconds <= 0;
-    final canShowReceipt = order.status != OrderStatus.created &&
+    final canShowReceipt =
+        order.status != OrderStatus.created &&
         order.status != OrderStatus.pendingPayment &&
         order.status != OrderStatus.canceled &&
         order.status != OrderStatus.failed;
 
-    final statusColor = _statusColor(order.status);
-    final statusBg = _statusBg(order.status);
+    final statusColor = _statusColorForOrder(order);
+    final statusBg = _statusBgForOrder(order);
     final shortId = order.orderId.length > 8
         ? order.orderId.substring(0, 8)
         : order.orderId;
@@ -180,10 +179,7 @@ class _OrderTile extends ConsumerWidget {
               statusColor: statusColor,
               shortId: shortId,
             ),
-            Container(
-              height: 1,
-              color: borderGray100,
-            ),
+            Container(height: 1, color: borderGray100),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 11, 14, 13),
               child: Column(
@@ -227,6 +223,16 @@ class _OrderTile extends ConsumerWidget {
                       ],
                     ],
                   ),
+                  if (order.isFulfillmentBlocked) ...[
+                    const SizedBox(height: 8),
+                    const _InfoRow(
+                      icon: Icons.support_agent_rounded,
+                      iconColor: Color(0xFFB45309),
+                      text: 'Pago recibido; soporte revisara este pedido',
+                      textColor: Color(0xFF92400E),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ],
                   // Show payment and delete buttons for pending payment orders
                   if (isPendingPayment) ...[
                     const SizedBox(height: 6),
@@ -245,92 +251,112 @@ class _OrderTile extends ConsumerWidget {
                         Expanded(
                           flex: 2,
                           child: ElevatedButton.icon(
-                            onPressed: isPayingOrder || isPaymentExpired ? null : () async {
-                              try {
-                                // Create payment preference
-                                final paymentNotifier = ref.read(
-                                  paymentNotifierProvider.notifier,
-                                );
-                                await paymentNotifier.createPreference(order);
+                            onPressed: isPayingOrder || isPaymentExpired
+                                ? null
+                                : () async {
+                                    try {
+                                      // Create payment preference
+                                      final paymentNotifier = ref.read(
+                                        paymentNotifierProvider.notifier,
+                                      );
+                                      await paymentNotifier.createPreference(
+                                        order,
+                                      );
 
-                                final paymentState = ref.read(
-                                  paymentNotifierProvider,
-                                );
+                                      final paymentState = ref.read(
+                                        paymentNotifierProvider,
+                                      );
 
-                                if (paymentState.error != null) {
-                                  final errorCode =
-                                      (paymentState.errorCode ?? '').toLowerCase();
-                                  final raw = paymentState.error ?? '';
-                                  final message = raw.toLowerCase();
-                                  String userMessage = 'Error: $raw';
+                                      if (paymentState.error != null) {
+                                        final errorCode =
+                                            (paymentState.errorCode ?? '')
+                                                .toLowerCase();
+                                        final raw = paymentState.error ?? '';
+                                        final message = raw.toLowerCase();
+                                        String userMessage = 'Error: $raw';
 
-                                  if (errorCode == 'resource-exhausted') {
-                                    userMessage =
-                                        'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.';
-                                  } else if (errorCode == 'deadline-exceeded' ||
-                                      message.contains('expir')) {
-                                    userMessage =
-                                        'La reserva expiró. Crea una nueva solicitud para volver a pagar.';
-                                  } else if (message.contains('stock insuficiente') ||
-                                      message.contains('failed-precondition')) {
-                                    userMessage =
-                                        'Este servicio ya no está disponible. Intenta con otro.';
-                                  }
+                                        if (errorCode == 'resource-exhausted') {
+                                          userMessage =
+                                              'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.';
+                                        } else if (errorCode ==
+                                                'deadline-exceeded' ||
+                                            message.contains('expir')) {
+                                          userMessage =
+                                              'La reserva expiró. Crea una nueva solicitud para volver a pagar.';
+                                        } else if (message.contains(
+                                              'stock insuficiente',
+                                            ) ||
+                                            message.contains(
+                                              'failed-precondition',
+                                            )) {
+                                          userMessage =
+                                              'Este servicio ya no está disponible. Intenta con otro.';
+                                        }
 
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(userMessage),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                  }
-                                  return;
-                                }
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(userMessage),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                        return;
+                                      }
 
-                                if (paymentState.initPoint != null &&
-                                    context.mounted) {
-                                  // Navigate to payment processing screen
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => PaymentProcessingScreen(
-                                        initPoint: paymentState.initPoint!,
-                                        orderId: order.orderId,
-                                        preferenceId:
-                                            paymentState.preferenceId ?? '',
-                                      ),
-                                    ),
-                                  );
-                                } else if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'No se pudo obtener el link de pago',
-                                      ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Error al procesar pago: $e',
-                                      ),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
+                                      if (paymentState.initPoint != null &&
+                                          context.mounted) {
+                                        // Navigate to payment processing screen
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                PaymentProcessingScreen(
+                                                  initPoint:
+                                                      paymentState.initPoint!,
+                                                  orderId: order.orderId,
+                                                  preferenceId:
+                                                      paymentState
+                                                          .preferenceId ??
+                                                      '',
+                                                ),
+                                          ),
+                                        );
+                                      } else if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'No se pudo obtener el link de pago',
+                                            ),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Error al procesar pago: $e',
+                                            ),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
                             icon: const Icon(Icons.payment, size: 18),
                             label: Text(
                               isPaymentExpired
                                   ? 'Expirado'
                                   : isPayingOrder
-                                      ? 'Procesando...'
-                                      : 'Pagar',
+                                  ? 'Procesando...'
+                                  : 'Pagar',
                               style: TextStyle(fontWeight: FontWeight.w800),
                             ),
                             style: ElevatedButton.styleFrom(
@@ -487,6 +513,27 @@ class _OrderTile extends ConsumerWidget {
     }
   }
 
+  static IconData _statusIconForOrder(Order order) {
+    if (order.isFulfillmentBlocked) {
+      return Icons.support_agent_rounded;
+    }
+    return _statusIcon(order.status);
+  }
+
+  static Color _statusBgForOrder(Order order) {
+    if (order.isFulfillmentBlocked) {
+      return const Color(0xFFFEF3C7);
+    }
+    return _statusBg(order.status);
+  }
+
+  static Color _statusColorForOrder(Order order) {
+    if (order.isFulfillmentBlocked) {
+      return const Color(0xFFB45309);
+    }
+    return _statusColor(order.status);
+  }
+
   static Color _statusBg(OrderStatus status) {
     switch (status) {
       case OrderStatus.delivered:
@@ -539,10 +586,7 @@ class _TileHeader extends StatelessWidget {
       borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
       child: Stack(
         children: [
-          Container(
-            width: double.infinity,
-            color: statusBg,
-          ),
+          Container(width: double.infinity, color: statusBg),
           Positioned(
             top: -4,
             right: 10,
@@ -570,7 +614,7 @@ class _TileHeader extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(
-                    _OrderTile._statusIcon(order.status),
+                    _OrderTile._statusIconForOrder(order),
                     color: statusColor,
                     size: 22,
                   ),
@@ -581,7 +625,9 @@ class _TileHeader extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        order.status.displayName,
+                        order.isFulfillmentBlocked
+                            ? 'Pago en revision'
+                            : order.status.displayName,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
@@ -612,10 +658,7 @@ class _TileHeader extends StatelessWidget {
                     ],
                   ),
                 ),
-                _PriceTag(
-                  amount: order.amountTotal,
-                  statusColor: statusColor,
-                ),
+                _PriceTag(amount: order.amountTotal, statusColor: statusColor),
               ],
             ),
           ),
@@ -629,10 +672,7 @@ class _PriceTag extends StatelessWidget {
   final double amount;
   final Color statusColor;
 
-  const _PriceTag({
-    required this.amount,
-    required this.statusColor,
-  });
+  const _PriceTag({required this.amount, required this.statusColor});
 
   @override
   Widget build(BuildContext context) {
@@ -836,10 +876,7 @@ class _InvoiceButton extends ConsumerStatefulWidget {
   final String invoiceId;
   final String documentLabel;
 
-  const _InvoiceButton({
-    required this.invoiceId,
-    required this.documentLabel,
-  });
+  const _InvoiceButton({required this.invoiceId, required this.documentLabel});
 
   @override
   ConsumerState<_InvoiceButton> createState() => _InvoiceButtonState();
@@ -891,10 +928,7 @@ class _InvoiceButtonState extends ConsumerState<_InvoiceButton> {
       return;
     }
 
-    final opened = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -967,7 +1001,8 @@ class _RetryInvoiceButton extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_RetryInvoiceButton> createState() => _RetryInvoiceButtonState();
+  ConsumerState<_RetryInvoiceButton> createState() =>
+      _RetryInvoiceButtonState();
 }
 
 class _RetryInvoiceButtonState extends ConsumerState<_RetryInvoiceButton> {
@@ -1020,7 +1055,9 @@ class _RetryInvoiceButtonState extends ConsumerState<_RetryInvoiceButton> {
         decoration: BoxDecoration(
           color: const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+          border: Border.all(
+            color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

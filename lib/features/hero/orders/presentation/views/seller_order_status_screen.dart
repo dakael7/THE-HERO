@@ -42,8 +42,9 @@ class SellerOrderStatusScreen extends ConsumerWidget {
       backgroundColor: backgroundGray50,
       appBar: _buildAppBar(context),
       body: orderAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator(color: primaryOrange)),
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: primaryOrange),
+        ),
         error: (err, _) => _StatusMessage(
           title: 'No pudimos obtener el pedido',
           subtitle: err.toString(),
@@ -285,14 +286,16 @@ class _SellerOrderContent extends ConsumerWidget {
     final cfg = _config(order);
     final hasRider = order.rider.isAssigned;
 
-    final canMarkReadyForPickup = order.inPersonPickup &&
+    final canMarkReadyForPickup =
+        order.inPersonPickup &&
         status != OrderStatus.delivered &&
         status != OrderStatus.canceled &&
         status != OrderStatus.failed &&
         status != OrderStatus.pickedUp &&
         status != OrderStatus.inTransit;
 
-    final canMarkDelivered = order.inPersonPickup &&
+    final canMarkDelivered =
+        order.inPersonPickup &&
         status != OrderStatus.delivered &&
         status != OrderStatus.canceled &&
         status != OrderStatus.failed &&
@@ -373,8 +376,9 @@ class _StatusCard extends ConsumerWidget {
           .read(orderNotifierProvider.notifier)
           .updateStatus(order.orderId, newStatus);
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(successMsg)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMsg)));
         if (order.inPersonPickup && newStatus == 'delivered') {
           await Navigator.of(context).push(
             MaterialPageRoute(
@@ -388,9 +392,9 @@ class _StatusCard extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo actualizar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo actualizar: $e')));
       }
     }
   }
@@ -424,8 +428,9 @@ class _StatusCard extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
             decoration: BoxDecoration(
               color: cfg.bg,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(22)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(22),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -461,7 +466,9 @@ class _StatusCard extends ConsumerWidget {
                           const SizedBox(height: 3),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
                               color: cfg.color.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(6),
@@ -486,7 +493,6 @@ class _StatusCard extends ConsumerWidget {
 
                 // Chat chips
                 _SellerChatActions(order: order, sellerId: sellerId),
-
               ],
             ),
           ),
@@ -549,15 +555,11 @@ class _StatusCard extends ConsumerWidget {
 //  SUMMARY CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-
 class _BuyerRatingPromptCard extends StatelessWidget {
   final Order order;
   final String sellerId;
 
-  const _BuyerRatingPromptCard({
-    required this.order,
-    required this.sellerId,
-  });
+  const _BuyerRatingPromptCard({required this.order, required this.sellerId});
 
   @override
   Widget build(BuildContext context) {
@@ -678,8 +680,7 @@ class _SummaryCard extends StatelessWidget {
             icon: Icons.shopping_bag_outlined,
             iconColor: primaryOrange,
             label: 'Mis artículos',
-            value:
-                '$myItemsCount producto${myItemsCount == 1 ? '' : 's'}',
+            value: '$myItemsCount producto${myItemsCount == 1 ? '' : 's'}',
           ),
 
           // Delivery address row
@@ -727,16 +728,15 @@ class _OrderContactsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final canShowContactInfo = order.canShowAssociatedChats;
     final heroAsync = ref.watch(userByIdStreamProvider(order.heroId));
     final heroName = heroAsync.maybeWhen(
       data: (user) => _firstNonEmpty([user?.fullName, 'Hero'])!,
       orElse: () => 'Hero',
     );
     final heroPhone = heroAsync.maybeWhen(
-      data: (user) => _firstNonEmpty([
-        user?.phoneNumber,
-        order.delivery.recipientPhone,
-      ]),
+      data: (user) =>
+          _firstNonEmpty([user?.phoneNumber, order.delivery.recipientPhone]),
       orElse: () => _clean(order.delivery.recipientPhone),
     );
     final isHeroPhoneLoading = heroAsync.isLoading && heroPhone == null;
@@ -748,10 +748,7 @@ class _OrderContactsCard extends ConsumerWidget {
         : const AsyncValue<User?>.data(null);
     final riderName = _firstNonEmpty([
       order.rider.riderNameSnapshot,
-      riderAsync.maybeWhen(
-        data: (user) => user?.fullName,
-        orElse: () => null,
-      ),
+      riderAsync.maybeWhen(data: (user) => user?.fullName, orElse: () => null),
       'Rider',
     ])!;
     final riderPhone = _firstNonEmpty([
@@ -805,6 +802,7 @@ class _OrderContactsCard extends ConsumerWidget {
             name: heroName,
             phone: heroPhone,
             isLoading: isHeroPhoneLoading,
+            canShowPhone: canShowContactInfo,
             onCall: () => _callPhone(context, heroPhone),
           ),
           if (hasRider) ...[
@@ -816,6 +814,7 @@ class _OrderContactsCard extends ConsumerWidget {
               name: riderName,
               phone: riderPhone,
               isLoading: isRiderPhoneLoading,
+              canShowPhone: canShowContactInfo,
               onCall: () => _callPhone(context, riderPhone),
             ),
           ],
@@ -832,6 +831,7 @@ class _ContactPhoneRow extends StatelessWidget {
   final String name;
   final String? phone;
   final bool isLoading;
+  final bool canShowPhone;
   final VoidCallback onCall;
 
   const _ContactPhoneRow({
@@ -841,18 +841,22 @@ class _ContactPhoneRow extends StatelessWidget {
     required this.name,
     required this.phone,
     required this.isLoading,
+    this.canShowPhone = true,
     required this.onCall,
   });
 
   @override
   Widget build(BuildContext context) {
     final cleanPhone = phone?.trim();
-    final hasPhone = cleanPhone != null && cleanPhone.isNotEmpty;
-    final phoneText = isLoading
+    final hasPhone =
+        canShowPhone && cleanPhone != null && cleanPhone.isNotEmpty;
+    final phoneText = !canShowPhone
+        ? 'Disponible después del pago'
+        : isLoading
         ? 'Cargando telefono...'
         : hasPhone
-            ? cleanPhone
-            : 'Sin telefono registrado';
+        ? cleanPhone
+        : 'Sin telefono registrado';
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1287,7 +1291,8 @@ class _TimelineStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final done = index < activeIndex ||
+    final done =
+        index < activeIndex ||
         (index == activeIndex && status == OrderStatus.delivered);
     final current = index == activeIndex;
 
@@ -1300,8 +1305,11 @@ class _TimelineStep extends StatelessWidget {
       dotBg = categoryTextGreen.withValues(alpha: 0.14);
       textColor = categoryTextGreen;
       subtitleColor = textGray600;
-      dotChild = const Icon(Icons.check_rounded,
-          color: categoryTextGreen, size: 16);
+      dotChild = const Icon(
+        Icons.check_rounded,
+        color: categoryTextGreen,
+        size: 16,
+      );
     } else if (current) {
       dotBg = primaryOrange.withValues(alpha: 0.14);
       textColor = textGray900;
@@ -1337,8 +1345,7 @@ class _TimelineStep extends StatelessWidget {
           ? BoxDecoration(
               color: primaryOrange.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                  color: primaryOrange.withValues(alpha: 0.15)),
+              border: Border.all(color: primaryOrange.withValues(alpha: 0.15)),
             )
           : null,
       child: Row(
@@ -1348,10 +1355,7 @@ class _TimelineStep extends StatelessWidget {
             duration: const Duration(milliseconds: 300),
             width: 34,
             height: 34,
-            decoration: BoxDecoration(
-              color: dotBg,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: dotBg, shape: BoxShape.circle),
             child: Center(child: dotChild),
           ),
           const SizedBox(width: 12),
@@ -1428,7 +1432,7 @@ class _SellerChatActions extends ConsumerWidget {
   }
 
   Future<void> _openRiderChat(NavigatorState navigator, WidgetRef ref) async {
-    if (!order.status.canShowAssociatedChats) return;
+    if (!order.canShowAssociatedChats) return;
     if (!order.rider.isAssigned) return;
     final riderId = order.rider.assignedRiderId;
     if (riderId == null || riderId.isEmpty) return;
@@ -1472,7 +1476,7 @@ class _SellerChatActions extends ConsumerWidget {
     WidgetRef ref,
     String buyerNameFallback,
   ) async {
-    if (!order.status.canShowAssociatedChats) return;
+    if (!order.canShowAssociatedChats) return;
     final seller = ref.read(profileProvider).value;
     if (seller == null) return;
 
@@ -1532,11 +1536,12 @@ class _SellerChatActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!order.status.canShowAssociatedChats) {
+    if (!order.canShowAssociatedChats) {
       return const SizedBox.shrink();
     }
 
-    final hasRider = order.rider.isAssigned &&
+    final hasRider =
+        order.rider.isAssigned &&
         (order.rider.assignedRiderId?.isNotEmpty ?? false);
     final riderName = order.rider.riderNameSnapshot ?? 'Rider';
 
@@ -1658,8 +1663,7 @@ class _ChatChipButton extends StatelessWidget {
           children: [
             if (showBadge) ...[
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: primaryOrange,
                   borderRadius: BorderRadius.circular(999),

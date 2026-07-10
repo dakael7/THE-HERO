@@ -71,7 +71,7 @@ class RiderDeliveryChatsScreen extends ConsumerWidget {
             );
           }
 
-          if (!order.status.canShowAssociatedChats) {
+          if (!order.canShowAssociatedChats) {
             return const Center(
               child: Text(
                 'Los chats estarán disponibles cuando el pedido esté pagado',

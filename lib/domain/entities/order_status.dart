@@ -48,13 +48,15 @@ enum OrderStatus {
   }
 
   bool get canShowAssociatedChats {
-    return this != OrderStatus.created &&
-        this != OrderStatus.pendingPayment &&
-        this != OrderStatus.failed;
+    return this == OrderStatus.paid ||
+        this == OrderStatus.queued ||
+        this == OrderStatus.assigned ||
+        this == OrderStatus.pickedUp ||
+        this == OrderStatus.inTransit ||
+        this == OrderStatus.delivered;
   }
 
   bool get canBeCanceled {
-    return this == OrderStatus.created ||
-        this == OrderStatus.pendingPayment;
+    return this == OrderStatus.created || this == OrderStatus.pendingPayment;
   }
 }

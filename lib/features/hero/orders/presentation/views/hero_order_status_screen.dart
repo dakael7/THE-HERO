@@ -465,6 +465,15 @@ class _OrderStatusContent extends ConsumerWidget {
 
   static _StatusConfig _config(Order order) {
     final s = order.status;
+    if (order.isFulfillmentBlocked) {
+      return _StatusConfig(
+        color: const Color(0xFFB45309),
+        bg: const Color(0xFFFEF3C7),
+        icon: Icons.support_agent_rounded,
+        label: 'Pago en revision',
+      );
+    }
+
     if (order.inPersonPickup) {
       switch (s) {
         case OrderStatus.created:
@@ -578,6 +587,7 @@ class _OrderStatusContent extends ConsumerWidget {
     final cfg = _config(order);
     final isFailed = status == OrderStatus.failed;
     final isCanceled = status == OrderStatus.canceled;
+    final isFulfillmentBlocked = order.isFulfillmentBlocked;
     final hasRider =
         order.rider.isAssigned &&
         (order.rider.riderNameSnapshot?.isNotEmpty ?? false);
@@ -617,7 +627,14 @@ class _OrderStatusContent extends ConsumerWidget {
         ],
 
         // ── STATUS BANNER ────────────────────────────────────────
-        if (isCanceled)
+        if (isFulfillmentBlocked)
+          const _StatusBanner(
+            title: 'Pago recibido, pedido en revision',
+            subtitle:
+                'Tu pago fue confirmado, pero este pedido necesita revision de soporte antes de asignarlo. Te daremos una respuesta con una nueva asignacion o una devolucion.',
+            color: Color(0xFFB45309),
+          )
+        else if (isCanceled)
           _StatusBanner(
             title: 'Pedido cancelado',
             subtitle: order.cancelReason?.isNotEmpty == true
@@ -1610,7 +1627,7 @@ class _OrderChatActions extends ConsumerWidget {
   }
 
   Future<void> _openRiderChat(NavigatorState navigator, WidgetRef ref) async {
-    if (!order.status.canShowAssociatedChats) return;
+    if (!order.canShowAssociatedChats) return;
     if (!order.rider.isAssigned) return;
     final riderId = order.rider.assignedRiderId;
     if (riderId == null || riderId.isEmpty) return;
@@ -1695,7 +1712,7 @@ class _OrderChatActions extends ConsumerWidget {
     required String sellerId,
     required String offerId,
   }) async {
-    if (!order.status.canShowAssociatedChats) return;
+    if (!order.canShowAssociatedChats) return;
     final buyer = ref.read(profileProvider).value;
     if (buyer == null) return;
 
@@ -1764,7 +1781,7 @@ class _OrderChatActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!order.status.canShowAssociatedChats) {
+    if (!order.canShowAssociatedChats) {
       return const SizedBox.shrink();
     }
 

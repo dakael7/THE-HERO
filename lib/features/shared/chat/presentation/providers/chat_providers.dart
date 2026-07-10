@@ -16,7 +16,7 @@ String? _visibleOrderId(String docId, Map<String, dynamic>? data) {
     ...data,
     if (!hasOrderId) 'orderId': docId,
   }).toEntity();
-  if (!order.status.canShowAssociatedChats) return null;
+  if (!order.canShowAssociatedChats) return null;
   final orderId = order.orderId.trim();
   return orderId.isNotEmpty ? orderId : docId;
 }

@@ -25,4 +25,17 @@ void main() {
     expect(canUseChatForOrderStatus('queued'), isTrue);
     expect(canUseChatForOrderStatus('assigned'), isTrue);
   });
+
+  test('blocked paid orders cannot use chats', () {
+    expect(
+      canUseChatForOrderData({
+        'status': 'paid',
+        'fulfillmentStatus': 'blocked',
+        'fulfillmentBlockReason': 'approved_payment_without_stock_reservation',
+      }),
+      isFalse,
+    );
+
+    expect(canUseChatForOrderData({'status': 'paid'}), isTrue);
+  });
 }

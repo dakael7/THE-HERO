@@ -54,6 +54,9 @@ class Order {
   final String? buyerRatingComment;
   final String? buyerRatingBySellerId;
   final Map<String, dynamic>? coupon;
+  final String? fulfillmentStatus;
+  final String? fulfillmentBlockReason;
+  final String? supportReviewStatus;
 
   Order({
     required this.orderId,
@@ -100,12 +103,31 @@ class Order {
     this.buyerRatingComment,
     this.buyerRatingBySellerId,
     this.coupon,
+    this.fulfillmentStatus,
+    this.fulfillmentBlockReason,
+    this.supportReviewStatus,
   });
 
   bool get isAssigned => rider.isAssigned;
   bool get isActive => status.isActive;
   bool get isCompleted => status.isCompleted;
   bool get canBeCanceled => status.canBeCanceled;
+  bool get isFulfillmentBlocked {
+    final normalizedStatus = fulfillmentStatus?.trim().toLowerCase();
+    final normalizedReason = fulfillmentBlockReason?.trim().toLowerCase();
+    return normalizedStatus == 'blocked' ||
+        normalizedReason == 'approved_payment_without_stock_reservation';
+  }
+
+  bool get canShowAssociatedChats {
+    return !isFulfillmentBlocked && status.canShowAssociatedChats;
+  }
+
+  bool get needsSupportReview {
+    return isFulfillmentBlocked ||
+        supportReviewStatus?.trim().toLowerCase() == 'pending';
+  }
+
   String get effectiveDocumentType {
     final normalized = documentType.trim().toLowerCase();
     if (normalized == 'factura' || normalized == 'boleta') {
@@ -166,6 +188,9 @@ class Order {
     String? buyerRatingComment,
     String? buyerRatingBySellerId,
     Map<String, dynamic>? coupon,
+    String? fulfillmentStatus,
+    String? fulfillmentBlockReason,
+    String? supportReviewStatus,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -212,6 +237,10 @@ class Order {
       buyerRatingBySellerId:
           buyerRatingBySellerId ?? this.buyerRatingBySellerId,
       coupon: coupon ?? this.coupon,
+      fulfillmentStatus: fulfillmentStatus ?? this.fulfillmentStatus,
+      fulfillmentBlockReason:
+          fulfillmentBlockReason ?? this.fulfillmentBlockReason,
+      supportReviewStatus: supportReviewStatus ?? this.supportReviewStatus,
     );
   }
 }

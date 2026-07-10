@@ -56,6 +56,9 @@ class OrderModel {
   final String? buyerRatingComment;
   final String? buyerRatingBySellerId;
   final Map<String, dynamic>? coupon;
+  final String? fulfillmentStatus;
+  final String? fulfillmentBlockReason;
+  final String? supportReviewStatus;
 
   OrderModel({
     required this.orderId,
@@ -102,6 +105,9 @@ class OrderModel {
     this.buyerRatingComment,
     this.buyerRatingBySellerId,
     this.coupon,
+    this.fulfillmentStatus,
+    this.fulfillmentBlockReason,
+    this.supportReviewStatus,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
@@ -219,6 +225,9 @@ class OrderModel {
       coupon: (json['coupon'] is Map)
           ? (json['coupon'] as Map).cast<String, dynamic>()
           : null,
+      fulfillmentStatus: json['fulfillmentStatus'] as String?,
+      fulfillmentBlockReason: json['fulfillmentBlockReason'] as String?,
+      supportReviewStatus: json['supportReviewStatus'] as String?,
     );
   }
 
@@ -269,6 +278,9 @@ class OrderModel {
       'buyerRatingComment': buyerRatingComment,
       'buyerRatingBySellerId': buyerRatingBySellerId,
       'coupon': coupon,
+      'fulfillmentStatus': fulfillmentStatus,
+      'fulfillmentBlockReason': fulfillmentBlockReason,
+      'supportReviewStatus': supportReviewStatus,
     };
   }
 
@@ -318,6 +330,9 @@ class OrderModel {
       buyerRatingComment: buyerRatingComment,
       buyerRatingBySellerId: buyerRatingBySellerId,
       coupon: coupon,
+      fulfillmentStatus: fulfillmentStatus,
+      fulfillmentBlockReason: fulfillmentBlockReason,
+      supportReviewStatus: supportReviewStatus,
     );
   }
 
@@ -376,6 +391,9 @@ class OrderModel {
       buyerRatingComment: entity.buyerRatingComment,
       buyerRatingBySellerId: entity.buyerRatingBySellerId,
       coupon: entity.coupon,
+      fulfillmentStatus: entity.fulfillmentStatus,
+      fulfillmentBlockReason: entity.fulfillmentBlockReason,
+      supportReviewStatus: entity.supportReviewStatus,
     );
   }
 
