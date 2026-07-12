@@ -11,9 +11,48 @@ const { isSupportUser } = require("./supportAuth");
 const {
   decideLicenseVerificationStatus,
 } = require("./licenseVerificationPolicy");
+const {
+  extractLicenseFieldsFromVision,
+  preprocessLicenseImageForOcr,
+  runVisionDocumentOcrForBuffer,
+} = require("./licenseOcr");
 
 const STORAGE_REGION = "southamerica-west1";
+const OCR_TRIGGER_OPTIONS = {
+  region: STORAGE_REGION,
+  timeoutSeconds: 120,
+  memory: "1GiB",
+};
+const OCR_STEP_TIMEOUTS = {
+  download: 15000,
+  preprocess: 35000,
+  vision: 45000,
+  antifraud: 15000,
+};
 const visionClient = new vision.ImageAnnotatorClient();
+
+function withTimeout(promise, timeoutMs, code) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const error = new Error(code);
+      error.code = code;
+      reject(error);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() =>
+    clearTimeout(timeoutId),
+  );
+}
+
+function ocrErrorCode(error) {
+  return typeof error?.code === "string" ? error.code : "ocr_error";
+}
+
+function ocrErrorMessage(error) {
+  return String(error?.message || error || "ocr_error").slice(0, 300);
+}
 
 /**
  * Aprueba o rechaza una solicitud de verificación de vehículo.
@@ -284,64 +323,10 @@ function countRutKeywords(text) {
   return { hits, matched };
 }
 
-function countLicenseKeywords(text) {
-  const t = stripDiacritics(String(text || "")).toUpperCase();
-  const keywords = ["LICENCIA DE CONDUCIR", "CLASE", "REPUBLICA DE CHILE"];
-
-  let hits = 0;
-  const matched = [];
-  for (const k of keywords) {
-    if (t.includes(k)) {
-      hits++;
-      matched.push(k);
-    }
-  }
-  return { hits, matched };
-}
-
 function normalizeLicenseClass(raw) {
   if (!raw) return null;
   const c = stripDiacritics(String(raw)).toUpperCase().replace(/\s+/g, "");
   return c;
-}
-
-function extractLicenseClass(text) {
-  const t = stripDiacritics(String(text || "")).toUpperCase();
-  // Prefer explicit "CLASE" marker
-  const m = t.match(/\bCLASE\b\s*[:\-]?\s*([A-C]\s?\d?)/);
-  if (m && m[1]) return normalizeLicenseClass(m[1]);
-
-  // Secondary: look for A4/A5 tokens
-  if (t.includes("A4")) return "A4";
-  if (t.includes("A5")) return "A5";
-
-  // Very conservative fallback for B/C
-  if (t.match(/\bCLASE\s*B\b/)) return "B";
-  if (t.match(/\bCLASE\s*C\b/)) return "C";
-
-  return null;
-}
-
-function extractExpiryDate(text) {
-  const t = stripDiacritics(String(text || "")).toUpperCase();
-  // Common patterns: VENCIMIENTO 12/09/2028, VENC. 12-09-2028
-  const near = t.match(
-    /(VENC|VENCIMIENTO|CADUCIDAD)[^0-9]{0,25}(\d{2}[\/-]\d{2}[\/-]\d{4})/,
-  );
-  const raw =
-    near && near[2]
-      ? near[2]
-      : (t.match(/\b(\d{2}[\/-]\d{2}[\/-]\d{4})\b/) || [null, null])[1];
-  if (!raw) return null;
-
-  const parts = raw.split(/[\/-]/).map((n) => Number(n));
-  if (parts.length !== 3) return null;
-  const [dd, mm, yyyy] = parts;
-  if (!dd || !mm || !yyyy) return null;
-
-  const d = new Date(Date.UTC(yyyy, mm - 1, dd, 23, 59, 59));
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
 }
 
 function normalizeNameForMatch(name) {
@@ -370,59 +355,6 @@ function nameMatchRatio({ declaredFullName, extractedFullName }) {
     if (e.has(t)) inter++;
   }
   return inter / d.size;
-}
-
-function extractNameHeuristic({ ocrText, declaredFullName }) {
-  const lines = String(ocrText || "")
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-
-  const declared = normalizeNameForMatch(declaredFullName);
-  const declaredTokens = nameTokenSet(declared);
-
-  // 1) Explicit markers
-  for (let i = 0; i < lines.length; i++) {
-    const ln = normalizeNameForMatch(lines[i]);
-    if (ln.includes("NOMBRES") || ln.includes("NOMBRE")) {
-      const candidate = normalizeNameForMatch(lines[i + 1] || "");
-      if (candidate.length >= 8) return candidate;
-    }
-    if (ln.includes("APELLIDOS") || ln.includes("APELLIDO")) {
-      const candidate = normalizeNameForMatch(lines[i + 1] || "");
-      if (candidate.length >= 8) return candidate;
-    }
-  }
-
-  // 2) Best overlap line
-  let best = null;
-  let bestScore = 0;
-  for (const raw of lines) {
-    const candidate = normalizeNameForMatch(raw);
-    if (candidate.length < 8 || candidate.length > 60) continue;
-    if (
-      /\b(REPUBLICA|CHILE|LICENCIA|CONDUCIR|CLASE|VENC|VENCIMIENTO|FECHA|DIRECCION|DOMICILIO|NACIONALIDAD)\b/.test(
-        candidate,
-      )
-    ) {
-      continue;
-    }
-
-    const tokens = nameTokenSet(candidate);
-    if (tokens.size < 2) continue;
-
-    let inter = 0;
-    for (const t of declaredTokens) {
-      if (tokens.has(t)) inter++;
-    }
-    const score = declaredTokens.size > 0 ? inter / declaredTokens.size : 0;
-    if (score > bestScore) {
-      bestScore = score;
-      best = candidate;
-    }
-  }
-
-  return best;
 }
 
 function validateLicenseClassForVehicle({ vehicleType, licenseClass }) {
@@ -564,7 +496,7 @@ async function resolveLicenseVerificationFiles({ bucketName, requestPrefix }) {
 }
 
 exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
-  { region: STORAGE_REGION },
+  OCR_TRIGGER_OPTIONS,
   async (event) => {
     const object = event.data;
     const filePath = object.name;
@@ -642,10 +574,14 @@ exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
     );
 
     try {
-      const text = await runVisionOcrForGcsUri({
-        gcsUri,
-        mimeType: isPdf ? "application/pdf" : contentType,
-      });
+      const text = await withTimeout(
+        runVisionOcrForGcsUri({
+          gcsUri,
+          mimeType: isPdf ? "application/pdf" : contentType,
+        }),
+        OCR_STEP_TIMEOUTS.vision,
+        "vision_timeout",
+      );
 
       const candidates = extractRutCandidates(text);
       const extractedRut = candidates.length > 0 ? candidates[0] : null;
@@ -736,6 +672,9 @@ exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
         error,
       });
 
+      const errorCode = ocrErrorCode(error);
+      const errorMessage = ocrErrorMessage(error);
+
       await userRef.set(
         {
           riderProfile: {
@@ -746,7 +685,14 @@ exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
                   filePath,
                   contentType,
                   processedAt: now,
-                  errorCodes: ["ocr_error"],
+                  errorCodes: [errorCode],
+                  errorMessage,
+                },
+                verification: {
+                  status: "failed",
+                  verifiedAt: null,
+                  requestId,
+                  mode: "ocr",
                 },
               },
             },
@@ -760,7 +706,8 @@ exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
           updatedAt: now,
           status: "failed",
           ocr: {
-            errorCodes: ["ocr_error"],
+            errorCodes: [errorCode],
+            errorMessage,
             processedAt: now,
           },
         },
@@ -774,7 +721,7 @@ exports.ocrVehicleVerificationLicenseOnUpload = onObjectFinalized(
 
 
 exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
-  { region: STORAGE_REGION },
+  OCR_TRIGGER_OPTIONS,
   async (event) => {
     const object = event.data;
     const filePath = object.name;
@@ -801,16 +748,61 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
     if (!isLicenseFile) return null;
 
     const requestPrefix = `${segments.slice(0, 5).join("/")}/`;
-    const licenseFiles = await resolveLicenseVerificationFiles({
-      bucketName: object.bucket,
-      requestPrefix,
-    });
+    const earlyReqRef = admin
+      .firestore()
+      .collection("users")
+      .doc(userId)
+      .collection("license_verification_requests")
+      .doc(requestId);
+    let licenseFiles;
+    try {
+      licenseFiles = await withTimeout(
+        resolveLicenseVerificationFiles({
+          bucketName: object.bucket,
+          requestPrefix,
+        }),
+        OCR_STEP_TIMEOUTS.download,
+        "resolve_license_files_timeout",
+      );
+    } catch (error) {
+      const failedAt = admin.firestore.FieldValue.serverTimestamp();
+      const errorCode = ocrErrorCode(error);
+      await earlyReqRef.set(
+        {
+          updatedAt: failedAt,
+          status: "failed",
+          ocr: {
+            phase: "failed",
+            filePath,
+            contentType,
+            errorCodes: [errorCode],
+            errorMessage: ocrErrorMessage(error),
+            processedAt: failedAt,
+          },
+        },
+        { merge: true },
+      );
+      return null;
+    }
     if (!licenseFiles) {
       logger.info("[ocrLicenseVerification] waiting for both sides", {
         userId,
         requestId,
         filePath,
       });
+      const waitingAt = admin.firestore.FieldValue.serverTimestamp();
+      await earlyReqRef.set(
+        {
+          updatedAt: waitingAt,
+          status: "submitted",
+          ocr: {
+            phase: "waiting_for_both_sides",
+            filePath,
+            contentType,
+          },
+        },
+        { merge: true },
+      );
       return null;
     }
 
@@ -856,6 +848,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
             mode: "ocr",
             updatedAt: now,
             ocr: {
+              phase: "done",
               filePath: ocrFilePath,
               contentType: ocrContentType,
               processedAt: now,
@@ -924,17 +917,6 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
       .doc(requestId);
     const reqSnap = await reqRef.get();
     const reqData = reqSnap.exists ? reqSnap.data() || {} : {};
-    if (
-      ["approved", "rejected"].includes(reqData.status) &&
-      reqData?.ocr?.processedAt
-    ) {
-      logger.info("[ocrLicenseVerification] already processed", {
-        userId,
-        requestId,
-        status: reqData.status,
-      });
-      return null;
-    }
 
     const normalizeVehicleType = (raw) => {
       if (typeof raw !== "string") return null;
@@ -966,6 +948,33 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
           }
         : {};
 
+    if (
+      ["approved", "rejected"].includes(reqData.status) &&
+      reqData?.ocr?.processedAt
+    ) {
+      const repairedAt = admin.firestore.FieldValue.serverTimestamp();
+      const repairPatch = perVehicleLicensePatch({
+        status: reqData.status,
+        requestId,
+        mode: "ocr",
+        updatedAt: repairedAt,
+        verifiedAt: reqData.status === "approved" ? repairedAt : null,
+        ocr: reqData.ocr,
+      });
+
+      if (Object.keys(repairPatch).length > 0) {
+        await userRef.set(repairPatch, { merge: true });
+      }
+
+      logger.info("[ocrLicenseVerification] already processed", {
+        userId,
+        requestId,
+        vehicleType,
+        status: reqData.status,
+      });
+      return null;
+    }
+
     const roles = Array.isArray(userData.roles) ? userData.roles : [];
     const isRider = roles.includes("rider");
     if (!isRider) {
@@ -983,6 +992,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
             mode: "ocr",
             updatedAt: now,
             ocr: {
+              phase: "done",
               filePath: ocrFilePath,
               contentType: ocrContentType,
               processedAt: now,
@@ -1020,13 +1030,15 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
       return null;
     }
 
-    const declaredRut = userData?.identity?.documentId;
+    const declaredRut =
+      userData?.identity?.documentId || reqData?.declared?.rut;
     const declaredNormalized = normalizeRut(declaredRut);
     const declaredFullName =
-      `${userData?.identity?.firstName || ""} ${userData?.identity?.lastName || ""}`.trim();
+      `${userData?.identity?.firstName || ""} ${userData?.identity?.lastName || ""}`.trim() ||
+      String(reqData?.declared?.fullName || "").trim();
     const declaredFullNameNorm = normalizeNameForMatch(declaredFullName);
 
-    const gcsUri = `gs://${object.bucket}/${ocrFilePath}`;
+    const bucket = admin.storage().bucket(object.bucket);
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     // Mark processing
@@ -1061,38 +1073,73 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
       { merge: true },
     );
 
+    const setLicensePhase = async (phase) => {
+      const phaseAt = admin.firestore.FieldValue.serverTimestamp();
+      await reqRef.set(
+        {
+          updatedAt: phaseAt,
+          status: "processing",
+          ocr: {
+            phase,
+            filePath: ocrFilePath,
+            contentType: ocrContentType,
+          },
+        },
+        { merge: true },
+      );
+    };
+
     try {
-      const frontText = await runVisionOcrForGcsUri({
-        gcsUri,
-        mimeType: isPdf ? "application/pdf" : ocrContentType,
-      });
+      await setLicensePhase("downloading_images");
       const backPath = licenseFiles.backPath;
-      const backContentType = licenseFiles.backContentType || "";
-      const backGcsUri = `gs://${object.bucket}/${backPath}`;
-      const backIsPdf =
-        backContentType === "application/pdf" ||
-        backPath.toLowerCase().endsWith(".pdf");
-      const backText = await runVisionOcrForGcsUri({
-        gcsUri: backGcsUri,
-        mimeType: backIsPdf ? "application/pdf" : backContentType,
+      const [[frontBuffer], [backBuffer]] = await withTimeout(
+        Promise.all([
+          bucket.file(ocrFilePath).download(),
+          bucket.file(backPath).download(),
+        ]),
+        OCR_STEP_TIMEOUTS.download,
+        "download_timeout",
+      );
+
+      await setLicensePhase("preprocessing_images");
+      const [frontPreprocessed, backPreprocessed] = await withTimeout(
+        Promise.all([
+          preprocessLicenseImageForOcr(frontBuffer),
+          preprocessLicenseImageForOcr(backBuffer),
+        ]),
+        OCR_STEP_TIMEOUTS.preprocess,
+        "preprocess_timeout",
+      );
+
+      await setLicensePhase("running_vision_ocr");
+      const [frontAnnotation, backAnnotation] = await withTimeout(
+        Promise.all([
+          runVisionDocumentOcrForBuffer({
+            visionClient,
+            imageBuffer: frontPreprocessed.buffer,
+          }),
+          runVisionDocumentOcrForBuffer({
+            visionClient,
+            imageBuffer: backPreprocessed.buffer,
+          }),
+        ]),
+        OCR_STEP_TIMEOUTS.vision,
+        "vision_timeout",
+      );
+
+      await setLicensePhase("reading_fields");
+      const licenseFields = extractLicenseFieldsFromVision({
+        frontAnnotation,
+        backAnnotation,
       });
 
-      const ocrText = [frontText, backText].filter(Boolean).join("\n");
-      const documentDetected = ocrText.trim().length >= 40;
-      const keywordResult = countLicenseKeywords(ocrText);
+      const documentDetected = licenseFields.documentDetected;
+      const keywordResult = {
+        hits: licenseFields.detectedLabels.length,
+        matched: licenseFields.detectedLabels,
+      };
       const keywordsOk = keywordResult.hits >= 2;
-
-      const candidates = extractRutCandidates(ocrText);
-      const declaredRutCandidate = declaredNormalized
-        ? candidates.find(
-            (candidate) => normalizeRut(candidate) === declaredNormalized,
-          )
-        : null;
-      const extractedRutRaw =
-        declaredRutCandidate || (candidates.length > 0 ? candidates[0] : null);
-      const extractedRut = extractedRutRaw
-        ? normalizeRut(extractedRutRaw)
-        : null;
+      const extractedRut = licenseFields.rut;
       const strictRutOk = extractedRut
         ? /^\d{7,8}-[0-9K]$/.test(extractedRut)
         : false;
@@ -1102,16 +1149,14 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
           ? extractedRut === declaredNormalized
           : false;
 
-      const extractedLicenseClass = extractLicenseClass(ocrText);
-      const expiryIso = extractExpiryDate(ocrText);
+      const extractedLicenseClass = licenseFields.licenseClass;
+      const expiryIso = licenseFields.expiryDate;
+      const birthDateIso = licenseFields.birthDate;
       const expired = expiryIso
         ? new Date(expiryIso).getTime() < Date.now()
         : false;
 
-      const extractedName = extractNameHeuristic({
-        ocrText,
-        declaredFullName: declaredFullNameNorm,
-      });
+      const extractedName = licenseFields.fullName;
       const nameRatio = extractedName
         ? nameMatchRatio({
             declaredFullName: declaredFullNameNorm,
@@ -1125,10 +1170,15 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
         licenseClass: extractedLicenseClass,
       });
 
-      const antifraud = await computeAntifraudSignalsFromStorageObject({
-        bucketName: object.bucket,
-        filePath: ocrFilePath,
-      });
+      await setLicensePhase("checking_texture");
+      const antifraud = await withTimeout(
+        computeAntifraudSignalsFromStorageObject({
+          bucketName: object.bucket,
+          filePath: ocrFilePath,
+        }),
+        OCR_STEP_TIMEOUTS.antifraud,
+        "antifraud_timeout",
+      );
 
       const whiteRatio =
         typeof antifraud.whiteRatio === "number" ? antifraud.whiteRatio : null;
@@ -1148,8 +1198,15 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
         variance !== null &&
         whiteRatio <= thresholds.maxWhiteRatio &&
         variance >= thresholds.minVariance;
+      const matchingRutOk =
+        Boolean(declaredRut) &&
+        Boolean(extractedRut) &&
+        strictRutOk &&
+        dvValid &&
+        matchDeclared;
+      const sparseSealedLicenseOk = matchingRutOk && textureValid;
 
-      const score =
+      const baseScore =
         (documentDetected ? 20 : 0) +
         (keywordsOk ? 15 : 0) +
         (dvValid ? 20 : 0) +
@@ -1158,12 +1215,14 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
         (classCheck.ok ? 5 : 0) +
         (!expired ? 5 : 0) +
         (textureValid ? 20 : 0);
+      const score = Math.min(100, baseScore + (sparseSealedLicenseOk ? 20 : 0));
 
-      const suspiciousAttempt = score < 80;
+      const suspiciousAttempt = score < 80 && !sparseSealedLicenseOk;
       const errors = [];
 
-      if (!documentDetected) errors.push("document_not_detected");
-      if (!keywordsOk) errors.push("missing_keywords");
+      if (!documentDetected && !sparseSealedLicenseOk)
+        errors.push("document_not_detected");
+      if (!keywordsOk && !sparseSealedLicenseOk) errors.push("missing_keywords");
       if (!declaredRut) errors.push("missing_declared_rut");
       if (!extractedRut) errors.push("rut_not_found");
       if (extractedRut && !strictRutOk) errors.push("rut_format_invalid");
@@ -1172,15 +1231,15 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
       if (declaredRut && extractedRut && dvValid && !matchDeclared)
         errors.push("rut_mismatch_declared");
 
-      if (!extractedName) errors.push("name_not_found");
+      if (!extractedName && !matchingRutOk) errors.push("name_not_found");
       if (extractedName && !nameMatchOk) errors.push("name_mismatch_declared");
 
-      if (!extractedLicenseClass && vehicleType !== "bicycle")
-        errors.push("license_class_not_found");
-      if (!expiryIso) errors.push("license_expiry_not_found");
+      if (!birthDateIso && !matchingRutOk) errors.push("birth_date_not_found");
+      if (!expiryIso && !matchingRutOk) errors.push("license_expiry_not_found");
       if (expired) errors.push("license_expired");
-      if (!classCheck.ok) errors.push(classCheck.reason);
+      if (extractedLicenseClass && !classCheck.ok) errors.push(classCheck.reason);
 
+      errors.push(...licenseFields.errorCodes);
       if (!textureValid) errors.push("antifraud_texture_invalid");
       if (suspiciousAttempt) errors.push("suspicious_low_score");
       if (
@@ -1189,6 +1248,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
       ) {
         errors.push(...antifraud.errorCodes);
       }
+      const errorCodes = Array.from(new Set(errors.filter(Boolean)));
 
       const verificationStatus = decideLicenseVerificationStatus({
         documentDetected,
@@ -1216,6 +1276,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
             mode: "ocr",
             verifiedAt: verificationStatus === "approved" ? now : null,
             ocr: {
+              phase: "done",
               filePath: ocrFilePath,
               contentType: ocrContentType,
               processedAt: now,
@@ -1228,9 +1289,15 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
               extractedName,
               nameMatchRatio: nameRatio,
               licenseClass: extractedLicenseClass,
+              birthDate: birthDateIso,
               expiryDate: expiryIso,
               vehicleType,
               classOk: classCheck.ok,
+              fieldSources: licenseFields.sources,
+              preprocessing: {
+                front: frontPreprocessed.metadata,
+                back: backPreprocessed.metadata,
+              },
               antifraud: {
                 score,
                 suspiciousAttempt,
@@ -1241,7 +1308,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
                 thresholds,
                 textureValid,
               },
-              errorCodes: errors,
+              errorCodes,
             },
           },
           ...perVehicleLicensePatch({
@@ -1250,6 +1317,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
             mode: "ocr",
             verifiedAt: verificationStatus === "approved" ? now : null,
             ocr: {
+              phase: "done",
               filePath: ocrFilePath,
               contentType: ocrContentType,
               processedAt: now,
@@ -1262,9 +1330,15 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
               extractedName,
               nameMatchRatio: nameRatio,
               licenseClass: extractedLicenseClass,
+              birthDate: birthDateIso,
               expiryDate: expiryIso,
               vehicleType,
               classOk: classCheck.ok,
+              fieldSources: licenseFields.sources,
+              preprocessing: {
+                front: frontPreprocessed.metadata,
+                back: backPreprocessed.metadata,
+              },
               antifraud: {
                 score,
                 suspiciousAttempt,
@@ -1275,7 +1349,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
                 thresholds,
                 textureValid,
               },
-              errorCodes: errors,
+              errorCodes,
             },
           }),
         },
@@ -1288,18 +1362,25 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
           status: verificationStatus,
           score,
           ocr: {
+            phase: "done",
             extractedRut,
             dvValid,
             matchDeclared,
             extractedName,
             nameMatchRatio: nameRatio,
             licenseClass: extractedLicenseClass,
+            birthDate: birthDateIso,
             expiryDate: expiryIso,
             vehicleType,
             classOk: classCheck.ok,
             keywordHits: keywordResult.hits,
             keywordMatched: keywordResult.matched,
-            errorCodes: errors,
+            fieldSources: licenseFields.sources,
+            preprocessing: {
+              front: frontPreprocessed.metadata,
+              back: backPreprocessed.metadata,
+            },
+            errorCodes,
             processedAt: now,
           },
         },
@@ -1312,7 +1393,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
           requestId,
           vehicleType,
           score,
-          errorCodes: errors,
+          errorCodes,
           createdAt: now,
         });
       }
@@ -1330,28 +1411,37 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
         error,
       });
 
+      const errorCode = ocrErrorCode(error);
+      const errorMessage = ocrErrorMessage(error);
+
       await userRef.set(
         {
           licenseVerification: {
             status: "failed",
             requestId,
             mode: "ocr",
+            updatedAt: now,
             ocr: {
+              phase: "failed",
               filePath: ocrFilePath,
               contentType: ocrContentType,
               processedAt: now,
-              errorCodes: ["ocr_error"],
+              errorCodes: [errorCode],
+              errorMessage,
             },
           },
           ...perVehicleLicensePatch({
             status: "failed",
             requestId,
             mode: "ocr",
+            updatedAt: now,
             ocr: {
+              phase: "failed",
               filePath: ocrFilePath,
               contentType: ocrContentType,
               processedAt: now,
-              errorCodes: ["ocr_error"],
+              errorCodes: [errorCode],
+              errorMessage,
             },
           }),
         },
@@ -1363,7 +1453,9 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
           updatedAt: now,
           status: "failed",
           ocr: {
-            errorCodes: ["ocr_error"],
+            phase: "failed",
+            errorCodes: [errorCode],
+            errorMessage,
             processedAt: now,
           },
         },
@@ -1374,7 +1466,8 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
         type: "license_verification_failed",
         requestId,
         score: 0,
-        errorCodes: ["ocr_error"],
+        errorCodes: [errorCode],
+        errorMessage,
         createdAt: now,
       });
     }
@@ -1384,7 +1477,7 @@ exports.ocrLicenseVerificationOnUpload = onObjectFinalized(
 );
 
 exports.ocrRutVerificationOnUpload = onObjectFinalized(
-  { region: STORAGE_REGION },
+  OCR_TRIGGER_OPTIONS,
   async (event) => {
     const object = event.data;
     const filePath = object.name;

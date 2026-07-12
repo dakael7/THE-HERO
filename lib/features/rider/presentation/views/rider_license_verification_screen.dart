@@ -10,6 +10,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/vehicle.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
+import '../providers/rider_verification_request_providers.dart';
 
 class RiderLicenseVerificationScreen extends ConsumerStatefulWidget {
   final VehicleType vehicleType;
@@ -59,7 +60,7 @@ class _RiderLicenseVerificationScreenState
     }
   }
 
-  String? _vehicleLicenseStatus(dynamic user) {
+  Map<String, dynamic>? _vehicleLicenseVerification(dynamic user) {
     if (user == null) return null;
     final vehicles = user.riderProfile?.vehicles;
     final vehicleEntry = vehicles?[widget.vehicleType.name];
@@ -70,8 +71,11 @@ class _RiderLicenseVerificationScreenState
     final vehicleLicenseMap = vehicleLicenseRaw is Map
         ? Map<String, dynamic>.from(vehicleLicenseRaw)
         : null;
-    return vehicleLicenseMap?['status']?.toString() ??
-        user.licenseVerificationStatus;
+    return vehicleLicenseMap;
+  }
+
+  String? _vehicleLicenseStatus(dynamic user) {
+    return _vehicleLicenseVerification(user)?['status']?.toString();
   }
 
   void _showLockedSnackBar() {
@@ -322,10 +326,9 @@ class _RiderLicenseVerificationScreenState
 
   Future<void> _pickImage({
     required String label,
+    required String? status,
     required void Function(Uint8List bytes, String name) onPicked,
   }) async {
-    final profile = await ref.read(profileProvider.future);
-    final status = _vehicleLicenseStatus(profile);
     if (!_canEditForStatus(status)) {
       _showLockedSnackBar();
       return;
@@ -410,11 +413,10 @@ class _RiderLicenseVerificationScreenState
     return await ref.getDownloadURL();
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit(String? status) async {
     if (_saving) return;
 
     final profile = await ref.read(profileProvider.future);
-    final status = _vehicleLicenseStatus(profile);
     if (!_canEditForStatus(status)) {
       _showLockedSnackBar();
       return;
@@ -499,13 +501,6 @@ class _RiderLicenseVerificationScreenState
 
       try {
         await db.collection('users').doc(user.id).set({
-          'licenseVerification': {
-            'requestId': requestId,
-            'status': 'submitted',
-            'submittedAt': now.toIso8601String(),
-            'verifiedAt': null,
-            'mode': null,
-          },
           'riderProfile': {
             'vehicles': {
               vehicleType.name: {
@@ -522,7 +517,7 @@ class _RiderLicenseVerificationScreenState
         }, firestore.SetOptions(merge: true));
       } catch (e) {
         throw Exception(
-          'Paso: actualizar user.licenseVerification (Firestore). ${_formatFirebaseException(e)}',
+          'Paso: actualizar licencia del vehiculo (Firestore). ${_formatFirebaseException(e)}',
         );
       }
 
@@ -598,7 +593,60 @@ class _RiderLicenseVerificationScreenState
   Widget build(BuildContext context) {
     final userAsync = ref.watch(profileStreamProvider);
     final user = userAsync.value;
-    final status = _vehicleLicenseStatus(user);
+    final vehicleLicense = _vehicleLicenseVerification(user);
+    final requestId = vehicleLicense?['requestId']?.toString();
+    final requestDataById =
+        user != null && requestId != null && requestId.trim().isNotEmpty
+        ? ref
+              .watch(
+                licenseVerificationRequestProvider(
+                  RiderVerificationRequestKey(
+                    userId: user.id,
+                    requestId: requestId,
+                  ),
+                ),
+              )
+              .value
+        : null;
+    final latestRequestData = user != null
+        ? ref
+              .watch(
+                latestLicenseVerificationRequestProvider(
+                  RiderVerificationVehicleKey(
+                    userId: user.id,
+                    vehicleType: widget.vehicleType.name,
+                  ),
+                ),
+              )
+              .value
+        : null;
+    final requestData = latestRequestData ?? requestDataById;
+    final status = resolveVerificationStatus(
+      requestData: requestData,
+      profileData: vehicleLicense,
+    );
+    final requestOcr = requestData?['ocr'] is Map
+        ? Map<String, dynamic>.from(requestData!['ocr'] as Map)
+        : null;
+    final profileOcr = vehicleLicense?['ocr'] is Map
+        ? Map<String, dynamic>.from(vehicleLicense!['ocr'] as Map)
+        : null;
+    final ocr = requestOcr ?? profileOcr;
+    final ocrPhase = ocr?['phase']?.toString();
+    final ocrErrorMessage = ocr?['errorMessage']?.toString();
+    final errorCodesRaw = ocr?['errorCodes'];
+    final errorCodes = errorCodesRaw is List
+        ? errorCodesRaw
+              .map((e) => e.toString())
+              .where((e) => e.trim().isNotEmpty)
+              .toList()
+        : const <String>[];
+    final ocrDetails = <String>[
+      if (ocrPhase != null && ocrPhase != 'done') 'Etapa: $ocrPhase',
+      if (errorCodes.isNotEmpty) 'Detalle: ${errorCodes.join(', ')}',
+      if (ocrErrorMessage != null && ocrErrorMessage.trim().isNotEmpty)
+        'Error: $ocrErrorMessage',
+    ];
     final canEdit = _canEditForStatus(status);
 
     final accent = _statusAccentColor(status);
@@ -693,6 +741,17 @@ class _RiderLicenseVerificationScreenState
                                 color: textGray700,
                               ),
                             ),
+                            if (ocrDetails.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                ocrDetails.join('\n'),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: textGray700,
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 12),
                             _timeline(
                               step: timelineStep,
@@ -800,6 +859,7 @@ class _RiderLicenseVerificationScreenState
                     }
                     _pickImage(
                       label: 'licencia (frente)',
+                      status: status,
                       onPicked: (b, n) {
                         _front = b;
                         _frontName = n;
@@ -818,6 +878,7 @@ class _RiderLicenseVerificationScreenState
                     }
                     _pickImage(
                       label: 'licencia (reverso)',
+                      status: status,
                       onPicked: (b, n) {
                         _back = b;
                         _backName = n;
@@ -832,7 +893,7 @@ class _RiderLicenseVerificationScreenState
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: (_saving || !canEdit) ? null : _submit,
+              onPressed: (_saving || !canEdit) ? null : () => _submit(status),
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryOrange,
                 foregroundColor: backgroundWhite,

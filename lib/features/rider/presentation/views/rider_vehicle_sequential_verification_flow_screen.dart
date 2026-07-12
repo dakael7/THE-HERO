@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/vehicle.dart';
+import '../providers/rider_verification_request_providers.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import 'rider_license_verification_screen.dart';
 import 'rider_vehicle_verification_screen.dart';
 
-class RiderVehicleSequentialVerificationFlowScreen extends ConsumerStatefulWidget {
+class RiderVehicleSequentialVerificationFlowScreen
+    extends ConsumerStatefulWidget {
   final VehicleType vehicleType;
 
   const RiderVehicleSequentialVerificationFlowScreen({
@@ -79,9 +81,8 @@ class _RiderVehicleSequentialVerificationFlowScreenState
     try {
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => RiderLicenseVerificationScreen(
-            vehicleType: widget.vehicleType,
-          ),
+          builder: (_) =>
+              RiderLicenseVerificationScreen(vehicleType: widget.vehicleType),
         ),
       );
       ref.invalidate(profileProvider);
@@ -96,9 +97,8 @@ class _RiderVehicleSequentialVerificationFlowScreenState
     try {
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => RiderVehicleVerificationScreen(
-            vehicleType: widget.vehicleType,
-          ),
+          builder: (_) =>
+              RiderVehicleVerificationScreen(vehicleType: widget.vehicleType),
         ),
       );
       ref.invalidate(profileProvider);
@@ -144,8 +144,9 @@ class _RiderVehicleSequentialVerificationFlowScreenState
           final licenseRequired = _licenseRequired();
           final vehicles = user.riderProfile?.vehicles;
           final vehicleEntry = vehicles?[widget.vehicleType.name];
-          final vehicleEntryMap =
-              vehicleEntry is Map ? Map<String, dynamic>.from(vehicleEntry) : null;
+          final vehicleEntryMap = vehicleEntry is Map
+              ? Map<String, dynamic>.from(vehicleEntry)
+              : null;
           final vehicleLicenseVerificationRaw =
               vehicleEntryMap?['licenseVerification'];
           final vehicleLicenseVerification =
@@ -154,12 +155,47 @@ class _RiderVehicleSequentialVerificationFlowScreenState
               : null;
           final vehicleLicenseStatus = vehicleLicenseVerification?['status']
               ?.toString();
+          final vehicleLicenseRequestId =
+              vehicleLicenseVerification?['requestId']?.toString();
+          final requestDataById =
+              licenseRequired &&
+                  vehicleLicenseRequestId != null &&
+                  vehicleLicenseRequestId.trim().isNotEmpty
+              ? ref
+                    .watch(
+                      licenseVerificationRequestProvider(
+                        RiderVerificationRequestKey(
+                          userId: user.id,
+                          requestId: vehicleLicenseRequestId,
+                        ),
+                      ),
+                    )
+                    .value
+              : null;
+          final latestRequestData = licenseRequired
+              ? ref
+                    .watch(
+                      latestLicenseVerificationRequestProvider(
+                        RiderVerificationVehicleKey(
+                          userId: user.id,
+                          vehicleType: widget.vehicleType.name,
+                        ),
+                      ),
+                    )
+                    .value
+              : null;
+          final requestData = latestRequestData ?? requestDataById;
 
           final licenseStatus = licenseRequired
-              ? (vehicleLicenseStatus ?? user.licenseVerificationStatus)
+              ? resolveVerificationStatus(
+                  requestData: requestData,
+                  profileData: vehicleLicenseVerification,
+                  fallbackStatus: vehicleLicenseStatus,
+                )
               : null;
           final licenseApproved =
-              !licenseRequired || (licenseStatus?.trim().toLowerCase() == 'approved');
+              !licenseRequired ||
+              (licenseStatus?.trim().toLowerCase() == 'approved');
 
           final canStartLicense = _canStartLicenseForStatus(licenseStatus);
 
@@ -195,10 +231,12 @@ class _RiderVehicleSequentialVerificationFlowScreenState
                 enabled: licenseRequired ? canStartLicense : false,
                 primaryLabel: licenseRequired
                     ? (licenseStatus == 'rejected' || licenseStatus == 'failed')
-                        ? 'Reintentar'
-                        : 'Abrir'
+                          ? 'Reintentar'
+                          : 'Abrir'
                     : 'No aplica',
-                onPrimary: licenseRequired && canStartLicense ? _openLicense : null,
+                onPrimary: licenseRequired && canStartLicense
+                    ? _openLicense
+                    : null,
               ),
               const SizedBox(height: 12),
               _FlowStepCard(
@@ -230,10 +268,10 @@ class _RiderVehicleSequentialVerificationFlowScreenState
                     _working
                         ? 'Abriendo…'
                         : step2Enabled
-                            ? 'Continuar con vehículo'
-                            : licenseRequired
-                                ? 'Comenzar con licencia'
-                                : 'Continuar',
+                        ? 'Continuar con vehículo'
+                        : licenseRequired
+                        ? 'Comenzar con licencia'
+                        : 'Continuar',
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ),

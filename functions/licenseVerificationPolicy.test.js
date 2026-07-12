@@ -39,6 +39,27 @@ test("approves soft OCR misses when identity still matches", () => {
   );
 });
 
+test("approves sealed sparse license when RUN matches", () => {
+  assert.equal(
+    decideLicenseVerificationStatus({
+      ...approvedSignals,
+      documentDetected: false,
+      keywordsOk: false,
+      extractedRut: "27948403-7",
+      declaredRut: "27948403-7",
+      matchDeclared: true,
+      extractedName: null,
+      nameMatchOk: false,
+      expiryIso: null,
+      licenseClassDetected: false,
+      classOk: false,
+      textureValid: true,
+      suspiciousAttempt: true,
+    }),
+    "approved",
+  );
+});
+
 test("approves missing expiry, but rejects confirmed expired license", () => {
   assert.equal(
     decideLicenseVerificationStatus({

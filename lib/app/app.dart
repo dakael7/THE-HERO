@@ -10,6 +10,7 @@ import '../features/auth/presentation/providers/session_provider.dart';
 import '../features/auth/presentation/views/unverified_email_screen.dart';
 import '../features/hero/presentation/views/hero_home_screen.dart';
 import '../features/rider/presentation/views/rider_home_screen.dart';
+import '../features/shared/profile/presentation/views/rut_verification_screen.dart';
 
 class App extends ConsumerWidget {
   const App({super.key});
@@ -23,7 +24,18 @@ class App extends ConsumerWidget {
       navigatorKey: NotificationHandler().navigatorKey,
       scrollBehavior: const _NoStretchScrollBehavior(),
       builder: (context, child) {
-        return SafeArea(child: child ?? const SizedBox.shrink());
+        final recoveryEnabled = bootstrapAsync.maybeWhen(
+          data: (bootstrap) =>
+              bootstrap.isAuthenticated && bootstrap.user != null,
+          orElse: () => false,
+        );
+
+        return SafeArea(
+          child: RutVerificationLostImageRecovery(
+            enabled: recoveryEnabled,
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
       },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: primaryOrange),

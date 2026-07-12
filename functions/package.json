@@ -15,8 +15,9 @@
   },
   "main": "index.js",
   "dependencies": {
-    "@xmldom/xmldom": "^0.8.13",
     "@google-cloud/vision": "^4.3.3",
+    "@techstark/opencv-js": "^5.0.0-release.1",
+    "@xmldom/xmldom": "^0.8.13",
     "firebase-admin": "^10.3.0",
     "firebase-functions": "^4.9.0",
     "mercadopago": "^2.0.15",

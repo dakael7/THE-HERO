@@ -32,6 +32,14 @@
 				<string>theheroprojects</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>google-sign-in</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.9377083728-o132r2nbgjgkjsmpk9mk7dsjjt5uu578</string>
+			</array>
+		</dict>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
@@ -56,10 +64,20 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>API_KEY</key>
+	<string></string>
+	<key>NSCameraUsageDescription</key>
+	<string>Necesitamos usar la camara para tomar fotos de documentos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Necesitamos acceder a tus fotos para seleccionar documentos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Necesitamos guardar imagenes generadas por la app.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Necesitamos tu ubicación para mostrar productos cercanos en el mapa</string>
+	<string>Necesitamos tu ubicacion para mostrar productos cercanos en el mapa.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Necesitamos tu ubicacion para mostrar productos cercanos y coordinar entregas.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Necesitamos tu ubicación para mostrar productos cercanos</string>
+	<string>Necesitamos tu ubicacion para mostrar productos cercanos.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

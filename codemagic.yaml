@@ -1,0 +1,64 @@
+workflows:
+  ios-build:
+    name: iOS build
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.38.1
+      xcode: latest
+      cocoapods: default
+      vars:
+        MAPS_LITE_MODE: "false"
+    cache:
+      cache_paths:
+        - $HOME/.pub-cache
+        - ios/Pods
+    scripts:
+      - name: Create runtime env file
+        script: |
+          set -euo pipefail
+          GOOGLE_MAPS_API_KEY="${GOOGLE_MAPS_API_KEY:-}"
+          PLACES_API_KEY="${PLACES_API_KEY:-$GOOGLE_MAPS_API_KEY}"
+          GOOGLE_DIRECTIONS_API_KEY="${GOOGLE_DIRECTIONS_API_KEY:-$GOOGLE_MAPS_API_KEY}"
+          MAPS_LITE_MODE="${MAPS_LITE_MODE:-false}"
+
+          cat > lib/.env <<EOF
+          GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY
+          PLACES_API_KEY=$PLACES_API_KEY
+          GOOGLE_DIRECTIONS_API_KEY=$GOOGLE_DIRECTIONS_API_KEY
+          MAPS_LITE_MODE=$MAPS_LITE_MODE
+          EOF
+
+          python3 - <<'PY'
+          import os
+          import plistlib
+
+          path = "ios/Runner/Info.plist"
+          with open(path, "rb") as file:
+              plist = plistlib.load(file)
+          plist["API_KEY"] = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+          with open(path, "wb") as file:
+              plistlib.dump(plist, file)
+          PY
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install iOS pods
+        script: |
+          cd ios
+          pod install --repo-update
+      - name: Build iOS without code signing
+        script: |
+          set -euo pipefail
+          BUILD_NAME="${BUILD_NAME:-1.0.0}"
+          BUILD_NUMBER="${BUILD_NUMBER:-${CM_BUILD_NUMBER:-25}}"
+
+          flutter build ios --release --no-codesign \
+            --build-name="$BUILD_NAME" \
+            --build-number="$BUILD_NUMBER" \
+            --dart-define=GOOGLE_MAPS_API_KEY="${GOOGLE_MAPS_API_KEY:-}" \
+            --dart-define=PLACES_API_KEY="${PLACES_API_KEY:-${GOOGLE_MAPS_API_KEY:-}}" \
+            --dart-define=GOOGLE_DIRECTIONS_API_KEY="${GOOGLE_DIRECTIONS_API_KEY:-${GOOGLE_MAPS_API_KEY:-}}" \
+            --dart-define=MAPS_LITE_MODE="${MAPS_LITE_MODE:-false}"
+    artifacts:
+      - build/ios/iphoneos/Runner.app
+      - build/ios/iphoneos/Runner.app.dSYM

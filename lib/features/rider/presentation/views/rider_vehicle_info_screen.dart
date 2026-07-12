@@ -5,6 +5,7 @@ import '../../../../core/common/hero_header_app_bar.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/vehicle.dart';
+import '../providers/rider_verification_request_providers.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import 'rider_vehicle_sequential_verification_flow_screen.dart';
 
@@ -16,7 +17,8 @@ class RiderVehicleInfoScreen extends ConsumerStatefulWidget {
       _RiderVehicleInfoScreenState();
 }
 
-class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen> {
+class _RiderVehicleInfoScreenState
+    extends ConsumerState<RiderVehicleInfoScreen> {
   VehicleType? _selected;
   bool _saving = false;
   bool _bootstrappedVehicles = false;
@@ -83,14 +85,20 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
               try {
                 final rp = riderProfile as dynamic;
                 final vehicles = rp?.vehicles as dynamic;
-                final bicycleEntry = vehicles != null ? vehicles['bicycle'] as dynamic : null;
-                final bicycleVerification = bicycleEntry != null ? bicycleEntry['verification'] as dynamic : null;
+                final bicycleEntry = vehicles != null
+                    ? vehicles['bicycle'] as dynamic
+                    : null;
+                final bicycleVerification = bicycleEntry != null
+                    ? bicycleEntry['verification'] as dynamic
+                    : null;
                 final bicycleStatus = bicycleVerification != null
                     ? bicycleVerification['status'] as String?
                     : null;
 
                 bool hasVehicleEntry(String key) {
-                  final entry = vehicles != null ? vehicles[key] as dynamic : null;
+                  final entry = vehicles != null
+                      ? vehicles[key] as dynamic
+                      : null;
                   return entry is Map;
                 }
 
@@ -105,7 +113,8 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                   };
                 }
 
-                final shouldBootstrapBicycle = bicycleStatus == null || bicycleStatus.trim().isEmpty;
+                final shouldBootstrapBicycle =
+                    bicycleStatus == null || bicycleStatus.trim().isEmpty;
 
                 final updates = <String, dynamic>{};
                 if (shouldBootstrapBicycle) {
@@ -126,7 +135,9 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                 }
 
                 if (!hasVehicleEntry('motorcycle')) {
-                  updates['motorcycle'] = bootstrapEntry(VehicleType.motorcycle);
+                  updates['motorcycle'] = bootstrapEntry(
+                    VehicleType.motorcycle,
+                  );
                 }
                 if (!hasVehicleEntry('car')) {
                   updates['car'] = bootstrapEntry(VehicleType.car);
@@ -137,16 +148,11 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
 
                 if (updates.isNotEmpty) {
                   final db = ref.read(firebaseFirestoreProvider);
-                  await db.collection('users').doc(user.id).set(
-                    {
-                      'riderProfile': {
-                        'vehicles': {
-                          ...updates,
-                        },
-                      },
+                  await db.collection('users').doc(user.id).set({
+                    'riderProfile': {
+                      'vehicles': {...updates},
                     },
-                    firestore.SetOptions(merge: true),
-                  );
+                  }, firestore.SetOptions(merge: true));
                   ref.invalidate(profileProvider);
                 }
               } catch (_) {
@@ -155,21 +161,64 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
             });
           }
 
-          final activeTypeRaw = (riderProfile as dynamic)?.activeVehicleType as String?;
+          final activeTypeRaw =
+              (riderProfile as dynamic)?.activeVehicleType as String?;
           final currentType = activeTypeRaw != null
               ? VehicleType.fromString(activeTypeRaw)
               : riderProfile?.vehicle.type;
           final selectedType = _selected ?? currentType ?? VehicleType.bicycle;
 
-          String? vehicleVerificationStatus(VehicleType type) {
+          Map<String, dynamic>? vehicleEntryMap(VehicleType type) {
             final rp = riderProfile as dynamic;
             final vehicles = rp?.vehicles as dynamic;
-            final entry = vehicles != null ? vehicles[type.name] as dynamic : null;
-            final verification = entry != null ? entry['verification'] as dynamic : null;
-            final status = verification != null ? verification['status'] as String? : null;
+            final entry = vehicles != null
+                ? vehicles[type.name] as dynamic
+                : null;
+            return entry is Map ? Map<String, dynamic>.from(entry) : null;
+          }
 
-            final ocr = entry != null ? entry['ocr'] as dynamic : null;
-            final ocrStatus = ocr != null ? ocr['status'] as String? : null;
+          String? vehicleVerificationStatus(VehicleType type) {
+            final entry = vehicleEntryMap(type);
+            final verification = entry?['verification'] is Map
+                ? Map<String, dynamic>.from(entry!['verification'] as Map)
+                : null;
+            final requestId = verification?['requestId']?.toString();
+            final requestDataById =
+                requestId != null && requestId.trim().isNotEmpty
+                ? ref
+                      .watch(
+                        vehicleVerificationRequestProvider(
+                          RiderVerificationRequestKey(
+                            userId: user.id,
+                            requestId: requestId,
+                          ),
+                        ),
+                      )
+                      .value
+                : null;
+            final latestRequestData = ref
+                .watch(
+                  latestVehicleVerificationRequestProvider(
+                    RiderVerificationVehicleKey(
+                      userId: user.id,
+                      vehicleType: type.name,
+                    ),
+                  ),
+                )
+                .value;
+            final requestData = latestRequestData ?? requestDataById;
+
+            final status = verification?['status']?.toString();
+            final ocr = entry?['ocr'] is Map
+                ? Map<String, dynamic>.from(entry!['ocr'] as Map)
+                : null;
+            final ocrStatus = ocr?['status']?.toString();
+            final resolvedStatus = resolveVerificationStatus(
+              requestData: requestData,
+              profileData: verification,
+              fallbackStatus: status,
+            );
+            if (resolvedStatus != null) return resolvedStatus;
 
             if (ocrStatus != null && ocrStatus != 'processing') {
               return ocrStatus;
@@ -207,17 +256,11 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
             }
           }
 
-          Map<String, dynamic>? vehicleEntryMap(VehicleType type) {
-            final rp = riderProfile as dynamic;
-            final vehicles = rp?.vehicles as dynamic;
-            final entry = vehicles != null ? vehicles[type.name] as dynamic : null;
-            return entry is Map ? Map<String, dynamic>.from(entry) : null;
-          }
-
           String _vehicleInfoText(VehicleType type) {
             final entry = vehicleEntryMap(type);
-            final vehicle = entry?['vehicle'] is Map ? entry!['vehicle'] as Map : null;
-            final docs = entry?['documents'] is Map ? entry!['documents'] as Map : null;
+            final vehicle = entry?['vehicle'] is Map
+                ? entry!['vehicle'] as Map
+                : null;
 
             String line(String label, Object? value) {
               final v = value == null ? '' : value.toString();
@@ -230,12 +273,6 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
               line('Modelo', vehicle?['model']),
               line('Año', vehicle?['year']),
               line('Color', vehicle?['color']),
-              '',
-              line('Licencia (frente)', docs?['licenseFrontUrl'] != null ? 'OK' : '-'),
-              line('Licencia (reverso)', docs?['licenseBackUrl'] != null ? 'OK' : '-'),
-              line('CI (frente)', docs?['idCardFrontUrl'] != null ? 'OK' : '-'),
-              line('CI (reverso)', docs?['idCardBackUrl'] != null ? 'OK' : '-'),
-              line('Permiso circulación', docs?['circulationPermitUrl'] != null ? 'OK' : '-'),
             ].join('\n');
           }
 
@@ -249,7 +286,9 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                 decoration: BoxDecoration(
                   color: backgroundWhite,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: textGray900.withValues(alpha: 0.06)),
+                  border: Border.all(
+                    color: textGray900.withValues(alpha: 0.06),
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -330,7 +369,8 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       isVerified: isVehicleVerified(VehicleType.bicycle),
                       statusLabel: vehicleStatusLabel(VehicleType.bicycle),
                       enabled: true,
-                      onTap: () => setState(() => _selected = VehicleType.bicycle),
+                      onTap: () =>
+                          setState(() => _selected = VehicleType.bicycle),
                       onPrimaryAction: null,
                       primaryActionLabel: null,
                       warningText: null,
@@ -344,7 +384,8 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       isVerified: isVehicleVerified(VehicleType.motorcycle),
                       statusLabel: vehicleStatusLabel(VehicleType.motorcycle),
                       enabled: true,
-                      onTap: () => setState(() => _selected = VehicleType.motorcycle),
+                      onTap: () =>
+                          setState(() => _selected = VehicleType.motorcycle),
                       onPrimaryAction: () async {
                         if (rutGateRequired) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -367,14 +408,16 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                         }
                         await Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const RiderVehicleSequentialVerificationFlowScreen(
-                              vehicleType: VehicleType.motorcycle,
-                            ),
+                            builder: (_) =>
+                                const RiderVehicleSequentialVerificationFlowScreen(
+                                  vehicleType: VehicleType.motorcycle,
+                                ),
                           ),
                         );
                         ref.invalidate(profileProvider);
                       },
-                      primaryActionLabel: isVehicleVerified(VehicleType.motorcycle)
+                      primaryActionLabel:
+                          isVehicleVerified(VehicleType.motorcycle)
                           ? 'Información'
                           : '+ Verificar vehículo',
                       warningText:
@@ -412,9 +455,10 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                         }
                         await Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const RiderVehicleSequentialVerificationFlowScreen(
-                              vehicleType: VehicleType.car,
-                            ),
+                            builder: (_) =>
+                                const RiderVehicleSequentialVerificationFlowScreen(
+                                  vehicleType: VehicleType.car,
+                                ),
                           ),
                         );
                         ref.invalidate(profileProvider);
@@ -434,7 +478,8 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                       isVerified: isVehicleVerified(VehicleType.truck),
                       statusLabel: vehicleStatusLabel(VehicleType.truck),
                       enabled: true,
-                      onTap: () => setState(() => _selected = VehicleType.truck),
+                      onTap: () =>
+                          setState(() => _selected = VehicleType.truck),
                       onPrimaryAction: () async {
                         if (rutGateRequired) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -457,9 +502,10 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
                         }
                         await Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const RiderVehicleSequentialVerificationFlowScreen(
-                              vehicleType: VehicleType.truck,
-                            ),
+                            builder: (_) =>
+                                const RiderVehicleSequentialVerificationFlowScreen(
+                                  vehicleType: VehicleType.truck,
+                                ),
                           ),
                         );
                         ref.invalidate(profileProvider);
@@ -495,9 +541,7 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
       if (!rutVerified) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'Debes verificar tu RUT para verificar vehículos.',
-            ),
+            content: Text('Debes verificar tu RUT para verificar vehículos.'),
             duration: Duration(seconds: 3),
           ),
         );
@@ -515,9 +559,12 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
       final limitsMap = perVehicleLimits is Map ? perVehicleLimits : null;
       final fallback = _limitsByVehicle(selectedType);
       final limits = _VehicleLimits(
-        maxWeightKg: (limitsMap?['maxWeightKg'] as num?)?.toDouble() ?? fallback.maxWeightKg,
+        maxWeightKg:
+            (limitsMap?['maxWeightKg'] as num?)?.toDouble() ??
+            fallback.maxWeightKg,
         maxDistanceKm:
-            (limitsMap?['maxDistanceKm'] as num?)?.toDouble() ?? fallback.maxDistanceKm,
+            (limitsMap?['maxDistanceKm'] as num?)?.toDouble() ??
+            fallback.maxDistanceKm,
       );
 
       await firestore.collection('users').doc(userId).update({
@@ -532,15 +579,15 @@ class _RiderVehicleInfoScreenState extends ConsumerState<RiderVehicleInfoScreen>
 
       ref.invalidate(profileProvider);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Vehículo actualizado')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Vehículo actualizado')));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo actualizar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo actualizar: $e')));
       }
     } finally {
       if (mounted) {
@@ -630,8 +677,8 @@ class _VehicleOptionTile extends StatelessWidget {
                       color: selected
                           ? primaryOrange
                           : (enabled
-                              ? textGray700
-                              : textGray700.withValues(alpha: 0.6)),
+                                ? textGray700
+                                : textGray700.withValues(alpha: 0.6)),
                     ),
                   ),
                 ),
@@ -645,7 +692,9 @@ class _VehicleOptionTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
-                          color: enabled ? textGray900 : textGray900.withValues(alpha: 0.7),
+                          color: enabled
+                              ? textGray900
+                              : textGray900.withValues(alpha: 0.7),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -654,7 +703,9 @@ class _VehicleOptionTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: enabled ? textGray700 : textGray700.withValues(alpha: 0.8),
+                          color: enabled
+                              ? textGray700
+                              : textGray700.withValues(alpha: 0.8),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -683,23 +734,33 @@ class _VehicleOptionTile extends StatelessWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  isVerified ? Icons.check_circle : Icons.info_outline,
+                                  isVerified
+                                      ? Icons.check_circle
+                                      : Icons.info_outline,
                                   size: 14,
-                                  color: isVerified ? Colors.green : textGray700,
+                                  color: isVerified
+                                      ? Colors.green
+                                      : textGray700,
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  statusLabel ?? (isVerified ? 'Verificado' : 'No verificado'),
+                                  statusLabel ??
+                                      (isVerified
+                                          ? 'Verificado'
+                                          : 'No verificado'),
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
-                                    color: isVerified ? Colors.green : textGray700,
+                                    color: isVerified
+                                        ? Colors.green
+                                        : textGray700,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          if (primaryActionLabel != null && onPrimaryAction != null)
+                          if (primaryActionLabel != null &&
+                              onPrimaryAction != null)
                             TextButton(
                               onPressed: onPrimaryAction,
                               child: Text(
@@ -724,7 +785,9 @@ class _VehicleOptionTile extends StatelessWidget {
                     border: Border.all(
                       color: selected
                           ? primaryOrange
-                          : (enabled ? textGray700 : textGray700.withValues(alpha: 0.6)),
+                          : (enabled
+                                ? textGray700
+                                : textGray700.withValues(alpha: 0.6)),
                       width: 2,
                     ),
                   ),

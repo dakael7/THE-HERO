@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
@@ -5,15 +6,30 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/services/notification_handler.dart';
 import '../../../../../data/providers/network_providers.dart';
 import '../../../../../domain/entities/user.dart';
 import '../providers/profile_provider.dart';
 
+const _pendingRutImagePickKey = 'pending_rut_image_pick';
+const _rutFrontField = 'id_front';
+const _rutBackField = 'id_back';
+
 class RutVerificationScreen extends ConsumerStatefulWidget {
-  const RutVerificationScreen({super.key});
+  final String? recoveredFieldName;
+  final Uint8List? recoveredBytes;
+  final String? recoveredName;
+
+  const RutVerificationScreen({
+    super.key,
+    this.recoveredFieldName,
+    this.recoveredBytes,
+    this.recoveredName,
+  });
 
   @override
   ConsumerState<RutVerificationScreen> createState() =>
@@ -31,6 +47,46 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
   bool _saving = false;
   double _uploadProgress = 0;
   String? _uploadLabel;
+
+  @override
+  void initState() {
+    super.initState();
+    _applyRecoveredImage(
+      fieldName: widget.recoveredFieldName,
+      bytes: widget.recoveredBytes,
+      name: widget.recoveredName,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant RutVerificationScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.recoveredBytes == widget.recoveredBytes) return;
+    _applyRecoveredImage(
+      fieldName: widget.recoveredFieldName,
+      bytes: widget.recoveredBytes,
+      name: widget.recoveredName,
+    );
+  }
+
+  void _applyRecoveredImage({
+    required String? fieldName,
+    required Uint8List? bytes,
+    required String? name,
+  }) {
+    if (fieldName == null || bytes == null || bytes.isEmpty) return;
+
+    if (fieldName == _rutFrontField) {
+      _front = bytes;
+      _frontName = name ?? 'id_front.jpg';
+      return;
+    }
+
+    if (fieldName == _rutBackField) {
+      _back = bytes;
+      _backName = name ?? 'id_back.jpg';
+    }
+  }
 
   String _formatFirebaseException(Object e) {
     if (e is FirebaseException) {
@@ -78,6 +134,7 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
 
   Future<void> _pickImage({
     required String label,
+    required String fieldName,
     required void Function(Uint8List bytes, String name) onPicked,
   }) async {
     final profile = await _resolveCurrentUser();
@@ -87,12 +144,16 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
       return;
     }
     try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pendingRutImagePickKey, fieldName);
+
       final picked = await _imagePicker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
         imageQuality: 85,
         maxWidth: 2000,
       );
+      await prefs.remove(_pendingRutImagePickKey);
       if (picked == null) return;
 
       final bytes = await picked.readAsBytes();
@@ -101,6 +162,8 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
       onPicked(bytes, picked.name);
       setState(() {});
     } catch (e) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_pendingRutImagePickKey);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -217,10 +280,7 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
           'createdAt': firestore.Timestamp.fromDate(now),
           'updatedAt': firestore.Timestamp.fromDate(now),
           'status': 'submitted',
-          'documents': {
-            'idFrontUrl': null,
-            'idBackUrl': null,
-          },
+          'documents': {'idFrontUrl': null, 'idBackUrl': null},
         });
       } catch (e) {
         throw Exception(
@@ -261,14 +321,11 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
       }
 
       try {
-        await docRef.set(
-          {
-            'updatedAt': firestore.Timestamp.fromDate(DateTime.now()),
-            'documents.idFrontUrl': idFrontUrl,
-            'documents.idBackUrl': idBackUrl,
-          },
-          firestore.SetOptions(merge: true),
-        );
+        await docRef.set({
+          'updatedAt': firestore.Timestamp.fromDate(DateTime.now()),
+          'documents.idFrontUrl': idFrontUrl,
+          'documents.idBackUrl': idBackUrl,
+        }, firestore.SetOptions(merge: true));
       } catch (e) {
         throw Exception(
           'Paso: actualizar solicitud con URLs (Firestore). ${_formatFirebaseException(e)}',
@@ -276,14 +333,11 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
       }
 
       try {
-        await db.collection('users').doc(user.id).set(
-          {
-            'rutVerification.requestId': requestId,
-            'rutVerification.submittedAt': now.toIso8601String(),
-            'rutVerification.verifiedAt': null,
-          },
-          firestore.SetOptions(merge: true),
-        );
+        await db.collection('users').doc(user.id).set({
+          'rutVerification.requestId': requestId,
+          'rutVerification.submittedAt': now.toIso8601String(),
+          'rutVerification.verifiedAt': null,
+        }, firestore.SetOptions(merge: true));
       } catch (e) {
         throw Exception(
           'Paso: actualizar user.rutVerification (Firestore). ${_formatFirebaseException(e)}',
@@ -459,7 +513,9 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
       required IconData icon,
     }) {
       final color = done || active ? accent : borderGray100;
-      final bg = done || active ? accent.withValues(alpha: 0.12) : backgroundWhite;
+      final bg = done || active
+          ? accent.withValues(alpha: 0.12)
+          : backgroundWhite;
       return AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
@@ -493,22 +549,14 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
       );
     }
 
-    final labels = [
-      'Pendiente',
-      'En revisión',
-      _timelineResultLabel(status),
-    ];
+    final labels = ['Pendiente', 'En revisión', _timelineResultLabel(status)];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            dot(
-              done: step > 0,
-              active: step == 0,
-              icon: Icons.badge_outlined,
-            ),
+            dot(done: step > 0, active: step == 0, icon: Icons.badge_outlined),
             line(on: step > 0),
             dot(
               done: step > 1,
@@ -522,8 +570,8 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
               icon: status == 'approved'
                   ? Icons.verified_rounded
                   : (status == 'failed' || status == 'rejected')
-                      ? Icons.error_outline_rounded
-                      : Icons.info_outline_rounded,
+                  ? Icons.error_outline_rounded
+                  : Icons.info_outline_rounded,
             ),
           ],
         ),
@@ -636,7 +684,9 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
                               ),
                             Icon(
                               _statusIcon(status),
-                              color: status == 'processing' ? Colors.transparent : accent,
+                              color: status == 'processing'
+                                  ? Colors.transparent
+                                  : accent,
                             ),
                           ],
                         ),
@@ -667,14 +717,18 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
                               accent: accent,
                               status: status,
                             ),
-                            if ((((user?.riderProfile?.rut ?? '').trim().isNotEmpty)
-                                        ? user!.riderProfile!.rut!
-                                        : (user?.documentId ?? ''))
-                                    .trim()
-                                    .isNotEmpty) ...[
+                            if ((((user?.riderProfile?.rut ?? '')
+                                        .trim()
+                                        .isNotEmpty)
+                                    ? user!.riderProfile!.rut!
+                                    : (user?.documentId ?? ''))
+                                .trim()
+                                .isNotEmpty) ...[
                               const SizedBox(height: 10),
                               Text(
-                                ((user?.riderProfile?.rut ?? '').trim().isNotEmpty)
+                                ((user?.riderProfile?.rut ?? '')
+                                        .trim()
+                                        .isNotEmpty)
                                     ? user!.riderProfile!.rut!
                                     : user!.documentId,
                                 style: const TextStyle(
@@ -761,6 +815,7 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
                     }
                     _pickImage(
                       label: 'cédula (frente)',
+                      fieldName: _rutFrontField,
                       onPicked: (b, n) {
                         _front = b;
                         _frontName = n;
@@ -779,6 +834,7 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
                     }
                     _pickImage(
                       label: 'cédula (reverso)',
+                      fieldName: _rutBackField,
                       onPicked: (b, n) {
                         _back = b;
                         _backName = n;
@@ -805,11 +861,13 @@ class _RutVerificationScreenState extends ConsumerState<RutVerificationScreen> {
               child: Text(
                 _saving
                     ? 'Enviando…'
-                    : (status == 'needs_review' || status == 'failed' || status == 'rejected')
-                        ? 'Reintentar verificación'
-                        : (status == 'approved')
-                            ? 'Verificación completada'
-                            : 'Enviar verificación',
+                    : (status == 'needs_review' ||
+                          status == 'failed' ||
+                          status == 'rejected')
+                    ? 'Reintentar verificación'
+                    : (status == 'approved')
+                    ? 'Verificación completada'
+                    : 'Enviar verificación',
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
@@ -874,4 +932,98 @@ class _DocUploadTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class RutVerificationLostImageRecovery extends StatefulWidget {
+  final bool enabled;
+  final Widget child;
+
+  const RutVerificationLostImageRecovery({
+    super.key,
+    required this.enabled,
+    required this.child,
+  });
+
+  @override
+  State<RutVerificationLostImageRecovery> createState() =>
+      _RutVerificationLostImageRecoveryState();
+}
+
+class _RutVerificationLostImageRecoveryState
+    extends State<RutVerificationLostImageRecovery> {
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _queueRecovery();
+  }
+
+  @override
+  void didUpdateWidget(covariant RutVerificationLostImageRecovery oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.enabled && widget.enabled) _queueRecovery();
+  }
+
+  void _queueRecovery() {
+    if (_checked || !widget.enabled) return;
+    _checked = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_recoverLostRutImage());
+    });
+  }
+
+  Future<void> _recoverLostRutImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final fieldName = prefs.getString(_pendingRutImagePickKey);
+    if (fieldName != _rutFrontField && fieldName != _rutBackField) return;
+
+    LostDataResponse response;
+    try {
+      response = await ImagePicker().retrieveLostData();
+    } on UnimplementedError {
+      await prefs.remove(_pendingRutImagePickKey);
+      return;
+    } catch (_) {
+      await prefs.remove(_pendingRutImagePickKey);
+      return;
+    }
+
+    if (response.isEmpty) {
+      await prefs.remove(_pendingRutImagePickKey);
+      return;
+    }
+
+    final files = response.files;
+    if (files == null || files.isEmpty) {
+      await prefs.remove(_pendingRutImagePickKey);
+      return;
+    }
+    final file = files.first;
+
+    try {
+      final bytes = await file.readAsBytes();
+      await prefs.remove(_pendingRutImagePickKey);
+      if (!mounted || bytes.isEmpty) return;
+
+      final navigator = NotificationHandler().navigatorKey.currentState;
+      if (navigator == null) return;
+
+      await navigator.push(
+        MaterialPageRoute(
+          builder: (_) => RutVerificationScreen(
+            recoveredFieldName: fieldName,
+            recoveredBytes: bytes,
+            recoveredName: file.name,
+          ),
+        ),
+      );
+    } catch (_) {
+      await prefs.remove(_pendingRutImagePickKey);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

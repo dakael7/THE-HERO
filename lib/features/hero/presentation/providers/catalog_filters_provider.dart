@@ -19,7 +19,6 @@ class CatalogPaginationNotifier extends Notifier<int> {
   void loadMore() => state = state + _pageSize;
 }
 
-// ✅ No autoDispose — matches the lifecycle of activeOffersProvider.
 final catalogPaginationProvider =
     NotifierProvider<CatalogPaginationNotifier, int>(
   CatalogPaginationNotifier.new,

@@ -12,15 +12,26 @@ function decideLicenseVerificationStatus({
   expired,
   licenseClassDetected,
   classOk,
+  textureValid,
 }) {
   if (expiryIso && expired) return "rejected";
   if (licenseClassDetected && !classOk) return "rejected";
 
-  const identityOk = matchDeclared || nameMatchOk;
+  const matchingRutOk =
+    Boolean(declaredRut) &&
+    Boolean(extractedRut) &&
+    strictRutOk &&
+    dvValid &&
+    matchDeclared;
+  const identityOk = matchingRutOk || nameMatchOk;
   const documentLooksLikeLicense =
-    documentDetected && (keywordsOk || Boolean(extractedRut) || Boolean(extractedName));
+    documentDetected &&
+    (keywordsOk || Boolean(extractedRut) || Boolean(extractedName));
+  const sparseSealedLicenseOk = matchingRutOk && textureValid;
 
-  return identityOk && documentLooksLikeLicense ? "approved" : "rejected";
+  return identityOk && (documentLooksLikeLicense || sparseSealedLicenseOk)
+    ? "approved"
+    : "rejected";
 }
 
 module.exports = {
