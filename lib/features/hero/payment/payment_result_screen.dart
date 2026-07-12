@@ -4,7 +4,10 @@ import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/config/mercadopago_config.dart';
+import '../../../domain/entities/order.dart';
+import '../../../domain/entities/order_status.dart';
 import '../../../domain/entities/payment.dart';
+import '../../orders/presentation/providers/orders_provider.dart';
 import 'providers/payment_providers.dart';
 import '../../hero/presentation/views/hero_home_screen.dart';
 import '../orders/presentation/views/hero_orders_screen.dart';
@@ -69,6 +72,7 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
     final paymentAsync = ref.watch(
       watchPaymentByOrderIdProvider(widget.orderId),
     );
+    final orderAsync = ref.watch(orderByIdProvider(widget.orderId));
 
     return Scaffold(
       backgroundColor: backgroundGray50,
@@ -82,7 +86,8 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
         automaticallyImplyLeading: false,
       ),
       body: paymentAsync.when(
-        data: (payment) => _buildResultContent(payment),
+        data: (payment) =>
+            _buildResultContent(payment, orderAsync.asData?.value),
         loading: () => const Center(
           child: CircularProgressIndicator(
             valueColor: AlwaysStoppedAnimation<Color>(primaryOrange),
@@ -93,16 +98,17 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
     );
   }
 
-  Widget _buildResultContent(Payment? payment) {
-    final config = _getResultConfig(payment);
+  Widget _buildResultContent(Payment? payment, Order? order) {
+    final config = _getResultConfig(payment, order);
 
     final qp = widget.queryParams;
     final status = qp['status'] ?? qp['collection_status'];
     final statusDetail = qp['status_detail'] ?? qp['collection_status_detail'];
     final paymentId = qp['payment_id'] ?? qp['collection_id'];
     final preferenceId = qp['preference_id'] ?? qp['pref_id'];
-    final effectivePreferenceId =
-        (payment?.preferenceId.isNotEmpty ?? false) ? payment!.preferenceId : preferenceId;
+    final effectivePreferenceId = (payment?.preferenceId.isNotEmpty ?? false)
+        ? payment!.preferenceId
+        : preferenceId;
 
     return Center(
       child: SingleChildScrollView(
@@ -256,7 +262,7 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () => _handlePrimaryAction(payment),
+                onPressed: () => _handlePrimaryAction(payment, order),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: config.color,
                   foregroundColor: backgroundWhite,
@@ -309,10 +315,10 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
                   onPressed: _isSimulating
                       ? null
                       : () => _simulateApprovedPayment(
-                            orderId: widget.orderId,
-                            preferenceId: effectivePreferenceId,
-                            amount: payment?.amount,
-                          ),
+                          orderId: widget.orderId,
+                          preferenceId: effectivePreferenceId,
+                          amount: payment?.amount,
+                        ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: primaryOrange,
                     side: const BorderSide(color: primaryOrange, width: 2),
@@ -346,8 +352,9 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
     setState(() => _isSimulating = true);
 
     try {
-      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable('simulatePaymentApproved');
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('simulatePaymentApproved');
 
       await callable.call({
         'orderId': orderId,
@@ -367,11 +374,9 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudo simular el pago: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo simular el pago: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSimulating = false);
@@ -448,9 +453,74 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
     );
   }
 
-  _ResultConfig _getResultConfig(Payment? payment) {
+  _ResultConfig _getResultConfig(Payment? payment, Order? order) {
     switch (widget.resultType) {
       case PaymentResultType.success:
+        if (order == null) {
+          return _ResultConfig(
+            icon: Icons.schedule,
+            color: Colors.orange,
+            title: 'Pago recibido',
+            message:
+                'Estamos confirmando tu pedido. Si la confirmacion tarda, revisa el estado en mis pedidos.',
+            primaryButtonText: 'Ver mis pedidos',
+            showSecondaryButton: false,
+          );
+        }
+
+        if (order?.isFulfillmentBlocked == true) {
+          return _ResultConfig(
+            icon: Icons.support_agent_rounded,
+            color: const Color(0xFFB45309),
+            title: 'Pago recibido',
+            message:
+                'Tu pago fue confirmado. Estamos resolviendo el pedido dentro de la app y te avisaremos si se reasigna o si corresponde una devolucion.',
+            primaryButtonText: 'Ver mis pedidos',
+            showSecondaryButton: false,
+          );
+        }
+
+        final cancelReason = order.cancelReason?.toLowerCase() ?? '';
+        final wasRefunded =
+            payment?.status == PaymentStatus.refunded ||
+            (order.status == OrderStatus.canceled &&
+                cancelReason.contains('devuelto'));
+        if (wasRefunded) {
+          return _ResultConfig(
+            icon: Icons.assignment_return_rounded,
+            color: const Color(0xFFDC2626),
+            title: 'Pago devuelto',
+            message:
+                'Tu pago fue confirmado, pero no pudimos confirmar stock para este pedido. Ya solicitamos la devolucion.',
+            primaryButtonText: 'Ver mis pedidos',
+            showSecondaryButton: false,
+          );
+        }
+
+        if (!order.status.canShowAssociatedChats) {
+          return _ResultConfig(
+            icon: Icons.schedule,
+            color: Colors.orange,
+            title: 'Pago recibido',
+            message:
+                'Estamos confirmando tu pedido. Si la confirmacion tarda, revisa el estado en mis pedidos.',
+            primaryButtonText: 'Ver mis pedidos',
+            showSecondaryButton: false,
+          );
+        }
+
+        if (payment?.status != PaymentStatus.approved) {
+          return _ResultConfig(
+            icon: Icons.schedule,
+            color: Colors.orange,
+            title: 'Pago recibido',
+            message:
+                'Estamos confirmando tu pedido. Si la confirmacion tarda, revisa el estado en mis pedidos.',
+            primaryButtonText: 'Ver mis pedidos',
+            showSecondaryButton: false,
+          );
+        }
+
         return _ResultConfig(
           icon: Icons.check_circle,
           color: Colors.green,
@@ -485,8 +555,17 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
     }
   }
 
-  void _handlePrimaryAction(Payment? payment) {
-    if (widget.resultType == PaymentResultType.failure) {
+  void _handlePrimaryAction(Payment? payment, Order? order) {
+    final canShowOrderFlow = order?.status.canShowAssociatedChats ?? false;
+    final shouldOpenOrders =
+        widget.resultType == PaymentResultType.failure ||
+        (widget.resultType == PaymentResultType.success && order == null) ||
+        order?.isFulfillmentBlocked == true ||
+        (widget.resultType == PaymentResultType.success && !canShowOrderFlow) ||
+        (widget.resultType == PaymentResultType.success &&
+            payment?.status != PaymentStatus.approved);
+
+    if (shouldOpenOrders) {
       // Go to orders so user can retry payment on pending orders.
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const HeroOrdersScreen()),

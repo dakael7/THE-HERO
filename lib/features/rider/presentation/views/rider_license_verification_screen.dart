@@ -14,10 +14,7 @@ import '../../../shared/profile/presentation/providers/profile_provider.dart';
 class RiderLicenseVerificationScreen extends ConsumerStatefulWidget {
   final VehicleType vehicleType;
 
-  const RiderLicenseVerificationScreen({
-    super.key,
-    required this.vehicleType,
-  });
+  const RiderLicenseVerificationScreen({super.key, required this.vehicleType});
 
   @override
   ConsumerState<RiderLicenseVerificationScreen> createState() =>
@@ -66,12 +63,15 @@ class _RiderLicenseVerificationScreenState
     if (user == null) return null;
     final vehicles = user.riderProfile?.vehicles;
     final vehicleEntry = vehicles?[widget.vehicleType.name];
-    final vehicleEntryMap =
-        vehicleEntry is Map ? Map<String, dynamic>.from(vehicleEntry) : null;
+    final vehicleEntryMap = vehicleEntry is Map
+        ? Map<String, dynamic>.from(vehicleEntry)
+        : null;
     final vehicleLicenseRaw = vehicleEntryMap?['licenseVerification'];
-    final vehicleLicenseMap =
-        vehicleLicenseRaw is Map ? Map<String, dynamic>.from(vehicleLicenseRaw) : null;
-    return vehicleLicenseMap?['status']?.toString() ?? user.licenseVerificationStatus;
+    final vehicleLicenseMap = vehicleLicenseRaw is Map
+        ? Map<String, dynamic>.from(vehicleLicenseRaw)
+        : null;
+    return vehicleLicenseMap?['status']?.toString() ??
+        user.licenseVerificationStatus;
   }
 
   void _showLockedSnackBar() {
@@ -216,7 +216,9 @@ class _RiderLicenseVerificationScreenState
       required IconData icon,
     }) {
       final color = done || active ? accent : borderGray100;
-      final bg = done || active ? accent.withValues(alpha: 0.12) : backgroundWhite;
+      final bg = done || active
+          ? accent.withValues(alpha: 0.12)
+          : backgroundWhite;
       return AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
@@ -250,22 +252,14 @@ class _RiderLicenseVerificationScreenState
       );
     }
 
-    final labels = [
-      'Pendiente',
-      'En revisión',
-      _timelineResultLabel(status),
-    ];
+    final labels = ['Pendiente', 'En revisión', _timelineResultLabel(status)];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            dot(
-              done: step > 0,
-              active: step == 0,
-              icon: Icons.badge_outlined,
-            ),
+            dot(done: step > 0, active: step == 0, icon: Icons.badge_outlined),
             line(on: step > 0),
             dot(
               done: step > 1,
@@ -279,8 +273,8 @@ class _RiderLicenseVerificationScreenState
               icon: status == 'approved'
                   ? Icons.verified_rounded
                   : (status == 'failed' || status == 'rejected')
-                      ? Icons.error_outline_rounded
-                      : Icons.info_outline_rounded,
+                  ? Icons.error_outline_rounded
+                  : Icons.info_outline_rounded,
             ),
           ],
         ),
@@ -476,8 +470,10 @@ class _RiderLicenseVerificationScreenState
       final db = ref.read(firebaseFirestoreProvider);
 
       final now = DateTime.now();
-      final requestsRef =
-          db.collection('users').doc(user.id).collection('license_verification_requests');
+      final requestsRef = db
+          .collection('users')
+          .doc(user.id)
+          .collection('license_verification_requests');
 
       final docRef = requestsRef.doc();
       final requestId = docRef.id;
@@ -493,14 +489,40 @@ class _RiderLicenseVerificationScreenState
             'rut': user.documentId,
             'fullName': user.fullName,
           },
-          'documents': {
-            'licenseFrontUrl': null,
-            'licenseBackUrl': null,
-          },
+          'documents': {'licenseFrontUrl': null, 'licenseBackUrl': null},
         });
       } catch (e) {
         throw Exception(
           'Paso: crear solicitud en Firestore. ${_formatFirebaseException(e)}',
+        );
+      }
+
+      try {
+        await db.collection('users').doc(user.id).set({
+          'licenseVerification': {
+            'requestId': requestId,
+            'status': 'submitted',
+            'submittedAt': now.toIso8601String(),
+            'verifiedAt': null,
+            'mode': null,
+          },
+          'riderProfile': {
+            'vehicles': {
+              vehicleType.name: {
+                'licenseVerification': {
+                  'requestId': requestId,
+                  'status': 'submitted',
+                  'submittedAt': now.toIso8601String(),
+                  'verifiedAt': null,
+                  'mode': null,
+                },
+              },
+            },
+          },
+        }, firestore.SetOptions(merge: true));
+      } catch (e) {
+        throw Exception(
+          'Paso: actualizar user.licenseVerification (Firestore). ${_formatFirebaseException(e)}',
         );
       }
 
@@ -537,49 +559,14 @@ class _RiderLicenseVerificationScreenState
       }
 
       try {
-        await docRef.set(
-          {
-            'updatedAt': firestore.Timestamp.fromDate(DateTime.now()),
-            'documents.licenseFrontUrl': licenseFrontUrl,
-            'documents.licenseBackUrl': licenseBackUrl,
-          },
-          firestore.SetOptions(merge: true),
-        );
+        await docRef.set({
+          'updatedAt': firestore.Timestamp.fromDate(DateTime.now()),
+          'documents.licenseFrontUrl': licenseFrontUrl,
+          'documents.licenseBackUrl': licenseBackUrl,
+        }, firestore.SetOptions(merge: true));
       } catch (e) {
         throw Exception(
           'Paso: actualizar solicitud con URLs (Firestore). ${_formatFirebaseException(e)}',
-        );
-      }
-
-      try {
-        await db.collection('users').doc(user.id).set(
-          {
-            'licenseVerification': {
-              'requestId': requestId,
-              'status': 'submitted',
-              'submittedAt': now.toIso8601String(),
-              'verifiedAt': null,
-              'mode': null,
-            },
-            'riderProfile': {
-              'vehicles': {
-                vehicleType.name: {
-                  'licenseVerification': {
-                    'requestId': requestId,
-                    'status': 'submitted',
-                    'submittedAt': now.toIso8601String(),
-                    'verifiedAt': null,
-                    'mode': null,
-                  },
-                },
-              },
-            },
-          },
-          firestore.SetOptions(merge: true),
-        );
-      } catch (e) {
-        throw Exception(
-          'Paso: actualizar user.licenseVerification (Firestore). ${_formatFirebaseException(e)}',
         );
       }
 
@@ -741,10 +728,7 @@ class _RiderLicenseVerificationScreenState
             ),
             child: const Text(
               'Sube fotos claras de tu licencia. Debe estar vigente y tu clase debe corresponder a tu vehículo.',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: textGray700,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w700, color: textGray700),
             ),
           ),
           const SizedBox(height: 14),
@@ -861,10 +845,10 @@ class _RiderLicenseVerificationScreenState
                 _saving
                     ? 'Enviando…'
                     : (status == 'rejected' || status == 'failed')
-                        ? 'Reintentar verificación'
-                        : (status == 'approved')
-                            ? 'Verificación completada'
-                            : 'Enviar verificación',
+                    ? 'Reintentar verificación'
+                    : (status == 'approved')
+                    ? 'Verificación completada'
+                    : 'Enviar verificación',
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),

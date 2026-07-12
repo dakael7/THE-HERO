@@ -1,11 +1,14 @@
 const {onRequest} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const {MercadoPagoConfig, Payment} = require("mercadopago");
+const {MercadoPagoConfig, Payment, PaymentRefund} = require("mercadopago");
 const crypto = require("crypto");
 const {
   getMercadoPagoAccessToken,
   redactMercadoPagoSecrets,
 } = require("./credentials");
+const {
+  resolveApprovedOrderFulfillment,
+} = require("./orderFulfillment");
 
 const _timestampToMillis = (value) => {
   if (!value) return 0;
@@ -237,6 +240,7 @@ exports.mercadopagoWebhook = onRequest(
       });
 
       const payment = new Payment(client);
+      const paymentRefund = new PaymentRefund(client);
 
       const fetchMerchantOrder = async (merchantOrderId) => {
         const url = `https://api.mercadopago.com/merchant_orders/${merchantOrderId}`;
@@ -642,33 +646,6 @@ exports.mercadopagoWebhook = onRequest(
         });
       };
 
-      const consumeReservationIfNeeded = async () => {
-        const result = {
-          consumed: false,
-          status: null,
-          exists: false,
-        };
-        await admin.firestore().runTransaction(async (transaction) => {
-          const reservationDoc = await transaction.get(reservationRef);
-          if (!reservationDoc.exists) return;
-
-          result.exists = true;
-
-          const reservation = reservationDoc.data() || {};
-          result.status = String(reservation.status || "").trim().toLowerCase();
-          if (result.status !== "reserved") return;
-
-          transaction.update(reservationRef, {
-            status: "consumed",
-            consumedAt: admin.firestore.FieldValue.serverTimestamp(),
-            paymentId: paymentData.id?.toString?.() ?? null,
-          });
-          result.consumed = true;
-          result.status = "consumed";
-        });
-        return result;
-      };
-
       // Update payment document in Firestore
       const paymentsCollection = admin.firestore().collection("payments");
 
@@ -705,6 +682,17 @@ exports.mercadopagoWebhook = onRequest(
       // If approved, add approval timestamp
       if (paymentData.status === "approved") {
         paymentUpdate.approvedAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+
+      const existingPaymentDoc = await paymentRef.get();
+      const existingPaymentData = existingPaymentDoc.exists ?
+        (existingPaymentDoc.data() || {}) :
+        {};
+      const existingPaymentStatus = String(existingPaymentData.status || "")
+        .trim()
+        .toLowerCase();
+      if (existingPaymentStatus === "refunded" && paymentData.status === "approved") {
+        paymentUpdate.status = "refunded";
       }
 
       await paymentRef.set(paymentUpdate, {merge: true});
@@ -779,19 +767,128 @@ exports.mercadopagoWebhook = onRequest(
       let newOrderStatus = null;
       const currentOrderData = orderDoc?.exists ? (orderDoc.data() || {}) : {};
       const currentOrderStatus = currentOrderData.status;
+      const currentFulfillmentBlockReason = String(
+        currentOrderData.fulfillmentBlockReason || "",
+      ).trim().toLowerCase();
+      const shouldClearStockReservationBlock =
+        currentFulfillmentBlockReason ===
+        "approved_payment_without_stock_reservation";
+      let approvedRefundResult = null;
+
+      const requestFullRefundForUnfulfillableOrder = async () => {
+        const existingRefundStatus = String(
+          currentOrderData.refundStatus || "",
+        ).trim().toLowerCase();
+        const alreadyRefunding =
+          _normalizeOrderStatus(currentOrderStatus) === "refunded" ||
+          ["requested", "pending", "approved", "refunded", "completed"]
+            .includes(existingRefundStatus);
+
+        if (alreadyRefunding) {
+          return {
+            requested: true,
+            status: existingRefundStatus || "already_refunded",
+            refundId: currentOrderData.refundId || null,
+          };
+        }
+
+        try {
+          const refundData = await paymentRefund.total({
+            payment_id: paymentData.id,
+          });
+          const refundStatus = String(refundData?.status || "requested")
+            .trim()
+            .toLowerCase();
+          const refundId = refundData?.id?.toString?.() ?? null;
+          const refundUpdate = {
+            refundStatus,
+            refundReason: "approved_payment_without_stock_reservation",
+            refundId,
+            refundAmount: refundData?.amount ?? null,
+            refundRawStatus: refundData?.status ?? null,
+            refundUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+
+          if (refundStatus === "approved" || refundStatus === "refunded") {
+            refundUpdate.status = "refunded";
+            refundUpdate.refundedAt =
+              admin.firestore.FieldValue.serverTimestamp();
+          }
+
+          await paymentRef.set(refundUpdate, {merge: true});
+          if (mpPaymentIdForDoc && mpPaymentIdForDoc !== primaryPaymentDocId) {
+            await paymentsCollection
+              .doc(mpPaymentIdForDoc)
+              .set(refundUpdate, {merge: true});
+          }
+
+          return {
+            requested: true,
+            status: refundStatus,
+            refundId,
+            amount: refundData?.amount ?? null,
+          };
+        } catch (refundErr) {
+          await persistWebhookError({
+            error: {
+              message: redactMercadoPagoSecrets(
+                refundErr?.message ?? refundErr,
+              ),
+              status: refundErr?.status ?? null,
+              error: refundErr?.error ?? null,
+              cause: redactMercadoPagoSecrets(refundErr?.cause ?? null),
+            },
+            diagnostics: {
+              refundReason: "approved_payment_without_stock_reservation",
+              orderId: rawOrderId,
+              paymentId: paymentData.id?.toString?.() ?? String(paymentId),
+            },
+          });
+
+          return {
+            requested: false,
+            status: "failed",
+            errorMessage: refundErr?.message
+              ? redactMercadoPagoSecrets(String(refundErr.message))
+              : "refund_failed",
+          };
+        }
+      };
 
       switch (paymentData.status) {
       case "approved":
         {
-          const reservationResult = await consumeReservationIfNeeded();
-          const canFulfillOrder =
-            reservationResult.consumed || reservationResult.status === "consumed";
+          if (_normalizeOrderStatus(currentOrderStatus) === "refunded") {
+            console.warn(
+              `Ignoring approved payment webhook for refunded order=${orderId}`,
+            );
+            break;
+          }
+
+          const fulfillmentResult = await resolveApprovedOrderFulfillment({
+            db: admin.firestore(),
+            orderId: rawOrderId,
+            orderData: currentOrderData,
+            reservationRef,
+            paymentId: paymentData.id?.toString?.() ?? String(paymentId),
+          });
+          const canFulfillOrder = fulfillmentResult.canFulfill;
           if (!canFulfillOrder) {
             console.warn(
-              `Approved payment received without consumable reservation order=${orderId} reservationStatus=${reservationResult.status || "missing"}`,
+              `Approved payment not fulfillable order=${orderId}` +
+                ` reservationStatus=${fulfillmentResult.reservationStatus || "missing"}` +
+                ` recoveryStatus=${fulfillmentResult.recoveryStatus}` +
+                ` recoveryReason=${fulfillmentResult.recoveryReason || "none"}`,
             );
+            approvedRefundResult =
+              await requestFullRefundForUnfulfillableOrder();
           }
-          newOrderStatus = canFulfillOrder ? "queued" : "paid";
+          newOrderStatus = canFulfillOrder
+            ? "queued"
+            : approvedRefundResult?.requested
+              ? "refunded"
+              : "paid";
         }
         if (newOrderStatus !== "queued") {
           console.warn(
@@ -868,6 +965,32 @@ exports.mercadopagoWebhook = onRequest(
           if (newOrderStatus === "queued") {
             orderUpdate["timestamps.queuedAt"] =
               admin.firestore.FieldValue.serverTimestamp();
+            if (shouldClearStockReservationBlock) {
+              orderUpdate.fulfillmentStatus =
+                admin.firestore.FieldValue.delete();
+              orderUpdate.fulfillmentBlockReason =
+                admin.firestore.FieldValue.delete();
+              orderUpdate.supportReviewStatus =
+                admin.firestore.FieldValue.delete();
+            }
+          } else if (newOrderStatus === "refunded") {
+            orderUpdate.paymentStatus = "refunded";
+            orderUpdate.refundStatus =
+              approvedRefundResult?.status || "requested";
+            orderUpdate.refundId = approvedRefundResult?.refundId || null;
+            orderUpdate.refundReason =
+              "approved_payment_without_stock_reservation";
+            orderUpdate.cancelReason =
+              "Pago devuelto automaticamente: no pudimos confirmar stock para este pedido.";
+            orderUpdate.canceledBy = "system:auto_refund";
+            orderUpdate["timestamps.refundedAt"] =
+              admin.firestore.FieldValue.serverTimestamp();
+            orderUpdate.fulfillmentStatus =
+              admin.firestore.FieldValue.delete();
+            orderUpdate.fulfillmentBlockReason =
+              admin.firestore.FieldValue.delete();
+            orderUpdate.supportReviewStatus =
+              admin.firestore.FieldValue.delete();
           } else {
             orderUpdate.fulfillmentStatus = "blocked";
             orderUpdate.fulfillmentBlockReason = "approved_payment_without_stock_reservation";
@@ -928,6 +1051,40 @@ exports.mercadopagoWebhook = onRequest(
                     status: "paid",
                     fulfillmentStatus: "blocked",
                     fulfillmentBlockReason: incidentReason,
+                    priority: "high",
+                  },
+                  action: "open_order",
+                  imageUrl: null,
+                  priority: "high",
+                  createdAt: now,
+                  read: false,
+                },
+              );
+            }
+          }
+        } else if (paymentData.status === "approved" && newOrderStatus === "refunded") {
+          const heroId = String(currentOrderData.heroId || "").trim();
+          if (heroId) {
+            const now = admin.firestore.FieldValue.serverTimestamp();
+            const notificationRef = admin
+              .firestore()
+              .collection("notifications")
+              .doc(`${resolvedOrderRef.id}_payment_refunded`);
+            const notificationDoc = await notificationRef.get();
+            if (!notificationDoc.exists) {
+              await notificationRef.set(
+                {
+                  userId: heroId,
+                  type: "order_status",
+                  title: "Pago devuelto",
+                  body:
+                    "Tu pago fue confirmado, pero no pudimos confirmar stock. Solicitamos la devolucion automaticamente.",
+                  data: {
+                    type: "order_status",
+                    action: "open_order",
+                    orderId: resolvedOrderRef.id,
+                    status: "refunded",
+                    refundStatus: approvedRefundResult?.status || "requested",
                     priority: "high",
                   },
                   action: "open_order",
