@@ -22,6 +22,49 @@ class PaymentRepositoryImpl implements PaymentRepository {
   firestore.CollectionReference get _paymentsCollection =>
       _firestore.collection('payments');
 
+  int _paymentStatusRank(PaymentStatus status) {
+    switch (status) {
+      case PaymentStatus.refunded:
+      case PaymentStatus.chargedBack:
+        return 5;
+      case PaymentStatus.approved:
+        return 4;
+      case PaymentStatus.authorized:
+      case PaymentStatus.inProcess:
+      case PaymentStatus.inMediation:
+      case PaymentStatus.pending:
+        return 3;
+      case PaymentStatus.rejected:
+        return 2;
+      case PaymentStatus.cancelled:
+        return 1;
+    }
+  }
+
+  PaymentModel? _selectBestPayment(List<firestore.QueryDocumentSnapshot> docs) {
+    if (docs.isEmpty) return null;
+
+    final payments = docs.map((doc) {
+      return PaymentModel.fromFirestore(
+        doc.data() as Map<String, dynamic>,
+        doc.id,
+      );
+    }).toList();
+
+    payments.sort((a, b) {
+      final rankCompare = _paymentStatusRank(
+        b.status,
+      ).compareTo(_paymentStatusRank(a.status));
+      if (rankCompare != 0) return rankCompare;
+
+      final aTime = a.updatedAt ?? a.approvedAt ?? a.createdAt;
+      final bTime = b.updatedAt ?? b.approvedAt ?? b.createdAt;
+      return bTime.compareTo(aTime);
+    });
+
+    return payments.first;
+  }
+
   @override
   Future<PaymentPreference> createPreference(Order order) async {
     try {
@@ -60,20 +103,9 @@ class PaymentRepositoryImpl implements PaymentRepository {
     try {
       final querySnapshot = await _paymentsCollection
           .where('orderId', isEqualTo: orderId)
-          .limit(1)
           .get();
 
-      if (querySnapshot.docs.isEmpty) {
-        return null;
-      }
-
-      final doc = querySnapshot.docs.first;
-      final paymentModel = PaymentModel.fromFirestore(
-        doc.data() as Map<String, dynamic>,
-        doc.id,
-      );
-
-      return paymentModel.toEntity();
+      return _selectBestPayment(querySnapshot.docs)?.toEntity();
     } catch (e) {
       throw Exception('Failed to get payment by order ID: $e');
     }
@@ -119,20 +151,9 @@ class PaymentRepositoryImpl implements PaymentRepository {
   Stream<Payment?> watchPaymentByOrderId(String orderId) {
     return _paymentsCollection
         .where('orderId', isEqualTo: orderId)
-        .limit(1)
         .snapshots()
         .map((snapshot) {
-          if (snapshot.docs.isEmpty) {
-            return null;
-          }
-
-          final doc = snapshot.docs.first;
-          final paymentModel = PaymentModel.fromFirestore(
-            doc.data() as Map<String, dynamic>,
-            doc.id,
-          );
-
-          return paymentModel.toEntity();
+          return _selectBestPayment(snapshot.docs)?.toEntity();
         });
   }
 

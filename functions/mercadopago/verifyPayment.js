@@ -12,6 +12,7 @@ const {
  */
 exports.verifyPayment = onCall(
   {
+    memory: "512MiB",
     secrets: ["MERCADOPAGO_ACCESS_TOKEN"],
   },
   async (request) => {

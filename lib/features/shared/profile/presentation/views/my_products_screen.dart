@@ -5,7 +5,9 @@ import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
 import '../../../../../domain/entities/offer.dart';
 import '../../../../../domain/entities/offer_status.dart';
+import '../../../../../domain/entities/order.dart';
 import '../../../../../data/providers/repository_providers.dart';
+import '../../../../orders/presentation/providers/orders_provider.dart';
 import '../../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../../offers/presentation/providers/offers_provider.dart';
 import '../../../../hero/presentation/viewmodels/hero_home_viewmodel.dart';
@@ -47,6 +49,19 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
 
     filtered.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return filtered;
+  }
+
+  Map<String, int> _orderCountsByOfferId(List<Order> orders) {
+    final counts = <String, int>{};
+    for (final order in orders) {
+      final seenInOrder = <String>{};
+      for (final item in order.items) {
+        final offerId = item.offerId.trim();
+        if (offerId.isEmpty || !seenInOrder.add(offerId)) continue;
+        counts[offerId] = (counts[offerId] ?? 0) + 1;
+      }
+    }
+    return counts;
   }
 
   Widget _buildStatPill({
@@ -168,7 +183,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           color: selected ? primaryOrange : textGray700,
         ),
         side: BorderSide(
-          color: selected ? primaryOrange.withValues(alpha: 0.35) : borderGray100,
+          color: selected
+              ? primaryOrange.withValues(alpha: 0.35)
+              : borderGray100,
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -226,7 +243,11 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
     );
   }
 
-  Widget _buildOfferCard(BuildContext context, Offer offer) {
+  Widget _buildOfferCard(
+    BuildContext context,
+    Offer offer, {
+    required int orderCount,
+  }) {
     final isBusy = _busyOfferIds.contains(offer.offerId);
 
     final cover = offer.coverImageUrl.trim();
@@ -452,7 +473,7 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '${offer.orderCount}',
+                              '$orderCount',
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -721,6 +742,13 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           }
 
           final offersAsync = ref.watch(myOffersProvider(user.id));
+          final orderCountsByOfferId = ref
+              .watch(myDonationOrdersProvider(user.id))
+              .maybeWhen(
+                data: _orderCountsByOfferId,
+                orElse: () => const <String, int>{},
+              );
+
           return offersAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, stackTrace) {
@@ -1208,11 +1236,19 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                             index,
                           ) {
                             final offer = filtered[index];
+                            final orderCount =
+                                orderCountsByOfferId[offer.offerId] ?? 0;
                             return Padding(
                               padding: EdgeInsets.only(
                                 bottom: index == filtered.length - 1 ? 0 : 12,
                               ),
-                              child: _buildOfferCard(context, offer),
+                              child: _buildOfferCard(
+                                context,
+                                offer,
+                                orderCount: orderCount > offer.orderCount
+                                    ? orderCount
+                                    : offer.orderCount,
+                              ),
                             );
                           }, childCount: filtered.length),
                         ),

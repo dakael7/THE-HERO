@@ -31,6 +31,36 @@ const _aggregateOrderItems = (orderData) => {
   }));
 };
 
+const _itemsFromReservationOrOrder = (reservation, orderData) => {
+  const reservationItems = Array.isArray(reservation?.items) ?
+    reservation.items :
+    [];
+  if (reservationItems.length > 0) {
+    return _aggregateOrderItems({items: reservationItems});
+  }
+  return _aggregateOrderItems(orderData);
+};
+
+const _incrementOrderCounts = async (transaction, db, items) => {
+  const offerEntries = [];
+  for (const item of items) {
+    const offerRef = db.collection('offers').doc(item.offerId);
+    const offerDoc = await transaction.get(offerRef);
+    offerEntries.push({offerRef, offerDoc});
+  }
+
+  for (const entry of offerEntries) {
+    if (!entry.offerDoc.exists) continue;
+
+    const data = entry.offerDoc.data() || {};
+    const orderCount = Number(data.orderCount ?? 0);
+    transaction.update(entry.offerRef, {
+      orderCount: (Number.isFinite(orderCount) ? orderCount : 0) + 1,
+      updatedAt: _timestamp(),
+    });
+  }
+};
+
 const resolveApprovedOrderFulfillment = async ({
   db,
   orderId,
@@ -61,11 +91,15 @@ const resolveApprovedOrderFulfillment = async ({
     }
 
     if (reservationStatus === 'reserved') {
+      const items = _itemsFromReservationOrOrder(reservation, orderData);
+      await _incrementOrderCounts(transaction, db, items);
+
       transaction.update(reservationRef, {
         status: 'consumed',
         consumedAt: _timestamp(),
         paymentId: paymentId || null,
         paymentStatusSnapshot: 'approved',
+        orderCountIncremented: true,
         updatedAt: _timestamp(),
       });
       result.canFulfill = true;
@@ -119,9 +153,11 @@ const resolveApprovedOrderFulfillment = async ({
       const data = entry.offerDoc.data() || {};
       const currentQty = Number(data.availableQty ?? 0);
       const newQty = currentQty - entry.item.qty;
+      const orderCount = Number(data.orderCount ?? 0);
       const updateData = {
         stock: newQty,
         availableQty: newQty,
+        orderCount: (Number.isFinite(orderCount) ? orderCount : 0) + 1,
         updatedAt: _timestamp(),
       };
 

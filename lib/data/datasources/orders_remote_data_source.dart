@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/order_model.dart';
 import '../../domain/services/rider_commission_calculator.dart';
 
@@ -65,6 +66,14 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
         delayMs = (delayMs * 2).clamp(300, 3000);
       }
     }
+  }
+
+  Future<void> _ensureFreshAuthToken() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('Debes iniciar sesion para continuar');
+    }
+    await user.getIdToken(true);
   }
 
   dynamic _deepStringKeyed(dynamic value) {
@@ -177,6 +186,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   @override
   Future<OrderModel> createOrder(OrderModel order) async {
     try {
+      await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('createOrder');
       final result = await callable.call(order.toJson());
       return OrderModel.fromJson(
@@ -306,6 +316,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
         throw Exception('orderId invalido');
       }
 
+      await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('updateOrderStatus');
       await callable.call(<String, dynamic>{
         'orderId': orderId,
@@ -523,6 +534,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
       if (riderId.trim().isEmpty) {
         throw Exception('riderId inválido');
       }
+      await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('claimOrder');
       await callable.call(<String, dynamic>{'orderId': orderId});
     } on FirebaseFunctionsException catch (e) {
@@ -539,6 +551,7 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     String canceledBy,
   ) async {
     try {
+      await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('cancelOrder');
       await callable.call(<String, dynamic>{
         'orderId': orderId,

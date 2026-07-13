@@ -480,6 +480,9 @@ service cloud.firestore {
      
     function _canUpdateVehicleType() {
       return !_hasRiderProfile(resource.data)
+        || !('vehicle' in request.resource.data.riderProfile)
+        || !(request.resource.data.riderProfile.vehicle is map)
+        || !('type' in request.resource.data.riderProfile.vehicle)
         || (
           request.resource.data.riderProfile.vehicle.type == resource.data.riderProfile.vehicle.type
           || (
@@ -504,7 +507,7 @@ service cloud.firestore {
     }
 
     function _clientAllowedVehicleVerificationStatus(status) {
-      return status == 'submitted' || status == 'not_required';
+      return status == 'submitted' || status == 'approved' || status == 'not_required';
     }
 
     function _vehicleTypeSafe(typeKey, v) {
@@ -515,8 +518,18 @@ service cloud.firestore {
         || v.vehicle.type == typeKey;
     }
 
-    function _vehicleOcrNotWritable(v) {
-      return !(v is map) || !('ocr' in v);
+    function _vehicleOcrNotWritable(typeKey, v) {
+      let oldVehicles = (
+        resource.data.riderProfile is map
+        && resource.data.riderProfile.vehicles is map
+      ) ? resource.data.riderProfile.vehicles : {};
+      let oldEntry = (
+        typeKey in oldVehicles
+        && oldVehicles[typeKey] is map
+      ) ? oldVehicles[typeKey] : {};
+      return !(v is map)
+        || !('ocr' in v)
+        || ('ocr' in oldEntry && v.ocr == oldEntry.ocr);
     }
 
     function _vehicleFieldsValidForType(typeKey, v) {
@@ -545,7 +558,7 @@ service cloud.firestore {
       return !(typeKey in vehicles)
         || (
           _vehicleTypeSafe(typeKey, vehicles[typeKey])
-          && _vehicleOcrNotWritable(vehicles[typeKey])
+          && _vehicleOcrNotWritable(typeKey, vehicles[typeKey])
           && _vehicleFieldsValidForType(typeKey, vehicles[typeKey])
         );
     }
@@ -556,6 +569,7 @@ service cloud.firestore {
       return !(typeKey in vehicles)
         || !(v is map)
         || !('verification' in v)
+        || !(v.verification is map)
         || !('status' in v.verification)
         || _clientAllowedVehicleVerificationStatus(v.verification.status);
     }
@@ -588,6 +602,18 @@ service cloud.firestore {
           && _vehicleVerificationEntryStatusSafe('car')
           && _vehicleVerificationEntryStatusSafe('truck')
         );
+    }
+
+    function _clientUpdatableVehicleRequestStatus(status) {
+      return status in [
+        'processing',
+        'submitted',
+        'needs_review',
+        'rejected',
+        'failed',
+        'canceled',
+        'superseded'
+      ];
     }
 
     function _clientAllowedRutVerificationStatus(status) {
@@ -1264,8 +1290,12 @@ service cloud.firestore {
     match /users/{userId}/vehicle_verification_requests/{requestId} {
       allow read, create: if isOwner(userId);
       allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'updatedAt',
+          'status'
+        ])
         && request.resource.data.status in ['submitted', 'canceled', 'superseded']
-        && resource.data.status in ['submitted', 'canceled', 'superseded'];
+        && _clientUpdatableVehicleRequestStatus(resource.data.status);
       allow delete: if false;
     }
 

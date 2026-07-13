@@ -182,7 +182,7 @@ CartSummary computeCartSummary({
     totalWeight += item.weight * item.quantity;
   }
 
-  final serviceFeeFixed = pricingConfig.riderCommissionConfig.serviceFeeCLP;
+  final serviceFeeFixed = DonationPricingConfig.buyerServiceFee;
   final taxPercentage = pricingConfig.taxPercentage;
 
   final hasItems = cartItems.isNotEmpty;

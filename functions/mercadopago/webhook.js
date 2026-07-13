@@ -132,6 +132,7 @@ const _validateWebhookSignature = ({req, query, body, webhookSecret}) => {
  */
 exports.mercadopagoWebhook = onRequest(
   {
+    memory: "512MiB",
     secrets: ["MERCADOPAGO_ACCESS_TOKEN", "MERCADOPAGO_WEBHOOK_SECRET"],
   },
   async (req, res) => {
@@ -949,6 +950,46 @@ exports.mercadopagoWebhook = onRequest(
       }
 
       const resolvedOrderRef = orderDoc.ref;
+      const mirrorOrderUpdateToUserIndexes = async (orderIdValue, orderData, update) => {
+        const batch = admin.firestore().batch();
+        let writes = 0;
+
+        const heroId = String(orderData.heroId || "").trim();
+        if (heroId) {
+          batch.set(
+            admin.firestore()
+              .collection("user_orders")
+              .doc(heroId)
+              .collection("orders")
+              .doc(orderIdValue),
+            update,
+            {merge: true},
+          );
+          writes++;
+        }
+
+        const sellerIds = Array.isArray(orderData.sellerHeroIds) ?
+          orderData.sellerHeroIds :
+          [];
+        for (const rawSellerId of sellerIds) {
+          const sellerId = String(rawSellerId || "").trim();
+          if (!sellerId) continue;
+          batch.set(
+            admin.firestore()
+              .collection("user_orders")
+              .doc(sellerId)
+              .collection("orders")
+              .doc(orderIdValue),
+            update,
+            {merge: true},
+          );
+          writes++;
+        }
+
+        if (writes > 0) {
+          await batch.commit();
+        }
+      };
 
       if (newOrderStatus) {
         const isApprovedFulfillmentBlocked =
@@ -1000,8 +1041,16 @@ exports.mercadopagoWebhook = onRequest(
           orderUpdate.canceledBy = admin.firestore.FieldValue.delete();
           orderUpdate["timestamps.canceledAt"] =
             admin.firestore.FieldValue.delete();
+          orderUpdate.paymentExpiredAt = admin.firestore.FieldValue.delete();
+          orderUpdate.stockRestored = admin.firestore.FieldValue.delete();
+          orderUpdate.stockRestoredAt = admin.firestore.FieldValue.delete();
         }
         await resolvedOrderRef.set(orderUpdate, {merge: true});
+        await mirrorOrderUpdateToUserIndexes(
+          resolvedOrderRef.id,
+          currentOrderData,
+          orderUpdate,
+        );
 
         if (isApprovedFulfillmentBlocked) {
           const incidentReason = "approved_payment_without_stock_reservation";

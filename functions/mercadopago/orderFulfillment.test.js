@@ -70,8 +70,11 @@ class FakeDb {
 
 test('consumes an existing reserved stock reservation', async () => {
   const db = new FakeDb({
-    'stockReservations/order-1': {status: 'reserved'},
-    'offers/offer-1': {availableQty: 5, stock: 5},
+    'stockReservations/order-1': {
+      status: 'reserved',
+      items: [{offerId: 'offer-1', qty: 2}],
+    },
+    'offers/offer-1': {availableQty: 5, stock: 5, orderCount: 2},
   });
 
   const result = await resolveApprovedOrderFulfillment({
@@ -86,12 +89,13 @@ test('consumes an existing reserved stock reservation', async () => {
   assert.equal(result.recoveryStatus, 'reserved_consumed');
   assert.equal(db.get('stockReservations/order-1').status, 'consumed');
   assert.equal(db.get('offers/offer-1').availableQty, 5);
+  assert.equal(db.get('offers/offer-1').orderCount, 3);
 });
 
 test('recovers a released reservation when stock is still available', async () => {
   const db = new FakeDb({
     'stockReservations/order-1': {status: 'released'},
-    'offers/offer-1': {availableQty: 3, stock: 3},
+    'offers/offer-1': {availableQty: 3, stock: 3, orderCount: 0},
   });
 
   const result = await resolveApprovedOrderFulfillment({
@@ -113,6 +117,7 @@ test('recovers a released reservation when stock is still available', async () =
   assert.equal(result.canFulfill, true);
   assert.equal(result.recoveryStatus, 'stock_recovered');
   assert.equal(db.get('offers/offer-1').availableQty, 1);
+  assert.equal(db.get('offers/offer-1').orderCount, 1);
   assert.equal(reservation.status, 'consumed');
   assert.deepEqual(reservation.items, [{offerId: 'offer-1', qty: 2}]);
 });

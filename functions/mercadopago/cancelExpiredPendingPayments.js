@@ -38,6 +38,39 @@ const qtyInt = (value) => {
   return rounded > 0 ? rounded : 1;
 };
 
+const aggregateReservationItems = (items) => {
+  const qtyByOfferId = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    const offerId = String(item?.offerId || "").trim();
+    if (!offerId) continue;
+    qtyByOfferId.set(offerId, (qtyByOfferId.get(offerId) || 0) + qtyInt(item?.qty));
+  }
+  return Array.from(qtyByOfferId.entries()).map(([offerId, qty]) => ({
+    offerId,
+    qty,
+  }));
+};
+
+const incrementOrderCounts = async (transaction, db, items) => {
+  const entries = [];
+  for (const item of items) {
+    const offerRef = db.collection("offers").doc(item.offerId);
+    const offerDoc = await transaction.get(offerRef);
+    entries.push({offerRef, offerDoc});
+  }
+
+  for (const entry of entries) {
+    if (!entry.offerDoc.exists) continue;
+
+    const data = entry.offerDoc.data() || {};
+    const orderCount = Number(data.orderCount ?? 0);
+    transaction.update(entry.offerRef, {
+      orderCount: (Number.isFinite(orderCount) ? orderCount : 0) + 1,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+};
+
 const readPaymentDocsForOrder = async (transaction, db, orderIds) => {
   const ids = [...new Set(orderIds
     .map((value) => String(value || "").trim())
@@ -125,11 +158,18 @@ const releaseExpiredReservation = async (reservationRef) => {
       orderData.orderId,
     ]);
     if (paymentDocs.some(isApprovedPaymentDoc)) {
+      await incrementOrderCounts(
+        transaction,
+        db,
+        aggregateReservationItems(reservation.items),
+      );
+
       transaction.update(reservationRef, {
         status: "consumed",
         consumedAt: admin.firestore.FieldValue.serverTimestamp(),
         consumedBy: "cancelExpiredPendingPayments",
         consumedReason: "payment_already_approved",
+        orderCountIncremented: true,
       });
 
       if (orderDoc.exists) {

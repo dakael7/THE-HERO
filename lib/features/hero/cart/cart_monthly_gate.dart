@@ -12,6 +12,12 @@ import '../../shared/profile/presentation/views/donation_questions_screen.dart';
 const int cartWeeklyOrderLimit = 3;
 const int cartOrdersPerWeeklyDonation = 3;
 
+int cartWeeklyOrderLimitForDonations(int donationCount) {
+  final safeDonationCount = donationCount < 0 ? 0 : donationCount;
+  return cartWeeklyOrderLimit +
+      (safeDonationCount * cartOrdersPerWeeklyDonation);
+}
+
 class CartWeeklyAllowance {
   const CartWeeklyAllowance({
     required this.ordersUsed,
@@ -68,9 +74,7 @@ final cartWeeklyAllowanceProvider = FutureProvider.autoDispose
       return CartWeeklyAllowance(
         ordersUsed: ordersUsed,
         donationsUploaded: donationsUploaded,
-        orderLimit:
-            cartWeeklyOrderLimit +
-            (donationsUploaded * cartOrdersPerWeeklyDonation),
+        orderLimit: cartWeeklyOrderLimitForDonations(donationsUploaded),
       );
     });
 

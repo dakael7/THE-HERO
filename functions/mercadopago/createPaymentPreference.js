@@ -16,6 +16,7 @@ const PENDING_PAYMENT_TIMEOUT_MS = 5 * 60 * 1000;
  */
 exports.createPaymentPreference = onCall(
   {
+    memory: "512MiB",
     secrets: ["MERCADOPAGO_ACCESS_TOKEN"],
   },
   async (request) => {

@@ -2,51 +2,71 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
-const {
-  createPaymentPreference,
-} = require("./mercadopago/createPaymentPreference");
-const { mercadopagoWebhook } = require("./mercadopago/webhook");
-const { verifyPayment } = require("./mercadopago/verifyPayment");
-const {
-  simulatePaymentApproved,
-} = require("./mercadopago/simulatePaymentApproved");
-const {
-  cancelExpiredPendingPayments,
-} = require("./mercadopago/cancelExpiredPendingPayments");
-const {
-  onOrderPaidCreateInvoice,
-  retryInvoiceEmission,
-  wasabilInvoiceWebhook,
-} = require("./billing/onOrderPaidCreateInvoice");
-const {
-  getInvoiceDownloadLink,
-} = require("./billing/getInvoiceDownloadLink");
-const {
-  emitFiscalDocument,
-  runSiiCertificationSet,
-} = require("./billing/emitFiscalDocument");
-const {
-  generateFiscalBooksDraft,
-} = require("./billing/generateFiscalBooks");
+function exportLazy(name, modulePath, exportName = name) {
+  Object.defineProperty(exports, name, {
+    enumerable: true,
+    configurable: true,
+    get() {
+      const value = require(modulePath)[exportName];
+      Object.defineProperty(exports, name, {
+        value,
+        enumerable: true,
+        configurable: true,
+      });
+      return value;
+    },
+  });
+}
 
-exports.createPaymentPreference = createPaymentPreference;
-exports.mercadopagoWebhook = mercadopagoWebhook;
-exports.verifyPayment = verifyPayment;
-exports.simulatePaymentApproved = simulatePaymentApproved;
-exports.cancelExpiredPendingPayments = cancelExpiredPendingPayments;
-exports.onOrderPaidCreateInvoice = onOrderPaidCreateInvoice;
-exports.retryInvoiceEmission = retryInvoiceEmission;
-exports.wasabilInvoiceWebhook = wasabilInvoiceWebhook;
-exports.getInvoiceDownloadLink = getInvoiceDownloadLink;
-exports.emitFiscalDocument = emitFiscalDocument;
-exports.runSiiCertificationSet = runSiiCertificationSet;
-exports.generateFiscalBooksDraft = generateFiscalBooksDraft;
+exportLazy("createPaymentPreference", "./mercadopago/createPaymentPreference");
+exportLazy("mercadopagoWebhook", "./mercadopago/webhook");
+exportLazy("verifyPayment", "./mercadopago/verifyPayment");
+exportLazy("simulatePaymentApproved", "./mercadopago/simulatePaymentApproved");
+exportLazy("cancelExpiredPendingPayments", "./mercadopago/cancelExpiredPendingPayments");
 
-Object.assign(exports, require("./accountDeletion"));
-Object.assign(exports, require("./adminSupport"));
-Object.assign(exports, require("./orders"));
-Object.assign(exports, require("./imageProcessing"));
-Object.assign(exports, require("./orderRatings"));
-Object.assign(exports, require("./notifications"));
-Object.assign(exports, require("./riderStats"));
-Object.assign(exports, require("./riderVerification"));
+exportLazy("onOrderPaidCreateInvoice", "./billing/onOrderPaidCreateInvoice");
+exportLazy("retryInvoiceEmission", "./billing/onOrderPaidCreateInvoice");
+exportLazy("wasabilInvoiceWebhook", "./billing/onOrderPaidCreateInvoice");
+exportLazy("getInvoiceDownloadLink", "./billing/getInvoiceDownloadLink");
+exportLazy("emitFiscalDocument", "./billing/emitFiscalDocument");
+exportLazy("runSiiCertificationSet", "./billing/emitFiscalDocument");
+exportLazy("generateFiscalBooksDraft", "./billing/generateFiscalBooks");
+
+exportLazy("deleteMyAccount", "./accountDeletion");
+exportLazy("adminUpdatePricing", "./adminSupport");
+exportLazy("adminGetPricing", "./adminSupport");
+exportLazy("adminSupportInboxOffers", "./adminSupport");
+exportLazy("adminSupportInboxUsers", "./adminSupport");
+exportLazy("adminSupportGetOffer", "./adminSupport");
+exportLazy("adminSupportGetUser", "./adminSupport");
+exportLazy("adminSupportListOfferReports", "./adminSupport");
+exportLazy("adminSupportListUserReports", "./adminSupport");
+exportLazy("adminSupportSetOfferReviewStatus", "./adminSupport");
+exportLazy("adminSupportSetUserReviewStatus", "./adminSupport");
+exportLazy("adminSupportModerateOffer", "./adminSupport");
+exportLazy("adminSupportModerateUser", "./adminSupport");
+exportLazy("adminSupportDeleteOffer", "./adminSupport");
+exportLazy("adminPayoutRider", "./adminSupport");
+
+exportLazy("createOrder", "./orders");
+exportLazy("claimOrder", "./orders");
+exportLazy("updateOrderStatus", "./orders");
+exportLazy("cancelOrder", "./orders");
+
+exportLazy("processImage1200Webp", "./imageProcessing");
+exportLazy("processOrderRatings", "./orderRatings");
+
+exportLazy("notifyNewChatMessage", "./notifications");
+exportLazy("notifyPickupStopProgress", "./notifications");
+exportLazy("notifyOrderStatusChange", "./notifications");
+exportLazy("notifyNearbyRiders", "./notifications");
+exportLazy("sendOperatorNotification", "./notifications");
+exportLazy("sendBroadcastNotification", "./notifications");
+
+exportLazy("syncRiderStatsOnOrderWrite", "./riderStats");
+
+exportLazy("reviewVehicleVerificationRequest", "./riderVerification");
+exportLazy("reviewRutVerificationRequest", "./riderVerification");
+exportLazy("ocrVehicleVerificationLicenseOnUpload", "./riderVerification");
+exportLazy("ocrLicenseVerificationOnUpload", "./riderVerification");
+exportLazy("ocrRutVerificationOnUpload", "./riderVerification");

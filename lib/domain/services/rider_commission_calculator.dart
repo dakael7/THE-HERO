@@ -17,7 +17,7 @@ class RiderCommissionResult {
 
 class RiderCommissionCalculator {
   /// Default comisión fija (fallback local).
-  static const double serviceFeeCLP = 2000.0;
+  static const double serviceFeeCLP = 0.0;
 
   /// Default porcentaje de descuento (fallback local) — 0..1.
   static const double taxPercentage = 0.07;

@@ -47,6 +47,27 @@ function _normalizeOrderForCreate(rawOrder, orderId, heroId) {
   };
 }
 
+function _normalizePercentage(value) {
+  const num = _normalizeNonNegativeNumber(value);
+  if (num == null) return null;
+  return num > 1 ? num / 100 : num;
+}
+
+async function _getRiderCommissionConfig(db) {
+  const snap = await db.collection("settings").doc("pricing").get();
+  const data = snap.exists ? snap.data() || {} : {};
+  const raw = data.riderCommission && typeof data.riderCommission === "object" ?
+    data.riderCommission :
+    {};
+
+  return {
+    riderServiceFeeCLP: _normalizeNonNegativeNumber(raw.serviceFeeCLP) ??
+      DEFAULT_RIDER_SERVICE_FEE_CLP,
+    riderTaxPercentage: _normalizePercentage(raw.taxPercent ?? raw.taxPercentage) ??
+      DEFAULT_RIDER_TAX_PERCENTAGE,
+  };
+}
+
 function _writeUserOrdersIndex(transaction, db, orderId, order) {
   const heroId = String(order.heroId || "").trim();
   if (heroId) {
@@ -67,7 +88,7 @@ function _writeUserOrdersIndex(transaction, db, orderId, order) {
   }
 }
 
-exports.createOrder = onCall(async (request) => {
+exports.createOrder = onCall({memory: "512MiB"}, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Usuario no autenticado");
   }
@@ -637,16 +658,13 @@ exports.updateOrderStatus = onCall(async (request) => {
     );
   }
 
+  const riderCommission = await _getRiderCommissionConfig(admin.firestore());
+
   await _updateOrderStatusForRider({
     orderId,
     newStatus,
     riderId,
-    riderServiceFeeCLP: _normalizeNonNegativeNumber(
-      request.data?.riderServiceFeeCLP,
-    ) ?? DEFAULT_RIDER_SERVICE_FEE_CLP,
-    riderTaxPercentage: _normalizeNonNegativeNumber(
-      request.data?.riderTaxPercentage,
-    ) ?? DEFAULT_RIDER_TAX_PERCENTAGE,
+    ...riderCommission,
   });
 
   console.log(

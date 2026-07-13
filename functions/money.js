@@ -1,4 +1,4 @@
-const DEFAULT_RIDER_SERVICE_FEE_CLP = 2000;
+const DEFAULT_RIDER_SERVICE_FEE_CLP = 0;
 const DEFAULT_RIDER_TAX_PERCENTAGE = 0.07;
 
 function toCents(value) {
@@ -25,8 +25,14 @@ function calculateRiderCommission({
   taxPercentage = DEFAULT_RIDER_TAX_PERCENTAGE,
 }) {
   const fee = Math.max(0, Number(deliveryFee) || 0);
-  const serviceFee = Math.max(0, Number(serviceFeeCLP) || DEFAULT_RIDER_SERVICE_FEE_CLP);
-  const taxRate = Math.max(0, Number(taxPercentage) || DEFAULT_RIDER_TAX_PERCENTAGE);
+  const serviceFeeNum = Number(serviceFeeCLP);
+  const taxRateNum = Number(taxPercentage);
+  const serviceFee = Number.isFinite(serviceFeeNum) && serviceFeeNum >= 0 ?
+    serviceFeeNum :
+    DEFAULT_RIDER_SERVICE_FEE_CLP;
+  const taxRate = Number.isFinite(taxRateNum) && taxRateNum >= 0 ?
+    taxRateNum :
+    DEFAULT_RIDER_TAX_PERCENTAGE;
   const netDeliveryFee = Math.max(0, fee - serviceFee);
   const taxDeduction = netDeliveryFee * taxRate;
   const netEarnings = netDeliveryFee - taxDeduction;

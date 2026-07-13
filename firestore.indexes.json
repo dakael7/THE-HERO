@@ -23,6 +23,31 @@
         { "fieldPath": "participantIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "lastMessageAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "heroId", "order": "ASCENDING" },
+        { "fieldPath": "timestamps.createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rider.assignedRiderId", "order": "ASCENDING" },
+        { "fieldPath": "timestamps.assignedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requirements.requiredVehicle", "order": "ASCENDING" },
+        { "fieldPath": "timestamps.queuedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
