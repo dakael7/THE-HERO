@@ -65,7 +65,7 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>API_KEY</key>
-	<string></string>
+	<string>$(GOOGLE_MAPS_API_KEY)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Necesitamos usar la camara para tomar fotos de documentos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

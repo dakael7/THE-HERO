@@ -9,17 +9,11 @@ import '../../../domain/entities/order_status.dart';
 import '../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../shared/profile/presentation/views/donation_questions_screen.dart';
 
-const int cartBaseMonthlyOrderLimit = 3;
-const int cartOrdersPerMonthlyDonation = 3;
+const int cartWeeklyOrderLimit = 3;
+const int cartOrdersPerWeeklyDonation = 3;
 
-int cartMonthlyOrderLimitForDonations(int donationCount) {
-  final safeDonationCount = donationCount < 0 ? 0 : donationCount;
-  return cartBaseMonthlyOrderLimit +
-      (safeDonationCount * cartOrdersPerMonthlyDonation);
-}
-
-class CartMonthlyAllowance {
-  const CartMonthlyAllowance({
+class CartWeeklyAllowance {
+  const CartWeeklyAllowance({
     required this.ordersUsed,
     required this.donationsUploaded,
     required this.orderLimit,
@@ -37,41 +31,46 @@ class CartMonthlyAllowance {
   bool get canAddToCart => remainingOrders > 0;
 }
 
-final cartMonthlyAllowanceProvider = FutureProvider.autoDispose
-    .family<CartMonthlyAllowance, String>((ref, userId) async {
+final cartWeeklyAllowanceProvider = FutureProvider.autoDispose
+    .family<CartWeeklyAllowance, String>((ref, userId) async {
       final now = DateTime.now();
-      final monthStart = DateTime(now.year, now.month);
-      final nextMonthStart = DateTime(now.year, now.month + 1);
+      final weekStart = _startOfIsoWeek(now);
+      final nextWeekStart = weekStart.add(const Duration(days: 7));
 
       final ordersRepository = ref.read(ordersRepositoryProvider);
       final offersRepository = ref.read(offersRepositoryProvider);
-
       final orders = await ordersRepository.getOrdersByHero(userId).first;
       final offers = await offersRepository.getOffersByHero(userId).first;
 
       final ordersUsed = orders
           .where(
             (order) =>
-                _isInMonth(
+                _isInWeek(
                   order.timestamps.createdAt,
-                  monthStart,
-                  nextMonthStart,
+                  weekStart,
+                  nextWeekStart,
                 ) &&
-                _countsAsMonthlyOrder(order),
+                _countsAsWeeklyOrder(order),
           )
           .length;
       final donationsUploaded = offers
           .where(
             (offer) =>
-                _isInMonth(offer.createdAt, monthStart, nextMonthStart) &&
-                _countsAsMonthlyDonation(offer),
+                _isInWeek(
+                  offer.publishedAt ?? offer.createdAt,
+                  weekStart,
+                  nextWeekStart,
+                ) &&
+                _countsAsWeeklyDonation(offer),
           )
           .length;
 
-      return CartMonthlyAllowance(
+      return CartWeeklyAllowance(
         ordersUsed: ordersUsed,
         donationsUploaded: donationsUploaded,
-        orderLimit: cartMonthlyOrderLimitForDonations(donationsUploaded),
+        orderLimit:
+            cartWeeklyOrderLimit +
+            (donationsUploaded * cartOrdersPerWeeklyDonation),
       );
     });
 
@@ -83,9 +82,9 @@ Future<bool> ensureCanAddItemToCart({
   if (userId == null || userId.isEmpty) return true;
 
   try {
-    ref.invalidate(cartMonthlyAllowanceProvider(userId));
+    ref.invalidate(cartWeeklyAllowanceProvider(userId));
     final allowance = await ref.read(
-      cartMonthlyAllowanceProvider(userId).future,
+      cartWeeklyAllowanceProvider(userId).future,
     );
     if (allowance.canAddToCart) return true;
     if (!context.mounted) return false;
@@ -94,12 +93,12 @@ Future<bool> ensureCanAddItemToCart({
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Limite mensual alcanzado'),
+          title: const Text('Límite semanal alcanzado'),
           content: Text(
-            'Puedes hacer $cartBaseMonthlyOrderLimit pedidos al mes. '
-            'Ya usaste ${allowance.ordersUsed} de ${allowance.orderLimit}. '
-            'Sube un articulo para donar y se habilitaran '
-            '$cartOrdersPerMonthlyDonation pedidos mas este mes.',
+            'Puedes hacer $cartWeeklyOrderLimit pedidos por semana. '
+            'Cada donacion publicada habilita '
+            '$cartOrdersPerWeeklyDonation pedidos mas esta semana. '
+            'Ya usaste ${allowance.ordersUsed} de ${allowance.orderLimit}.',
           ),
           actions: [
             TextButton(
@@ -108,7 +107,7 @@ Future<bool> ensureCanAddItemToCart({
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Donar articulo'),
+              child: const Text('Publicar donacion'),
             ),
           ],
         );
@@ -120,12 +119,13 @@ Future<bool> ensureCanAddItemToCart({
         MaterialPageRoute(builder: (_) => const DonationQuestionsScreen()),
       );
     }
+
     return false;
   } catch (_) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No pudimos validar tu limite mensual de pedidos.'),
+          content: Text('No pudimos validar tu límite semanal de pedidos.'),
         ),
       );
     }
@@ -133,11 +133,22 @@ Future<bool> ensureCanAddItemToCart({
   }
 }
 
-bool _isInMonth(DateTime date, DateTime monthStart, DateTime nextMonthStart) {
-  return !date.isBefore(monthStart) && date.isBefore(nextMonthStart);
+DateTime _startOfIsoWeek(DateTime date) {
+  final utc = date.toUtc();
+  final day = DateTime.utc(utc.year, utc.month, utc.day);
+  return day.subtract(Duration(days: day.weekday - DateTime.monday));
 }
 
-bool _countsAsMonthlyOrder(Order order) {
+bool _isInWeek(DateTime date, DateTime weekStart, DateTime nextWeekStart) {
+  return !date.isBefore(weekStart) && date.isBefore(nextWeekStart);
+}
+
+bool _countsAsWeeklyDonation(Offer offer) {
+  return offer.status == OfferStatus.active ||
+      offer.status == OfferStatus.soldOut;
+}
+
+bool _countsAsWeeklyOrder(Order order) {
   switch (order.status) {
     case OrderStatus.pendingPayment:
     case OrderStatus.paid:
@@ -152,9 +163,4 @@ bool _countsAsMonthlyOrder(Order order) {
     case OrderStatus.failed:
       return false;
   }
-}
-
-bool _countsAsMonthlyDonation(Offer offer) {
-  return offer.status != OfferStatus.draft &&
-      offer.status != OfferStatus.archived;
 }

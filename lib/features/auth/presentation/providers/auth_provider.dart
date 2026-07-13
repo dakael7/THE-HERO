@@ -142,7 +142,7 @@ class AuthNotifier extends Notifier<AuthState> {
     required String fileName,
   }) async {
     if (bytes.isEmpty) {
-      throw Exception('Foto de perfil vacÃ­a');
+      throw Exception('Foto de perfil vacía');
     }
 
     final storage = ref.read(firebaseStorageProvider);
@@ -773,7 +773,7 @@ class AuthNotifier extends Notifier<AuthState> {
       state = state.copyWith(
         isLoading: false,
         isAuthenticated: false,
-        errorMessage: 'Tiempo de espera agotado en inicio de sesiÃ³n con Google',
+        errorMessage: 'Tiempo de espera agotado en inicio de sesión con Google',
       );
       _logAuth('googleSignInOnly:timeout elapsedMs=${sw.elapsedMilliseconds}');
       rethrow;

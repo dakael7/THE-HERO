@@ -164,7 +164,7 @@ class _ResolvedAddressTextState extends State<_ResolvedAddressText> {
     final text = (_resolved ?? widget.snapshot).trim();
     return Text(
       _loading && (text.isEmpty || text.startsWith('Lat:'))
-          ? 'Resolviendo direcciÃ³n...'
+          ? 'Resolviendo dirección...'
           : text,
       style: widget.style,
       maxLines: widget.maxLines,
@@ -200,12 +200,12 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar cobro'),
         content: const Text(
-          'Este pedido es con pago en efectivo. Â¿Confirmas que cobraste el dinero al entregar?',
+          'Este pedido es con pago en efectivo. ¿Confirmas que cobraste el dinero al entregar?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('AÃºn no'),
+            child: const Text('Aún no'),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -594,8 +594,8 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
         if (user == null) {
           return _buildEmptyState(
             icon: Icons.login,
-            title: 'SesiÃ³n requerida',
-            message: 'Inicia sesiÃ³n para ver tus entregas activas',
+            title: 'Sesión requerida',
+            message: 'Inicia sesión para ver tus entregas activas',
           );
         }
 
@@ -610,7 +610,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                 icon: Icons.delivery_dining_outlined,
                 title: 'Sin entregas activas',
                 message:
-                    'Acepta pedidos desde la pestaÃ±a de solicitudes para empezar a ganar',
+                    'Acepta pedidos desde la pestaña de solicitudes para empezar a ganar',
               );
             }
 
@@ -639,7 +639,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
       error: (e, _) => _buildEmptyState(
         icon: Icons.error_outline,
         title: 'Error de perfil',
-        message: 'No pudimos cargar tu informaciÃ³n de perfil',
+        message: 'No pudimos cargar tu información de perfil',
       ),
     );
   }
@@ -1121,7 +1121,7 @@ class _PersistentMapWidgetState extends ConsumerState<_PersistentMapWidget> {
             icon: gmap.BitmapDescriptor.defaultMarkerWithHue(
               gmap.BitmapDescriptor.hueAzure,
             ),
-            infoWindow: const gmap.InfoWindow(title: 'Tu ubicaciÃ³n'),
+            infoWindow: const gmap.InfoWindow(title: 'Tu ubicación'),
           ),
         // Marcadores de pedidos
         ...nearby.map((n) {
@@ -1303,7 +1303,7 @@ class _OrderListSliver extends ConsumerWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Mantente disponible y revisa que tu ubicaciÃ³n estÃ© activa.',
+                      'Mantente disponible y revisa que tu ubicación esté activa.',
                       style: TextStyle(color: textGray600),
                       textAlign: TextAlign.center,
                     ),
@@ -1650,7 +1650,7 @@ class _OrderListSliver extends ConsumerWidget {
                             ),
                           ),
                           Text(
-                            'â€¢',
+                            '•',
                             style: TextStyle(fontSize: 13, color: textGray600),
                           ),
                           Text(
@@ -1697,7 +1697,7 @@ class _OrderListSliver extends ConsumerWidget {
                                         SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
-                                            'Este pedido no tiene coordenadas vÃ¡lidas. Contacta al soporte.',
+                                            'Este pedido no tiene coordenadas válidas. Contacta al soporte.',
                                             style: TextStyle(fontSize: 13),
                                           ),
                                         ),

@@ -802,7 +802,7 @@ class _EmailVerificationScreenState
                     validator: (value) {
                       if (_accountExists) {
                         if (value == null || value.isEmpty) {
-                          return 'Por favor ingresa tu contraseÃ±a';
+                          return 'Por favor ingresa tu contraseña';
                         }
                         if (value.length < 6) {
                           return 'La contraseña debe tener al menos 6 caracteres';
@@ -1051,7 +1051,7 @@ class _EmailVerificationScreenState
   }
 
   Widget _buildLogoSection() {
-    // OptimizaciÃ³n: RepaintBoundary para logo
+    // Optimización: RepaintBoundary para logo
     return RepaintBoundary(
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1070,7 +1070,7 @@ class _EmailVerificationScreenState
     required VoidCallback? onTap,
     required bool isApple,
   }) {
-    // OptimizaciÃ³n: RepaintBoundary para botones sociales
+    // Optimización: RepaintBoundary para botones sociales
     return RepaintBoundary(
       child: SizedBox(
         width: double.infinity,

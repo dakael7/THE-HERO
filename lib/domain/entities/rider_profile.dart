@@ -72,10 +72,24 @@ class RiderProfile {
     if (d is Map) {
       return Documents(
         idCardUrl:
-            d['idCardUrl']?.toString() ?? d['idCardFrontUrl']?.toString() ?? '',
-        licenseUrl: d['licenseUrl']?.toString() ?? d['licenseFrontUrl']?.toString(),
+            d['idCardUrl']?.toString() ??
+            d['idCardFrontUrl']?.toString() ??
+            documents.idCardUrl,
+        licenseUrl:
+            d['licenseUrl']?.toString() ??
+            d['licenseFrontUrl']?.toString() ??
+            documents.licenseUrl,
         padronUrl:
-            d['padronUrl']?.toString() ?? d['circulationPermitUrl']?.toString(),
+            d['padronUrl']?.toString() ??
+            d['registrationCertificateUrl']?.toString(),
+        soapUrl: d['soapUrl']?.toString() ?? d['soapInsuranceUrl']?.toString(),
+        circulationPermitUrl:
+            d['circulationPermitUrl']?.toString() ??
+            d['permisoCirculacionUrl']?.toString(),
+        technicalReviewUrl:
+            d['technicalReviewUrl']?.toString() ??
+            d['homologationUrl']?.toString() ??
+            d['revisionTecnicaUrl']?.toString(),
       );
     }
     return documents;
@@ -86,7 +100,8 @@ class RiderProfile {
     final l = entry?['limits'];
     if (l is Map) {
       return Limits(
-        maxWeightKg: (l['maxWeightKg'] as num?)?.toDouble() ?? limits.maxWeightKg,
+        maxWeightKg:
+            (l['maxWeightKg'] as num?)?.toDouble() ?? limits.maxWeightKg,
         maxDistanceKm:
             (l['maxDistanceKm'] as num?)?.toDouble() ?? limits.maxDistanceKm,
       );
@@ -111,9 +126,7 @@ class RiderProfile {
   bool get isComplete {
     final v = activeVehicle;
     final d = activeDocuments;
-    return v.isValid &&
-        d.isValidForVehicle(v.type) &&
-        isActiveVehicleVerified;
+    return v.isValid && d.isValidForVehicle(v.type) && isActiveVehicleVerified;
   }
 
   bool get canAcceptDeliveries {

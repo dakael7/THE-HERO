@@ -32,8 +32,8 @@ class PreviousOrdersScreen extends ConsumerWidget {
       body: userId == null
           ? const _EmptyState(
               icon: Icons.login,
-              title: 'Inicia sesiÃ³n',
-              message: 'Necesitas iniciar sesiÃ³n para ver tus pedidos.',
+              title: 'Inicia sesión',
+              message: 'Necesitas iniciar sesión para ver tus pedidos.',
             )
           : ref.watch(myOrdersProvider(userId)).when(
               loading: () => const Center(
@@ -57,7 +57,7 @@ class PreviousOrdersScreen extends ConsumerWidget {
                     icon: Icons.receipt_long,
                     title: 'No tienes pedidos anteriores',
                     message:
-                        'Cuando finalices un pedido, podrÃ¡s ver el historial aquÃ­.',
+                        'Cuando finalices un pedido, podrás ver el historial aquí.',
                   );
                 }
 
@@ -167,7 +167,7 @@ class _OrderTile extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // â”€â”€ Colored header band â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Colored header band
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -227,7 +227,7 @@ class _OrderTile extends ConsumerWidget {
                 ],
               ),
             ),
-            // â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Body
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
               child: Column(

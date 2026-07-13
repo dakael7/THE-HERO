@@ -7,6 +7,117 @@ const {
   normalizeNonNegativeNumber: _normalizeNonNegativeNumber,
   toCents: _toCents,
 } = require("./money");
+const {assertHeroWeeklyOrderLimit} = require("./orderLimits");
+
+function _parseDate(value) {
+  if (!value) return null;
+  if (typeof value.toDate === "function") return value.toDate();
+  if (value instanceof Date) return value;
+  if (typeof value === "object" && Number.isFinite(value._seconds)) {
+    return new Date((value._seconds * 1000) + Math.round((value._nanoseconds || 0) / 1000000));
+  }
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function _toTimestamp(value, fallback) {
+  const parsed = _parseDate(value) || fallback;
+  return admin.firestore.Timestamp.fromDate(parsed);
+}
+
+function _normalizeOrderForCreate(rawOrder, orderId, heroId) {
+  const now = new Date();
+  const order = rawOrder && typeof rawOrder === "object" ? {...rawOrder} : {};
+  const timestamps = order.timestamps && typeof order.timestamps === "object" ?
+    {...order.timestamps} :
+    {};
+
+  timestamps.createdAt = _toTimestamp(timestamps.createdAt, now);
+  for (const key of ["paidAt", "queuedAt", "assignedAt", "pickedUpAt", "deliveredAt", "canceledAt"]) {
+    if (timestamps[key]) timestamps[key] = _toTimestamp(timestamps[key], now);
+  }
+
+  return {
+    ...order,
+    orderId,
+    heroId,
+    timestamps,
+    updatedAt: _toTimestamp(order.updatedAt, now),
+    ...(order.paymentExpiresAt ? {paymentExpiresAt: _toTimestamp(order.paymentExpiresAt, now)} : {}),
+  };
+}
+
+function _writeUserOrdersIndex(transaction, db, orderId, order) {
+  const heroId = String(order.heroId || "").trim();
+  if (heroId) {
+    transaction.set(
+      db.collection("user_orders").doc(heroId).collection("orders").doc(orderId),
+      {...order, role: "buyer"},
+    );
+  }
+
+  const sellerIds = Array.isArray(order.sellerHeroIds) ? order.sellerHeroIds : [];
+  for (const rawSellerId of sellerIds) {
+    const sellerId = String(rawSellerId || "").trim();
+    if (!sellerId) continue;
+    transaction.set(
+      db.collection("user_orders").doc(sellerId).collection("orders").doc(orderId),
+      {...order, role: "seller"},
+    );
+  }
+}
+
+exports.createOrder = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Usuario no autenticado");
+  }
+
+  const db = admin.firestore();
+  const rawOrder = request.data && typeof request.data === "object" ? request.data : {};
+  const heroId = String(rawOrder.heroId || "").trim();
+  if (!heroId || heroId !== request.auth.uid) {
+    throw new HttpsError(
+      "permission-denied",
+      "El pedido debe pertenecer al usuario autenticado",
+    );
+  }
+
+  let createdOrder = null;
+
+  await db.runTransaction(async (transaction) => {
+    const requestedOrderId = String(rawOrder.orderId || "").trim();
+    const orderRef = requestedOrderId ?
+      db.collection("orders").doc(requestedOrderId) :
+      db.collection("orders").doc();
+    const orderId = orderRef.id;
+    const existing = await transaction.get(orderRef);
+
+    if (existing.exists) {
+      const existingOrder = existing.data() || {};
+      if (String(existingOrder.heroId || "").trim() !== heroId) {
+        throw new HttpsError(
+          "permission-denied",
+          "No tienes permiso para usar este pedido",
+        );
+      }
+      createdOrder = {...existingOrder, orderId};
+      return;
+    }
+
+    await assertHeroWeeklyOrderLimit({
+      transaction,
+      db,
+      heroId,
+      excludingOrderId: orderId,
+    });
+
+    createdOrder = _normalizeOrderForCreate(rawOrder, orderId, heroId);
+    transaction.set(orderRef, createdOrder);
+    _writeUserOrdersIndex(transaction, db, orderId, createdOrder);
+  });
+
+  return createdOrder;
+});
 
 /**
  * Asigna un pedido a un rider de forma segura

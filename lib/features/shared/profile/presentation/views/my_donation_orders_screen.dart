@@ -532,7 +532,7 @@ class _TileHeader extends StatelessWidget {
 }
 
 // 
-//  INFO ROW  â€” icon + text utility
+//  INFO ROW  - icon + text utility
 // 
 
 class _InfoRow extends StatelessWidget {

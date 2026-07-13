@@ -36,6 +36,14 @@ class OrderTimestampsModel {
   static Timestamp? _parseTimestamp(dynamic value) {
     if (value == null) return null;
     if (value is Timestamp) return value;
+    if (value is Map) {
+      final seconds = (value['_seconds'] ?? value['seconds']) as num?;
+      final nanoseconds =
+          (value['_nanoseconds'] ?? value['nanoseconds']) as num? ?? 0;
+      if (seconds != null) {
+        return Timestamp(seconds.toInt(), nanoseconds.toInt());
+      }
+    }
     if (value is String) {
       try {
         return Timestamp.fromDate(DateTime.parse(value));

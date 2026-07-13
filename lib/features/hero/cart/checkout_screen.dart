@@ -323,13 +323,22 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       if (errorCode.isEmpty && raw.isEmpty) return;
 
       final isResourceExhausted = errorCode == 'resource-exhausted';
+      final isWeeklyLimit = _isWeeklyOrderLimitMessage(raw);
 
-      if (!isResourceExhausted || attempt == delays.length - 1) {
+      if (!isResourceExhausted ||
+          isWeeklyLimit ||
+          attempt == delays.length - 1) {
         return;
       }
 
       await Future<void>.delayed(delays[attempt]);
     }
+  }
+
+  bool _isWeeklyOrderLimitMessage(String value) {
+    final normalized = value.toLowerCase();
+    return normalized.contains('semana') &&
+        (normalized.contains('limite') || normalized.contains('límite'));
   }
 
   double _couponBase(CartSummary summary) {
@@ -993,12 +1002,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             final errorCode = (paymentState.errorCode ?? '').toLowerCase();
             final raw = paymentState.error ?? '';
             if (errorCode == 'resource-exhausted') {
+              final message = _isWeeklyOrderLimitMessage(raw)
+                  ? raw
+                  : 'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.';
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.',
-                  ),
-                  duration: Duration(seconds: 4),
+                SnackBar(
+                  content: Text(message),
+                  duration: const Duration(seconds: 4),
                 ),
               );
               return;
@@ -1231,22 +1241,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         if (paymentState.error != null) {
           final errorCode = (paymentState.errorCode ?? '').toLowerCase();
           final raw = paymentState.error ?? '';
-          final message = raw.toLowerCase();
+          final lowerMessage = raw.toLowerCase();
 
           if (errorCode == 'resource-exhausted') {
+            final message = _isWeeklyOrderLimitMessage(raw)
+                ? raw
+                : 'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.';
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Hay mucha demanda en este momento. Espera 30 segundos y vuelve a intentar.',
-                ),
-                duration: Duration(seconds: 4),
+              SnackBar(
+                content: Text(message),
+                duration: const Duration(seconds: 4),
               ),
             );
             return;
           }
 
-          if (message.contains('stock insuficiente') ||
-              message.contains('failed-precondition')) {
+          if (lowerMessage.contains('stock insuficiente') ||
+              lowerMessage.contains('failed-precondition')) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
@@ -1258,7 +1269,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             return;
           }
 
-          if (message.contains('unit_price') && message.contains('integer')) {
+          if (lowerMessage.contains('unit_price') &&
+              lowerMessage.contains('integer')) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(

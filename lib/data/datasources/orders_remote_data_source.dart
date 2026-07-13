@@ -67,6 +67,18 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     }
   }
 
+  dynamic _deepStringKeyed(dynamic value) {
+    if (value is Map) {
+      return value.map((key, nested) {
+        return MapEntry(key.toString(), _deepStringKeyed(nested));
+      });
+    }
+    if (value is List) {
+      return value.map(_deepStringKeyed).toList();
+    }
+    return value;
+  }
+
   @override
   Future<void> unassignRiderAndRequeue(String orderId, String riderId) async {
     try {
@@ -162,73 +174,16 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     return copy;
   }
 
-  Future<void> _writeUserOrdersIndex({
-    required WriteBatch batch,
-    required Map<String, dynamic> createdOrder,
-  }) async {
-    final orderId = (createdOrder['orderId'] as String?)?.trim() ?? '';
-    final buyerId = (createdOrder['heroId'] as String?)?.trim() ?? '';
-
-    if (orderId.isEmpty || buyerId.isEmpty) return;
-
-    final buyerIndexRef = _firestore
-        .collection('user_orders')
-        .doc(buyerId)
-        .collection('orders')
-        .doc(orderId);
-    batch.set(buyerIndexRef, {...createdOrder, 'role': 'buyer'});
-
-    final sellerIdsRaw = createdOrder['sellerHeroIds'];
-    if (sellerIdsRaw is! List) return;
-
-    final sellerIds = sellerIdsRaw
-        .whereType<String>()
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toSet();
-
-    for (final sellerId in sellerIds) {
-      final sellerIndexRef = _firestore
-          .collection('user_orders')
-          .doc(sellerId)
-          .collection('orders')
-          .doc(orderId);
-      batch.set(sellerIndexRef, {...createdOrder, 'role': 'seller'});
-    }
-  }
-
   @override
   Future<OrderModel> createOrder(OrderModel order) async {
     try {
-      final hasPreGeneratedId = order.orderId.isNotEmpty;
-
-      if (hasPreGeneratedId) {
-        final docRef = _firestore.collection('orders').doc(order.orderId);
-        final createdOrder = order.toJson();
-        createdOrder['orderId'] = docRef.id;
-        await docRef.set(createdOrder);
-
-        final indexBatch = _firestore.batch();
-        await _writeUserOrdersIndex(
-          batch: indexBatch,
-          createdOrder: createdOrder,
-        );
-        await indexBatch.commit();
-        return OrderModel.fromJson(createdOrder);
-      }
-
-      final docRef = _firestore.collection('orders').doc();
-      final createdOrder = order.toJson();
-      createdOrder['orderId'] = docRef.id;
-      await docRef.set(createdOrder);
-
-      final indexBatch = _firestore.batch();
-      await _writeUserOrdersIndex(
-        batch: indexBatch,
-        createdOrder: createdOrder,
+      final callable = _functions.httpsCallable('createOrder');
+      final result = await callable.call(order.toJson());
+      return OrderModel.fromJson(
+        (_deepStringKeyed(result.data) as Map).cast<String, dynamic>(),
       );
-      await indexBatch.commit();
-      return OrderModel.fromJson(createdOrder);
+    } on FirebaseFunctionsException catch (e) {
+      throw Exception(e.message ?? 'No se pudo crear el pedido');
     } catch (e) {
       throw Exception('Error al crear pedido: $e');
     }

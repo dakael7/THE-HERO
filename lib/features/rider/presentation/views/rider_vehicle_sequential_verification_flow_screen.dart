@@ -62,6 +62,26 @@ class _RiderVehicleSequentialVerificationFlowScreenState
     }
   }
 
+  String _vehicleStatusLabel(String? status) {
+    switch (status) {
+      case 'approved':
+      case 'not_required':
+        return 'Guardado';
+      case 'processing':
+        return 'Analizando...';
+      case 'submitted':
+        return 'Enviado';
+      case 'rejected':
+        return 'Rechazado';
+      case 'failed':
+        return 'Error';
+      case 'needs_review':
+      case null:
+      default:
+        return 'Pendiente';
+    }
+  }
+
   String _vehicleTypeLabel(VehicleType type) {
     switch (type) {
       case VehicleType.bicycle:
@@ -86,6 +106,7 @@ class _RiderVehicleSequentialVerificationFlowScreenState
         ),
       );
       ref.invalidate(profileProvider);
+      ref.invalidate(profileStreamProvider);
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -95,13 +116,17 @@ class _RiderVehicleSequentialVerificationFlowScreenState
     if (_working) return;
     setState(() => _working = true);
     try {
-      await Navigator.of(context).push(
+      final completed = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) =>
               RiderVehicleVerificationScreen(vehicleType: widget.vehicleType),
         ),
       );
       ref.invalidate(profileProvider);
+      ref.invalidate(profileStreamProvider);
+      if (completed == true && mounted) {
+        Navigator.of(context).pop(true);
+      }
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -198,9 +223,47 @@ class _RiderVehicleSequentialVerificationFlowScreenState
               (licenseStatus?.trim().toLowerCase() == 'approved');
 
           final canStartLicense = _canStartLicenseForStatus(licenseStatus);
+          final vehicleVerificationRaw = vehicleEntryMap?['verification'];
+          final vehicleVerification = vehicleVerificationRaw is Map
+              ? Map<String, dynamic>.from(vehicleVerificationRaw)
+              : null;
+          final vehicleStatusRaw = vehicleVerification?['status']?.toString();
+          final vehicleRequestId = vehicleVerification?['requestId']
+              ?.toString();
+          final vehicleRequestDataById =
+              vehicleRequestId != null && vehicleRequestId.trim().isNotEmpty
+              ? ref
+                    .watch(
+                      vehicleVerificationRequestProvider(
+                        RiderVerificationRequestKey(
+                          userId: user.id,
+                          requestId: vehicleRequestId,
+                        ),
+                      ),
+                    )
+                    .value
+              : null;
+          final latestVehicleRequestData = ref
+              .watch(
+                latestVehicleVerificationRequestProvider(
+                  RiderVerificationVehicleKey(
+                    userId: user.id,
+                    vehicleType: widget.vehicleType.name,
+                  ),
+                ),
+              )
+              .value;
+          final vehicleStatus = resolveVerificationStatus(
+            requestData: latestVehicleRequestData ?? vehicleRequestDataById,
+            profileData: vehicleVerification,
+            fallbackStatus: vehicleStatusRaw,
+          );
+          final vehicleCompleted =
+              vehicleStatus == 'approved' || vehicleStatus == 'not_required';
 
           final step1Completed = !licenseRequired || licenseApproved;
           final step2Enabled = step1Completed;
+          final step2Completed = step2Enabled && vehicleCompleted;
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -242,12 +305,17 @@ class _RiderVehicleSequentialVerificationFlowScreenState
               _FlowStepCard(
                 stepNumber: 2,
                 title: 'Validar vehículo',
-                subtitle: step2Enabled
+                subtitle: step2Completed
+                    ? 'Estado: ${_vehicleStatusLabel(vehicleStatus)}'
+                    : step2Enabled
                     ? 'Sube documentos del vehículo y patente'
                     : 'Primero debes aprobar la licencia',
-                enabled: step2Enabled,
-                primaryLabel: 'Continuar',
-                onPrimary: step2Enabled ? _openVehicle : null,
+                badgeText: step2Completed ? 'Listo' : null,
+                enabled: step2Enabled && !step2Completed,
+                primaryLabel: step2Completed ? 'Listo' : 'Continuar',
+                onPrimary: step2Enabled && !step2Completed
+                    ? _openVehicle
+                    : null,
               ),
               const SizedBox(height: 16),
               SizedBox(
@@ -255,6 +323,8 @@ class _RiderVehicleSequentialVerificationFlowScreenState
                 child: ElevatedButton(
                   onPressed: _working
                       ? null
+                      : step2Completed
+                      ? () => Navigator.of(context).pop(true)
                       : (step2Enabled ? _openVehicle : _openLicense),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryOrange,
@@ -267,6 +337,8 @@ class _RiderVehicleSequentialVerificationFlowScreenState
                   child: Text(
                     _working
                         ? 'Abriendo…'
+                        : step2Completed
+                        ? 'Finalizar'
                         : step2Enabled
                         ? 'Continuar con vehículo'
                         : licenseRequired

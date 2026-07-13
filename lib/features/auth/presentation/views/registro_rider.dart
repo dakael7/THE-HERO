@@ -548,7 +548,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
 
                         _FieldDivider(),
 
-                        // TelÃ©fono
+                        // Teléfono
                         TextFormField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,

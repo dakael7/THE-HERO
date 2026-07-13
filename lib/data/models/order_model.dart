@@ -114,6 +114,14 @@ class OrderModel {
     // Helper to parse timestamp from either Timestamp or ISO string
     firestore.Timestamp parseTimestamp(dynamic value) {
       if (value is firestore.Timestamp) return value;
+      if (value is Map) {
+        final seconds = (value['_seconds'] ?? value['seconds']) as num?;
+        final nanoseconds =
+            (value['_nanoseconds'] ?? value['nanoseconds']) as num? ?? 0;
+        if (seconds != null) {
+          return firestore.Timestamp(seconds.toInt(), nanoseconds.toInt());
+        }
+      }
       if (value is String) {
         try {
           return firestore.Timestamp.fromDate(DateTime.parse(value));

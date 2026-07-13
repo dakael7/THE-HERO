@@ -539,7 +539,7 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
 
                         _FieldDivider(),
 
-                        // TelÃ©fono
+                        // Teléfono
                         TextFormField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,

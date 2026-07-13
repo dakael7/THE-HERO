@@ -8,6 +8,7 @@ import '../../../../domain/entities/vehicle.dart';
 import '../providers/rider_verification_request_providers.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import 'rider_vehicle_sequential_verification_flow_screen.dart';
+import 'rider_vehicle_verification_screen.dart';
 
 class RiderVehicleInfoScreen extends ConsumerStatefulWidget {
   const RiderVehicleInfoScreen({super.key});
@@ -22,26 +23,6 @@ class _RiderVehicleInfoScreenState
   VehicleType? _selected;
   bool _saving = false;
   bool _bootstrappedVehicles = false;
-
-  void _showInfoDialog(
-    BuildContext context, {
-    required String title,
-    required String message,
-  }) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Entendido'),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -154,6 +135,7 @@ class _RiderVehicleInfoScreenState
                     },
                   }, firestore.SetOptions(merge: true));
                   ref.invalidate(profileProvider);
+                  ref.invalidate(profileStreamProvider);
                 }
               } catch (_) {
                 // no-op: avoid blocking UI if rules/data mismatch
@@ -256,27 +238,50 @@ class _RiderVehicleInfoScreenState
             }
           }
 
-          String _vehicleInfoText(VehicleType type) {
-            final entry = vehicleEntryMap(type);
-            final vehicle = entry?['vehicle'] is Map
-                ? entry!['vehicle'] as Map
-                : null;
-
-            String line(String label, Object? value) {
-              final v = value == null ? '' : value.toString();
-              return v.trim().isEmpty ? '$label: -' : '$label: $v';
-            }
-
-            return [
-              line('Tipo', type.displayName),
-              line('Patente', vehicle?['plateNumber']),
-              line('Modelo', vehicle?['model']),
-              line('Año', vehicle?['year']),
-              line('Color', vehicle?['color']),
-            ].join('\n');
+          Future<void> openVehicleFlow(VehicleType type) async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => RiderVehicleSequentialVerificationFlowScreen(
+                  vehicleType: type,
+                ),
+              ),
+            );
+            ref.invalidate(profileProvider);
+            ref.invalidate(profileStreamProvider);
           }
 
-          final canSaveSelected = isVehicleVerified(selectedType);
+          Future<void> openVehicleEditor(VehicleType type) async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    RiderVehicleVerificationScreen(vehicleType: type),
+              ),
+            );
+            ref.invalidate(profileProvider);
+            ref.invalidate(profileStreamProvider);
+          }
+
+          Future<void> selectVehicle(VehicleType type) async {
+            if (_saving) return;
+            if (rutGateRequired) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Debes verificar tu RUT para verificar vehiculos.',
+                  ),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+              return;
+            }
+            if (!isVehicleVerified(type)) {
+              await openVehicleFlow(type);
+              return;
+            }
+            setState(() => _selected = type);
+            if (type == currentType) return;
+            await _saveVehicle(context, userId: user.id, selectedType: type);
+          }
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -293,69 +298,24 @@ class _RiderVehicleInfoScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Vehículo disponible',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
-                                  color: textGray900,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                'Los pedidos que verás dependerán del tipo de vehículo que uses',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: textGray700,
-                                ),
-                              ),
-                            ],
+                        Text(
+                          'Vehiculo disponible',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            color: textGray900,
                           ),
                         ),
-                        TextButton(
-                          onPressed: _saving
-                              ? null
-                              : () async {
-                                  if (rutGateRequired) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Debes verificar tu RUT para verificar vehículos.',
-                                        ),
-                                        duration: Duration(seconds: 3),
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  if (!canSaveSelected) {
-                                    _showInfoDialog(
-                                      context,
-                                      title: 'Vehículo no disponible',
-                                      message:
-                                          'Para activar este vehículo debes subir la documentación requerida y esperar validación.',
-                                    );
-                                    return;
-                                  }
-
-                                  await _saveVehicle(
-                                    context,
-                                    userId: user.id,
-                                    selectedType: selectedType,
-                                  );
-                                },
-                          child: Text(
-                            _saving ? 'Guardando…' : 'Gestionar →',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: primaryOrange,
-                            ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Toca un vehiculo habilitado para usarlo',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: textGray700,
                           ),
                         ),
                       ],
@@ -369,8 +329,7 @@ class _RiderVehicleInfoScreenState
                       isVerified: isVehicleVerified(VehicleType.bicycle),
                       statusLabel: vehicleStatusLabel(VehicleType.bicycle),
                       enabled: true,
-                      onTap: () =>
-                          setState(() => _selected = VehicleType.bicycle),
+                      onTap: () => selectVehicle(VehicleType.bicycle),
                       onPrimaryAction: null,
                       primaryActionLabel: null,
                       warningText: null,
@@ -384,8 +343,7 @@ class _RiderVehicleInfoScreenState
                       isVerified: isVehicleVerified(VehicleType.motorcycle),
                       statusLabel: vehicleStatusLabel(VehicleType.motorcycle),
                       enabled: true,
-                      onTap: () =>
-                          setState(() => _selected = VehicleType.motorcycle),
+                      onTap: () => selectVehicle(VehicleType.motorcycle),
                       onPrimaryAction: () async {
                         if (rutGateRequired) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -399,11 +357,7 @@ class _RiderVehicleInfoScreenState
                           return;
                         }
                         if (isVehicleVerified(VehicleType.motorcycle)) {
-                          _showInfoDialog(
-                            context,
-                            title: 'Información del vehículo',
-                            message: _vehicleInfoText(VehicleType.motorcycle),
-                          );
+                          await openVehicleEditor(VehicleType.motorcycle);
                           return;
                         }
                         await Navigator.of(context).push(
@@ -415,10 +369,11 @@ class _RiderVehicleInfoScreenState
                           ),
                         );
                         ref.invalidate(profileProvider);
+                        ref.invalidate(profileStreamProvider);
                       },
                       primaryActionLabel:
                           isVehicleVerified(VehicleType.motorcycle)
-                          ? 'Información'
+                          ? 'Editar datos'
                           : '+ Verificar vehículo',
                       warningText:
                           'Requiere licencia vigente y documentación del vehículo',
@@ -432,7 +387,7 @@ class _RiderVehicleInfoScreenState
                       isVerified: isVehicleVerified(VehicleType.car),
                       statusLabel: vehicleStatusLabel(VehicleType.car),
                       enabled: true,
-                      onTap: () => setState(() => _selected = VehicleType.car),
+                      onTap: () => selectVehicle(VehicleType.car),
                       onPrimaryAction: () async {
                         if (rutGateRequired) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -446,11 +401,7 @@ class _RiderVehicleInfoScreenState
                           return;
                         }
                         if (isVehicleVerified(VehicleType.car)) {
-                          _showInfoDialog(
-                            context,
-                            title: 'Información del vehículo',
-                            message: _vehicleInfoText(VehicleType.car),
-                          );
+                          await openVehicleEditor(VehicleType.car);
                           return;
                         }
                         await Navigator.of(context).push(
@@ -462,9 +413,10 @@ class _RiderVehicleInfoScreenState
                           ),
                         );
                         ref.invalidate(profileProvider);
+                        ref.invalidate(profileStreamProvider);
                       },
                       primaryActionLabel: isVehicleVerified(VehicleType.car)
-                          ? 'Información'
+                          ? 'Editar datos'
                           : '+ Verificar vehículo',
                       warningText:
                           'Requiere licencia vigente y documentación del vehículo',
@@ -478,8 +430,7 @@ class _RiderVehicleInfoScreenState
                       isVerified: isVehicleVerified(VehicleType.truck),
                       statusLabel: vehicleStatusLabel(VehicleType.truck),
                       enabled: true,
-                      onTap: () =>
-                          setState(() => _selected = VehicleType.truck),
+                      onTap: () => selectVehicle(VehicleType.truck),
                       onPrimaryAction: () async {
                         if (rutGateRequired) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -493,11 +444,7 @@ class _RiderVehicleInfoScreenState
                           return;
                         }
                         if (isVehicleVerified(VehicleType.truck)) {
-                          _showInfoDialog(
-                            context,
-                            title: 'Información del vehículo',
-                            message: _vehicleInfoText(VehicleType.truck),
-                          );
+                          await openVehicleEditor(VehicleType.truck);
                           return;
                         }
                         await Navigator.of(context).push(
@@ -509,9 +456,10 @@ class _RiderVehicleInfoScreenState
                           ),
                         );
                         ref.invalidate(profileProvider);
+                        ref.invalidate(profileStreamProvider);
                       },
                       primaryActionLabel: isVehicleVerified(VehicleType.truck)
-                          ? 'Información'
+                          ? 'Editar datos'
                           : '+ Verificar vehículo',
                       warningText:
                           'Requiere licencia vigente y documentación del vehículo',
@@ -578,6 +526,7 @@ class _RiderVehicleInfoScreenState
       });
 
       ref.invalidate(profileProvider);
+      ref.invalidate(profileStreamProvider);
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -640,46 +589,59 @@ class _VehicleOptionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolvedOnTap = enabled ? onTap : null;
+    final statusColor = isVerified
+        ? Colors.green.shade700
+        : Colors.orange.shade800;
+    final statusBackground = isVerified
+        ? Colors.green.withValues(alpha: 0.10)
+        : Colors.orange.withValues(alpha: 0.10);
+    final statusBorder = isVerified
+        ? Colors.green.withValues(alpha: 0.24)
+        : Colors.orange.withValues(alpha: 0.24);
+    final cardColor = selected
+        ? primaryOrange.withValues(alpha: 0.04)
+        : (enabled ? backgroundWhite : backgroundGray50);
+    final actionIcon = isVerified
+        ? Icons.edit_outlined
+        : Icons.verified_user_outlined;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        InkWell(
-          onTap: resolvedOnTap,
+    return InkWell(
+      onTap: resolvedOnTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Ink(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cardColor,
           borderRadius: BorderRadius.circular(14),
-          child: Ink(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: enabled ? backgroundWhite : backgroundGray50,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: selected
-                    ? primaryOrange
-                    : textGray900.withValues(alpha: 0.08),
-                width: selected ? 1.2 : 1,
-              ),
-            ),
-            child: Row(
+          border: Border.all(
+            color: selected
+                ? primaryOrange
+                : textGray900.withValues(alpha: 0.08),
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
                     color: selected
                         ? primaryOrange.withValues(alpha: 0.14)
                         : backgroundGray50,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: Icon(
-                      _icon,
-                      color: selected
-                          ? primaryOrange
-                          : (enabled
-                                ? textGray700
-                                : textGray700.withValues(alpha: 0.6)),
-                    ),
+                  child: Icon(
+                    _icon,
+                    color: selected
+                        ? primaryOrange
+                        : (enabled
+                              ? textGray700
+                              : textGray700.withValues(alpha: 0.6)),
+                    size: 25,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -690,156 +652,155 @@ class _VehicleOptionTile extends StatelessWidget {
                       Text(
                         title,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w900,
                           color: enabled
                               ? textGray900
                               : textGray900.withValues(alpha: 0.7),
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
                         subtitle,
                         style: TextStyle(
                           fontSize: 12,
+                          height: 1.25,
                           fontWeight: FontWeight.w600,
                           color: enabled
                               ? textGray700
                               : textGray700.withValues(alpha: 0.8),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isVerified
-                                  ? Colors.green.withValues(alpha: 0.10)
-                                  : backgroundGray50,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: isVerified
-                                    ? Colors.green.withValues(alpha: 0.25)
-                                    : textGray900.withValues(alpha: 0.08),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  isVerified
-                                      ? Icons.check_circle
-                                      : Icons.info_outline,
-                                  size: 14,
-                                  color: isVerified
-                                      ? Colors.green
-                                      : textGray700,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  statusLabel ??
-                                      (isVerified
-                                          ? 'Verificado'
-                                          : 'No verificado'),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    color: isVerified
-                                        ? Colors.green
-                                        : textGray700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (primaryActionLabel != null &&
-                              onPrimaryAction != null)
-                            TextButton(
-                              onPressed: onPrimaryAction,
-                              child: Text(
-                                primaryActionLabel!,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: primaryOrange,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 10),
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: selected
-                          ? primaryOrange
-                          : (enabled
-                                ? textGray700
-                                : textGray700.withValues(alpha: 0.6)),
-                      width: 2,
-                    ),
-                  ),
-                  child: selected
-                      ? Center(
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: primaryOrange,
-                            ),
-                          ),
-                        )
-                      : null,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (!isVerified && warningText != null) ...[
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.orange.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.orange.withValues(alpha: 0.22)),
-            ),
-            child: Row(
-              children: [
                 Icon(
-                  Icons.warning_amber_rounded,
-                  color: Colors.orange.shade800,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    warningText!,
-                    style: TextStyle(
-                      color: Colors.orange.shade900,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: selected
+                      ? primaryOrange
+                      : textGray700.withValues(alpha: 0.65),
+                  size: 24,
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _VehicleMetaChip(
+                  icon: isVerified ? Icons.check_circle : Icons.info_outline,
+                  label:
+                      statusLabel ?? (isVerified ? 'Verificado' : 'Pendiente'),
+                  color: statusColor,
+                  backgroundColor: statusBackground,
+                  borderColor: statusBorder,
+                ),
+                if (selected)
+                  _VehicleMetaChip(
+                    icon: Icons.bolt_rounded,
+                    label: 'Activo',
+                    color: primaryOrange,
+                    backgroundColor: primaryOrange.withValues(alpha: 0.10),
+                    borderColor: primaryOrange.withValues(alpha: 0.20),
+                  ),
+              ],
+            ),
+            if (!isVerified && warningText != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.orange.shade800,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      warningText!,
+                      style: TextStyle(
+                        color: Colors.orange.shade900,
+                        fontSize: 12,
+                        height: 1.25,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (primaryActionLabel != null && onPrimaryAction != null) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: onPrimaryAction,
+                  icon: Icon(actionIcon, size: 16),
+                  label: Text(primaryActionLabel!),
+                  style: TextButton.styleFrom(
+                    foregroundColor: primaryOrange,
+                    minimumSize: const Size(0, 38),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VehicleMetaChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color backgroundColor;
+  final Color borderColor;
+
+  const _VehicleMetaChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.backgroundColor,
+    required this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: color,
             ),
           ),
         ],
-      ],
+      ),
     );
   }
 }

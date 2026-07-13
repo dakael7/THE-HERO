@@ -5,6 +5,7 @@ const {
   getMercadoPagoAccessToken,
   redactMercadoPagoSecrets,
 } = require("./credentials");
+const {assertHeroWeeklyOrderLimit} = require("../orderLimits");
 
 const PENDING_PAYMENT_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -328,6 +329,14 @@ exports.createPaymentPreference = onCall(
           "Order does not belong to authenticated user",
         );
       }
+    } else {
+      await admin.firestore().runTransaction(async (transaction) => {
+        await assertHeroWeeklyOrderLimit({
+          transaction,
+          heroId: requestHeroId,
+          excludingOrderId: orderIdStr,
+        });
+      });
     }
 
     const buildNormalizedItems = (rawItems, sourceLabel) => {
