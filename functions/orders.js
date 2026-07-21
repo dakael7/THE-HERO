@@ -28,6 +28,7 @@ function _toTimestamp(value, fallback) {
 function _normalizeOrderForCreate(rawOrder, orderId, heroId) {
   const now = new Date();
   const order = rawOrder && typeof rawOrder === "object" ? {...rawOrder} : {};
+  delete order.authIdToken;
   const timestamps = order.timestamps && typeof order.timestamps === "object" ?
     {...order.timestamps} :
     {};
@@ -61,8 +62,7 @@ async function _getRiderCommissionConfig(db) {
     {};
 
   return {
-    riderServiceFeeCLP: _normalizeNonNegativeNumber(raw.serviceFeeCLP) ??
-      DEFAULT_RIDER_SERVICE_FEE_CLP,
+    riderServiceFeeCLP: DEFAULT_RIDER_SERVICE_FEE_CLP,
     riderTaxPercentage: _normalizePercentage(raw.taxPercent ?? raw.taxPercentage) ??
       DEFAULT_RIDER_TAX_PERCENTAGE,
   };
@@ -88,15 +88,30 @@ function _writeUserOrdersIndex(transaction, db, orderId, order) {
   }
 }
 
-exports.createOrder = onCall({memory: "512MiB"}, async (request) => {
-  if (!request.auth) {
+async function _resolveCallableAuth(request) {
+  if (request.auth && request.auth.uid) return request.auth;
+
+  const idToken = String(request.data?.authIdToken || "").trim();
+  if (!idToken) {
     throw new HttpsError("unauthenticated", "Usuario no autenticado");
   }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken, true);
+    return {uid: decoded.uid, token: decoded};
+  } catch (error) {
+    console.error("[orders] Invalid fallback auth token", error);
+    throw new HttpsError("unauthenticated", "Usuario no autenticado");
+  }
+}
+
+exports.createOrder = onCall({memory: "512MiB"}, async (request) => {
+  const auth = await _resolveCallableAuth(request);
 
   const db = admin.firestore();
   const rawOrder = request.data && typeof request.data === "object" ? request.data : {};
   const heroId = String(rawOrder.heroId || "").trim();
-  if (!heroId || heroId !== request.auth.uid) {
+  if (!heroId || heroId !== auth.uid) {
     throw new HttpsError(
       "permission-denied",
       "El pedido debe pertenecer al usuario autenticado",
@@ -152,11 +167,9 @@ exports.claimOrder = onCall(async (request) => {
   // ==========================================
   // 1. VALIDAR AUTENTICACIÓN
   // ==========================================
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Usuario no autenticado");
-  }
+  const auth = await _resolveCallableAuth(request);
 
-  const riderId = request.auth.uid;
+  const riderId = auth.uid;
   const orderId = request.data.orderId;
 
   if (!orderId) {
@@ -635,12 +648,10 @@ async function _updateOrderStatusForRider({
 }
 
 exports.updateOrderStatus = onCall(async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Usuario no autenticado");
-  }
+  const auth = await _resolveCallableAuth(request);
 
   const { orderId, newStatus } = request.data;
-  const riderId = request.auth.uid;
+  const riderId = auth.uid;
 
   if (!orderId || !newStatus) {
     throw new HttpsError(
@@ -777,14 +788,12 @@ async function _readPaymentDocsForOrder(transaction, db, orderIds) {
 }
 
 exports.cancelOrder = onCall(async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Usuario no autenticado");
-  }
+  const auth = await _resolveCallableAuth(request);
 
   const orderId = String(request.data?.orderId || "").trim();
   const reason = String(request.data?.reason || "Cancelado por el usuario")
     .trim();
-  const canceledBy = String(request.data?.canceledBy || request.auth.uid)
+  const canceledBy = String(request.data?.canceledBy || auth.uid)
     .trim();
 
   if (!orderId) {
@@ -805,7 +814,7 @@ exports.cancelOrder = onCall(async (request) => {
     }
 
     const order = orderDoc.data() || {};
-    if (String(order.heroId || "") !== request.auth.uid) {
+    if (String(order.heroId || "") !== auth.uid) {
       throw new HttpsError(
         "permission-denied",
         "No tienes permiso para cancelar este pedido",
@@ -916,7 +925,7 @@ exports.cancelOrder = onCall(async (request) => {
     const cancelPayload = {
       status: "canceled",
       cancelReason: reason || "Cancelado por el usuario",
-      canceledBy: canceledBy || request.auth.uid,
+      canceledBy: canceledBy || auth.uid,
       "timestamps.canceledAt": now,
       stockRestored: true,
       stockRestoredAt: now,

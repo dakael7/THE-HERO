@@ -41,6 +41,7 @@ class RiderCommissionConfig {
 class PricingConfig {
   final Map<VehicleType, double> pricePerKm;
   final Map<VehicleType, double> minimumCharge;
+  final double buyerServiceFee;
   final double taxPercentage;
 
   /// Max km per vehicle — remote-controlled, with local fallback.
@@ -55,6 +56,7 @@ class PricingConfig {
   const PricingConfig({
     required this.pricePerKm,
     required this.minimumCharge,
+    required this.buyerServiceFee,
     required this.taxPercentage,
     required this.maxDistanceKm,
     required this.distanceDiscount,
@@ -74,6 +76,7 @@ class PricingConfig {
     return PricingConfig(
       pricePerKm: TransportPricingConfig.pricePerKm,
       minimumCharge: TransportPricingConfig.minimumCharge,
+      buyerServiceFee: DonationPricingConfig.buyerServiceFee,
       taxPercentage: DonationPricingConfig.taxPercentage,
       maxDistanceKm: TransportPricingConfig.maxDistanceKm,
       distanceDiscount: distanceDiscountDefaults,
@@ -214,6 +217,21 @@ class PricingConfig {
     final rawMinimumCharge = data['minimumCharge'];
     final rawMaxDistanceKm = data['maxDistanceKm'];
     final rawDistanceDiscount = data['distanceDiscount'];
+    final rawBuyerServiceFee =
+        data['buyerServiceFeeCLP'] ??
+        data['buyerServiceFee'] ??
+        data['serviceFeeCLP'] ??
+        data['serviceFee'] ??
+        (data['riderCommission'] is Map
+            ? (data['riderCommission'] as Map)['serviceFeeCLP']
+            : null);
+    final parsedBuyerServiceFee = parseDouble(rawBuyerServiceFee);
+    final resolvedBuyerServiceFee =
+        (parsedBuyerServiceFee.isFinite &&
+            !parsedBuyerServiceFee.isNaN &&
+            parsedBuyerServiceFee >= 0)
+        ? parsedBuyerServiceFee
+        : defaults.buyerServiceFee;
 
     // ── IVA (taxPercentage) ──
     double resolvedTax = defaults.taxPercentage;
@@ -248,18 +266,14 @@ class PricingConfig {
         defaults.riderCommissionConfig;
     final rawRiderCommission = data['riderCommission'];
     if (rawRiderCommission is Map) {
-      final rawFeeCLP = rawRiderCommission['serviceFeeCLP'];
       final rawTaxP =
           rawRiderCommission['taxPercent'] ??
           rawRiderCommission['taxPercentage'];
 
-      final feeCLP = parseDouble(rawFeeCLP);
       final taxP = normalizePercent(rawTaxP);
 
       resolvedRiderCommission = RiderCommissionConfig(
-        serviceFeeCLP: (feeCLP.isFinite && !feeCLP.isNaN && feeCLP >= 0)
-            ? feeCLP
-            : defaults.riderCommissionConfig.serviceFeeCLP,
+        serviceFeeCLP: defaults.riderCommissionConfig.serviceFeeCLP,
         taxPercentage: (taxP.isFinite && !taxP.isNaN && taxP >= 0)
             ? taxP
             : defaults.riderCommissionConfig.taxPercentage,
@@ -269,6 +283,7 @@ class PricingConfig {
     return PricingConfig(
       pricePerKm: parseVehicleMap(rawPricePerKm, defaults.pricePerKm),
       minimumCharge: parseVehicleMap(rawMinimumCharge, defaults.minimumCharge),
+      buyerServiceFee: resolvedBuyerServiceFee,
       taxPercentage: resolvedTax,
       maxDistanceKm: parseMaxDistanceMap(
         rawMaxDistanceKm,
@@ -289,7 +304,9 @@ final pricingConfigStreamProvider = StreamProvider<PricingConfig>((ref) {
     snap,
   ) {
     final data = snap.data();
-    if (!snap.exists || data == null) return PricingConfig.defaults();
+    if (!snap.exists || data == null) {
+      throw StateError('settings/pricing no existe en Firebase');
+    }
     return PricingConfig.fromFirestore(data);
   });
 });

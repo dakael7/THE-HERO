@@ -8,13 +8,14 @@ import '../../domain/repositories/billing_repository.dart';
 import '../../domain/usecases/get_invoice_by_order_usecase.dart';
 import '../../domain/usecases/get_invoice_pdf_url_usecase.dart';
 import '../../domain/usecases/retry_invoice_emission_usecase.dart';
+import '../../../../data/providers/network_providers.dart';
 
 final billingFirestoreDataSourceProvider = Provider<BillingFirestoreDataSource>(
   (ref) => BillingFirestoreDataSource(),
 );
 
 final billingFunctionsDataSourceProvider = Provider<BillingFunctionsDataSource>(
-  (ref) => BillingFunctionsDataSource(),
+  (ref) => BillingFunctionsDataSource(auth: ref.read(firebaseAuthProvider)),
 );
 
 final billingRepositoryProvider = Provider<BillingRepository>((ref) {
@@ -52,17 +53,9 @@ class BillingDownloadState {
   final String? url;
   final String? error;
 
-  const BillingDownloadState({
-    this.isLoading = false,
-    this.url,
-    this.error,
-  });
+  const BillingDownloadState({this.isLoading = false, this.url, this.error});
 
-  BillingDownloadState copyWith({
-    bool? isLoading,
-    String? url,
-    String? error,
-  }) {
+  BillingDownloadState copyWith({bool? isLoading, String? url, String? error}) {
     return BillingDownloadState(
       isLoading: isLoading ?? this.isLoading,
       url: url ?? this.url,
@@ -78,8 +71,9 @@ class BillingDownloadNotifier extends Notifier<BillingDownloadState> {
   Future<String?> requestDownloadUrl(String invoiceId) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final url =
-          await ref.read(getInvoicePdfUrlUseCaseProvider).execute(invoiceId);
+      final url = await ref
+          .read(getInvoicePdfUrlUseCaseProvider)
+          .execute(invoiceId);
       state = state.copyWith(isLoading: false, url: url, error: null);
       return url;
     } catch (e) {

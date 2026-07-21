@@ -11,7 +11,9 @@ import 'email_verification_screen.dart';
 // =========================================================
 
 class LoginPage extends ConsumerStatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, this.initialMessage});
+
+  final String? initialMessage;
 
   @override
   ConsumerState<LoginPage> createState() => _LoginPageState();
@@ -30,6 +32,19 @@ class _LoginPageState extends ConsumerState<LoginPage>
       vsync: this,
       duration: const Duration(seconds: 12),
     )..repeat();
+
+    final message = widget.initialMessage?.trim();
+    if (message != null && message.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      });
+    }
   }
 
   @override
@@ -93,8 +108,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                         description: 'Buscar artículos que necesites',
                         color: primaryOrange,
                         textColor: Colors.white,
-                        descriptionColor:
-                            Colors.white.withValues(alpha: 0.9),
+                        descriptionColor: Colors.white.withValues(alpha: 0.9),
                         onTap: () => _navigateToRole(UserRole.hero),
                       ),
                       const SizedBox(height: 12),
@@ -217,8 +231,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
       children: [
         // ── Greeting badge ──────────────────────────
         Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(20),
@@ -233,11 +246,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.waving_hand_rounded,
-                size: 16,
-                color: primaryOrange,
-              ),
+              Icon(Icons.waving_hand_rounded, size: 16, color: primaryOrange),
               const SizedBox(width: 6),
               Text(
                 '¡Hola! Nos alegra verte',

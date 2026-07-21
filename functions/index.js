@@ -48,10 +48,11 @@ exportLazy("adminSupportModerateUser", "./adminSupport");
 exportLazy("adminSupportDeleteOffer", "./adminSupport");
 exportLazy("adminPayoutRider", "./adminSupport");
 
-exportLazy("createOrder", "./orders");
-exportLazy("claimOrder", "./orders");
-exportLazy("updateOrderStatus", "./orders");
-exportLazy("cancelOrder", "./orders");
+const orders = require("./orders");
+exports.createOrder = orders.createOrder;
+exports.claimOrder = orders.claimOrder;
+exports.updateOrderStatus = orders.updateOrderStatus;
+exports.cancelOrder = orders.cancelOrder;
 
 exportLazy("processImage1200Webp", "./imageProcessing");
 exportLazy("processOrderRatings", "./orderRatings");

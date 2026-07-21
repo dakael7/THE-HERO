@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 
-import '../../../core/config/donation_pricing_config.dart';
 import '../../../domain/config/pricing_config_provider.dart';
 import '../../../domain/entities/order_requirements.dart';
 import 'cart_provider.dart';
@@ -147,6 +146,7 @@ double _calculateTransportFee({
   final vehicle = OrderRequirements.calculateRequiredVehicleFor(
     weightKg: totalWeightKg,
     distanceKm: distanceKm,
+    maxDistanceFor: pricingConfig.getMaxDistance,
   );
   final minimum = pricingConfig.getMinimumCharge(vehicle);
   final basePerKm = pricingConfig.getPricePerKm(vehicle);
@@ -182,7 +182,7 @@ CartSummary computeCartSummary({
     totalWeight += item.weight * item.quantity;
   }
 
-  final serviceFeeFixed = DonationPricingConfig.buyerServiceFee;
+  final serviceFeeFixed = pricingConfig.buyerServiceFee;
   final taxPercentage = pricingConfig.taxPercentage;
 
   final hasItems = cartItems.isNotEmpty;
@@ -222,11 +222,12 @@ CartSummary computeCartSummary({
           final requiredVehicle = OrderRequirements.calculateRequiredVehicleFor(
             weightKg: totalWeight,
             distanceKm: totalKm,
+            maxDistanceFor: pricingConfig.getMaxDistance,
           );
           shippingBreakdown =
               '${totalKm.toStringAsFixed(1)} km · ${requiredVehicle.displayName}';
         } catch (_) {
-          shippingCost = DonationPricingConfig.buyerShippingCost;
+          shippingCost = 0.0;
           shippingBreakdown = null;
         }
 
@@ -252,7 +253,7 @@ CartSummary computeCartSummary({
         }
 
         if (totalKm.isNaN || totalKm.isInfinite || totalKm <= 0) {
-          shippingCost = DonationPricingConfig.buyerShippingCost;
+          shippingCost = 0.0;
           shippingBreakdown = null;
 
           assert(() {
@@ -273,11 +274,12 @@ CartSummary computeCartSummary({
                 OrderRequirements.calculateRequiredVehicleFor(
                   weightKg: totalWeight,
                   distanceKm: totalKm,
+                  maxDistanceFor: pricingConfig.getMaxDistance,
                 );
             shippingBreakdown =
                 '${totalKm.toStringAsFixed(1)} km · ${requiredVehicle.displayName}';
           } catch (_) {
-            shippingCost = DonationPricingConfig.buyerShippingCost;
+            shippingCost = 0.0;
             shippingBreakdown = null;
           }
 
@@ -289,7 +291,7 @@ CartSummary computeCartSummary({
           }());
         }
       } else {
-        shippingCost = DonationPricingConfig.buyerShippingCost;
+        shippingCost = 0.0;
         shippingBreakdown = null;
 
         assert(() {

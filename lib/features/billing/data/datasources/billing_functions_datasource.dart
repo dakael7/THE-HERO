@@ -3,13 +3,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class BillingFunctionsDataSource {
   final FirebaseFunctions _functions;
+  final FirebaseAuth _auth;
 
-  BillingFunctionsDataSource({FirebaseFunctions? functions})
-    : _functions =
-          functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
+  BillingFunctionsDataSource({
+    required FirebaseAuth auth,
+    FirebaseFunctions? functions,
+  }) : _auth = auth,
+       _functions =
+           functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
   Future<void> _ensureFreshAuthToken() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _auth.currentUser;
     if (user == null) {
       throw Exception('Debes iniciar sesion para continuar');
     }

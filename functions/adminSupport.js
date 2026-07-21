@@ -179,6 +179,12 @@ exports.adminUpdatePricing = onRequest(
       const taxBasisPoints = req.body?.taxBasisPoints;
       const taxPercent = req.body?.taxPercent;
       const taxPercentage = req.body?.taxPercentage;
+      let buyerServiceFeeCLP = _normalizeNonNegativeNumber(
+        req.body?.buyerServiceFeeCLP ??
+        req.body?.buyerServiceFee ??
+        req.body?.serviceFeeCLP ??
+        req.body?.serviceFee,
+      );
 
       // maxDistanceKm: vehicle → km (null allowed = uncapped)
       const maxDistanceKmRaw = req.body?.maxDistanceKm;
@@ -200,7 +206,7 @@ exports.adminUpdatePricing = onRequest(
         if (Object.keys(out).length) maxDistanceKmUpdate = out;
       }
 
-      // riderCommission: { serviceFeeCLP, taxPercent }
+      // riderCommission.serviceFeeCLP is legacy input for the buyer service fee.
       const riderCommissionRaw = req.body?.riderCommission;
       let riderCommissionUpdate = null;
       if (
@@ -214,7 +220,8 @@ exports.adminUpdatePricing = onRequest(
         const riderTaxPercent = _normalizeNonNegativeNumber(
           riderCommissionRaw.taxPercent ?? riderCommissionRaw.taxPercentage,
         );
-        if (feeCLP != null) riderCommissionUpdate.serviceFeeCLP = feeCLP;
+        if (feeCLP != null && buyerServiceFeeCLP == null)
+          buyerServiceFeeCLP = feeCLP;
         if (riderTaxPercent != null)
           riderCommissionUpdate.taxPercent = riderTaxPercent;
         if (!Object.keys(riderCommissionUpdate).length)
@@ -263,6 +270,8 @@ exports.adminUpdatePricing = onRequest(
       if (taxBpsNum != null) update.taxBasisPoints = taxBpsNum;
       if (taxPercentNum != null) update.taxPercent = taxPercentNum;
       if (taxPercentageNum != null) update.taxPercentage = taxPercentageNum;
+      if (buyerServiceFeeCLP != null)
+        update.buyerServiceFeeCLP = buyerServiceFeeCLP;
 
       if (!Object.keys(update).length) {
         return res.status(400).json({ error: "No valid fields to update" });

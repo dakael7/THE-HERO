@@ -44,10 +44,7 @@ NotificationRemoteDataSource notificationRemoteDataSource(Ref ref) {
 OffersRemoteDataSource offersRemoteDataSource(Ref ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
   final storage = ref.read(firebaseStorageProvider);
-  return OffersRemoteDataSourceImpl(
-    firestore: firestore,
-    storage: storage,
-  );
+  return OffersRemoteDataSourceImpl(firestore: firestore, storage: storage);
 }
 
 @Riverpod(keepAlive: true)
@@ -59,7 +56,8 @@ ModerationRemoteDataSource moderationRemoteDataSource(Ref ref) {
 @Riverpod(keepAlive: true)
 OrdersRemoteDataSource ordersRemoteDataSource(Ref ref) {
   final firestore = ref.read(firebaseFirestoreProvider);
-  return OrdersRemoteDataSourceImpl(firestore: firestore);
+  final auth = ref.read(firebaseAuthProvider);
+  return OrdersRemoteDataSourceImpl(firestore: firestore, auth: auth);
 }
 
 @Riverpod(keepAlive: true)

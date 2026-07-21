@@ -51,12 +51,12 @@ class App extends ConsumerWidget {
       home: bootstrapAsync.when(
         data: (bootstrap) {
           if (!bootstrap.isAuthenticated) {
-            return const LoginPage();
+            return LoginPage(initialMessage: bootstrap.authMessage);
           }
 
           final user = bootstrap.user;
           if (user == null) {
-            return const LoginPage();
+            return LoginPage(initialMessage: bootstrap.authMessage);
           }
 
           final isEmailVerified =

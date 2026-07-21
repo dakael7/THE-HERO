@@ -34,11 +34,14 @@ abstract class OrdersRemoteDataSource {
 class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
+  final FirebaseAuth _auth;
 
   OrdersRemoteDataSourceImpl({
     required FirebaseFirestore firestore,
+    required FirebaseAuth auth,
     FirebaseFunctions? functions,
   }) : _firestore = firestore,
+       _auth = auth,
        _functions =
            functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
@@ -68,12 +71,16 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     }
   }
 
-  Future<void> _ensureFreshAuthToken() async {
-    final user = FirebaseAuth.instance.currentUser;
+  Future<String> _ensureFreshAuthToken() async {
+    final user = _auth.currentUser;
     if (user == null) {
       throw Exception('Debes iniciar sesion para continuar');
     }
-    await user.getIdToken(true);
+    final token = await user.getIdToken(true);
+    if (token == null || token.trim().isEmpty) {
+      throw Exception('No se pudo refrescar la sesion');
+    }
+    return token;
   }
 
   dynamic _deepStringKeyed(dynamic value) {
@@ -186,9 +193,11 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   @override
   Future<OrderModel> createOrder(OrderModel order) async {
     try {
-      await _ensureFreshAuthToken();
+      final authIdToken = await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('createOrder');
-      final result = await callable.call(order.toJson());
+      final payload = Map<String, dynamic>.from(order.toJson());
+      payload['authIdToken'] = authIdToken;
+      final result = await callable.call(payload);
       return OrderModel.fromJson(
         (_deepStringKeyed(result.data) as Map).cast<String, dynamic>(),
       );
@@ -316,13 +325,14 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
         throw Exception('orderId invalido');
       }
 
-      await _ensureFreshAuthToken();
+      final authIdToken = await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('updateOrderStatus');
       await callable.call(<String, dynamic>{
         'orderId': orderId,
         'newStatus': status,
         'riderServiceFeeCLP': riderServiceFeeCLP,
         'riderTaxPercentage': riderTaxPercentage,
+        'authIdToken': authIdToken,
       });
       return;
 
@@ -534,9 +544,12 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
       if (riderId.trim().isEmpty) {
         throw Exception('riderId inválido');
       }
-      await _ensureFreshAuthToken();
+      final authIdToken = await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('claimOrder');
-      await callable.call(<String, dynamic>{'orderId': orderId});
+      await callable.call(<String, dynamic>{
+        'orderId': orderId,
+        'authIdToken': authIdToken,
+      });
     } on FirebaseFunctionsException catch (e) {
       throw Exception(e.message ?? 'No se pudo aceptar el pedido');
     } catch (e) {
@@ -551,12 +564,13 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
     String canceledBy,
   ) async {
     try {
-      await _ensureFreshAuthToken();
+      final authIdToken = await _ensureFreshAuthToken();
       final callable = _functions.httpsCallable('cancelOrder');
       await callable.call(<String, dynamic>{
         'orderId': orderId,
         'reason': reason,
         'canceledBy': canceledBy,
+        'authIdToken': authIdToken,
       });
     } on FirebaseFunctionsException catch (e) {
       throw Exception(e.message ?? 'No se pudo cancelar el pedido');

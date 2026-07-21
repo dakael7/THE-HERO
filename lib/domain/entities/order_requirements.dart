@@ -29,6 +29,7 @@ class OrderRequirements {
   static VehicleType calculateRequiredVehicleFor({
     required double weightKg,
     required double distanceKm,
+    double Function(VehicleType vehicleType)? maxDistanceFor,
   }) {
     final base = calculateRequiredVehicle(weightKg);
 
@@ -44,7 +45,9 @@ class OrderRequirements {
 
     for (var i = startIndex; i < ordered.length; i++) {
       final candidate = ordered[i];
-      final maxKm = TransportPricingConfig.getMaxDistance(candidate);
+      final maxKm =
+          maxDistanceFor?.call(candidate) ??
+          TransportPricingConfig.getMaxDistance(candidate);
       if (distanceKm <= maxKm) return candidate;
     }
 
@@ -60,7 +63,12 @@ class OrderRequirements {
       case VehicleType.car:
         return [VehicleType.bicycle, VehicleType.motorcycle, VehicleType.car];
       case VehicleType.truck:
-        return [VehicleType.bicycle, VehicleType.motorcycle, VehicleType.car, VehicleType.truck];
+        return [
+          VehicleType.bicycle,
+          VehicleType.motorcycle,
+          VehicleType.car,
+          VehicleType.truck,
+        ];
     }
   }
 

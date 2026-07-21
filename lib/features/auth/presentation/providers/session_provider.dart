@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 
@@ -11,15 +13,17 @@ class AppBootstrapState {
   final User? user;
   final bool isEmailVerified;
   final String? lastRole;
+  final String? authMessage;
 
   const AppBootstrapState({
     required this.isAuthenticated,
     required this.user,
     required this.isEmailVerified,
     required this.lastRole,
+    this.authMessage,
   });
 
-  const AppBootstrapState.unauthenticated()
+  const AppBootstrapState.unauthenticated({this.authMessage})
     : isAuthenticated = false,
       user = null,
       isEmailVerified = false,
@@ -32,6 +36,29 @@ final sessionCheckProvider = FutureProvider<bool>((ref) async {
   return firebaseUser != null;
 });
 
+bool _isPermanentAuthFailure(String code) {
+  return code == 'invalid-user-token' ||
+      code == 'user-token-expired' ||
+      code == 'user-disabled' ||
+      code == 'user-not-found';
+}
+
+Future<bool> _hasValidFirebaseSession(firebase_auth.User firebaseUser) async {
+  try {
+    final token = await firebaseUser
+        .getIdToken(true)
+        .timeout(const Duration(seconds: 8));
+    return token != null && token.trim().isNotEmpty;
+  } on firebase_auth.FirebaseAuthException catch (e) {
+    if (_isPermanentAuthFailure(e.code)) return false;
+    return true;
+  } on TimeoutException {
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+
 Future<AppBootstrapState> _resolveBootstrapState({
   required firebase_auth.User? firebaseUser,
   required Ref ref,
@@ -41,6 +68,16 @@ Future<AppBootstrapState> _resolveBootstrapState({
   }
 
   final authRepository = ref.read(authRepositoryProvider);
+  final hasValidFirebaseSession = await _hasValidFirebaseSession(firebaseUser);
+  if (!hasValidFirebaseSession) {
+    try {
+      await authRepository.signOut();
+    } catch (_) {}
+    return const AppBootstrapState.unauthenticated(
+      authMessage: 'Tu sesion expiro. Inicia sesion nuevamente.',
+    );
+  }
+
   final getCurrentUserUseCase = ref.read(getCurrentUserUseCaseProvider);
 
   final cachedUserFuture = authRepository.getCachedUser();
@@ -75,9 +112,13 @@ final appBootstrapProvider = StreamProvider<AppBootstrapState>((ref) async* {
   final auth = ref.read(firebaseAuthProvider);
 
   // Emit current snapshot immediately, then react to auth changes.
+  var lastResolvedUid = auth.currentUser?.uid;
   yield await _resolveBootstrapState(firebaseUser: auth.currentUser, ref: ref);
 
   await for (final firebaseUser in auth.authStateChanges()) {
+    final uid = firebaseUser?.uid;
+    if (uid == lastResolvedUid) continue;
+    lastResolvedUid = uid;
     yield await _resolveBootstrapState(firebaseUser: firebaseUser, ref: ref);
   }
 });

@@ -297,7 +297,7 @@ final class OrdersRemoteDataSourceProvider
 }
 
 String _$ordersRemoteDataSourceHash() =>
-    r'9714f10bc1ab74b23cb788028ca85dfa790ac51c';
+    r'8e6e5f2e8adf97d4c920bc60d6ae86c0a23c980d';
 
 @ProviderFor(chatRemoteDataSource)
 final chatRemoteDataSourceProvider = ChatRemoteDataSourceProvider._();

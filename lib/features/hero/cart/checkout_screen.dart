@@ -19,7 +19,6 @@ import '../../../core/utils/map_camera_utils.dart';
 import '../../../core/utils/price_formatter.dart';
 import '../../../core/utils/weight_utils.dart';
 import '../../../domain/config/pricing_config_provider.dart';
-import '../../../domain/config/transport_pricing_config.dart';
 import '../../../domain/entities/address.dart';
 import '../../../domain/entities/order_requirements.dart';
 import '../../../domain/entities/order.dart';
@@ -783,7 +782,22 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final inPersonPickupSelected = ref.read(inPersonPickupSelectedProvider);
     final allItemsAllowInPersonPickup =
         cartItems.isNotEmpty && cartItems.every((e) => e.allowInPersonPickup);
-    final pricingConfig = ref.read(pricingConfigProvider);
+    final PricingConfig pricingConfig;
+    try {
+      pricingConfig = await ref.read(pricingConfigStreamProvider.future);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo cargar la configuracion de precios. Intenta nuevamente.',
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
     final summary = computeCartSummary(
       cartItems: cartItems,
       deliveryGeo: deliveryGeo,
@@ -992,6 +1006,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           conciergeInfo: conciergeInfo,
           inPersonPickup: true,
           coupon: couponJson,
+          pricingConfig: pricingConfig,
         );
 
         if (shouldUseMercadoPago) {
@@ -1092,6 +1107,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       requiredVehicle = OrderRequirements.calculateRequiredVehicleFor(
         weightKg: totalWeightKg,
         distanceKm: effectiveDistanceKm,
+        maxDistanceFor: pricingConfig.getMaxDistance,
       );
     } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1103,9 +1119,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
-    final maxDistanceKm = TransportPricingConfig.getMaxDistance(
-      requiredVehicle,
-    );
+    final maxDistanceKm = pricingConfig.getMaxDistance(requiredVehicle);
 
     if (effectiveDistanceKm > maxDistanceKm) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1230,6 +1244,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         conciergeInfo: conciergeInfo,
         inPersonPickup: false,
         coupon: couponJson,
+        pricingConfig: pricingConfig,
       );
 
       if (shouldUseMercadoPago) {
@@ -1436,7 +1451,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final allItemsAllowInPersonPickup =
         cartItems.isNotEmpty && cartItems.every((e) => e.allowInPersonPickup);
     final inPersonPickupSelected = ref.watch(inPersonPickupSelectedProvider);
-    final pricingConfig = ref.watch(pricingConfigProvider);
+    final pricingConfigAsync = ref.watch(pricingConfigStreamProvider);
+    final pricingConfig = pricingConfigAsync.value ?? PricingConfig.defaults();
+    final isPricingReady =
+        pricingConfigAsync.hasValue && !pricingConfigAsync.hasError;
 
     final summary = computeCartSummary(
       cartItems: cartItems,
@@ -1511,8 +1529,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         requiredVehicle = OrderRequirements.calculateRequiredVehicleFor(
           weightKg: totalWeightKg,
           distanceKm: effectiveDistanceKm,
+          maxDistanceFor: pricingConfig.getMaxDistance,
         );
-        maxDistanceKm = TransportPricingConfig.getMaxDistance(requiredVehicle);
+        maxDistanceKm = pricingConfig.getMaxDistance(requiredVehicle);
       } catch (_) {
         requiredVehicle = null;
         maxDistanceKm = null;
@@ -1526,12 +1545,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               maxDistanceKm != null &&
               (effectiveDistanceKm <= maxDistanceKm));
 
-    final canProceed = inPersonPickupSelected
-        ? allItemsAllowInPersonPickup
-        : (hasValidDelivery &&
-              hasCalculatedShipping &&
-              withinDistanceLimit &&
-              sameCountry);
+    final canProceed =
+        isPricingReady &&
+        (inPersonPickupSelected
+            ? allItemsAllowInPersonPickup
+            : (hasValidDelivery &&
+                  hasCalculatedShipping &&
+                  withinDistanceLimit &&
+                  sameCountry));
 
     final canProceedWithAccount = user != null && !user.isSuspended;
 
@@ -2764,6 +2785,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                           if (!hasValidDelivery) {
                             return 'Selecciona una ubicación en el mapa para calcular el envío y el total.';
                           }
+                          if (!isPricingReady) {
+                            return pricingConfigAsync.hasError
+                                ? 'No pudimos cargar la configuracion de precios. Intenta nuevamente.'
+                                : 'Cargando configuracion de precios...';
+                          }
                           if (effectiveDistanceKm == null) {
                             return 'No se pudo calcular la distancia de la ruta. Intenta seleccionar la ubicación nuevamente.';
                           }
@@ -2867,8 +2893,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ),
                     const SizedBox(height: 8),
                     _SummaryRow(
-                      label:
-                          'Impuestos (IVA ${(pricingConfig.taxPercentage * 100).toStringAsFixed(0)}%)',
+                      label: isPricingReady
+                          ? 'Impuestos (IVA ${(pricingConfig.taxPercentage * 100).toStringAsFixed(0)}%)'
+                          : 'Impuestos (IVA)',
                       value: canProceed
                           ? '\$${formatPriceCLP(summary.tax)}'
                           : '—',

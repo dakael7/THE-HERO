@@ -84,10 +84,12 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<void> signOut() async {
-    await _remoteDataSource.signOut();
-
-    _userByIdCache.clear();
-    await _localDataSource.clearUser();
+    try {
+      await _remoteDataSource.signOut();
+    } finally {
+      _userByIdCache.clear();
+      await _localDataSource.clearUser();
+    }
   }
 
   @override

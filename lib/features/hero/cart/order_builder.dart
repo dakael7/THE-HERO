@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
+import '../../../domain/config/pricing_config_provider.dart';
 import '../../../domain/entities/order.dart';
 import '../../../domain/entities/order_pickup.dart';
 import '../../../domain/entities/order_pickup_stop.dart';
@@ -41,6 +42,7 @@ class OrderBuilder {
     ConciergeInfo? conciergeInfo,
     bool inPersonPickup = false,
     Map<String, dynamic>? coupon,
+    PricingConfig? pricingConfig,
   }) {
     if (cartItems.isEmpty) {
       throw Exception('Cannot create order from empty cart');
@@ -117,6 +119,7 @@ class OrderBuilder {
         return OrderRequirements.calculateRequiredVehicleFor(
           weightKg: totalWeight,
           distanceKm: safeEstimatedKm,
+          maxDistanceFor: pricingConfig?.getMaxDistance,
         );
       } catch (_) {
         return OrderRequirements.calculateRequiredVehicle(totalWeight);
