@@ -120,6 +120,7 @@ class OffersRemoteDataSourceImpl implements OffersRemoteDataSource {
       data.remove('moderationStatus');
       data.remove('reportCount');
       data.remove('lastReportedAt');
+      data.remove('orderCount');
       await _firestore.collection('offers').doc(offer.offerId).update(data);
       return offer;
     } catch (e) {

@@ -6,6 +6,7 @@ const {
   redactMercadoPagoSecrets,
 } = require("./credentials");
 const {assertHeroWeeklyOrderLimit} = require("../orderLimits");
+const {couponDiscountFromData} = require("../orderPricing");
 
 const PENDING_PAYMENT_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -247,35 +248,7 @@ exports.createPaymentPreference = onCall(
         throw new HttpsError("not-found", "Cupo no encontrado");
       }
 
-      const data = couponDoc.data() || {};
-      if (data.active !== true && data.isActive !== true) {
-        throw new HttpsError("failed-precondition", "Cupo inactivo");
-      }
-
-      const rawType = String(
-        data.type ?? data.discountType ?? data.tipo ?? "",
-      ).trim().toLowerCase();
-      const type =
-        ["percent", "percentage", "porcentual", "porcentaje"].includes(rawType) ?
-          "percent" :
-          ["fixed", "amount", "fijo", "monto"].includes(rawType) ?
-            "fixed" :
-            null;
-      const value = Number(
-        data.value ?? data.discountValue ?? data.amount ?? data.valor ?? 0,
-      );
-      if (!type || !Number.isFinite(value) || value <= 0) {
-        throw new HttpsError("failed-precondition", "Cupo mal configurado");
-      }
-
-      const rawAmount = type === "percent" ?
-        Math.round(discountBase * Math.min(value, 100) / 100) :
-        Math.round(value);
-      const amount = Math.min(Math.max(0, rawAmount), Math.max(0, discountBase));
-      return {
-        amount,
-        coupon: {code, type, value, discountAmount: amount},
-      };
+      return couponDiscountFromData(code, couponDoc.data() || {}, discountBase);
     };
 
     if (!orderId) {
@@ -645,10 +618,11 @@ exports.createPaymentPreference = onCall(
     );
     const serverTax = toInt(orderDataAtStart.tax ?? requestedTax);
     const serverTip = toInt(orderDataAtStart.tip ?? requestedTip);
-    const discountBase = serverDeliveryFee + serverServiceFee + serverTax;
+    const discountBase =
+      serverSubtotal + serverDeliveryFee + serverServiceFee + serverTax;
     const serverCoupon = await readCouponDiscount(discountBase);
     const serverAmountTotal = toInt(
-      serverSubtotal + discountBase - serverCoupon.amount + serverTip,
+      discountBase - serverCoupon.amount + serverTip,
     );
 
     if (requestedAmountTotal > 0 && requestedAmountTotal !== serverAmountTotal) {
@@ -678,12 +652,11 @@ exports.createPaymentPreference = onCall(
       remainingDiscount -= discount;
       return amount - discount;
     };
-    const payableDeliveryFee = applyCoupon(serverDeliveryFee);
-    const payableServiceFee = applyCoupon(serverServiceFee);
-    const payableTax = applyCoupon(serverTax);
 
     for (const pricedItem of pricedItems) {
-      if (pricedItem.unitPrice <= 0) {
+      const itemTotal = Math.max(0, pricedItem.unitPrice * pricedItem.qty);
+      const payableItemTotal = applyCoupon(itemTotal);
+      if (payableItemTotal <= 0) {
         skippedZeroPricedItems.push({
           id: pricedItem.offerId,
           title: pricedItem.title,
@@ -693,14 +666,20 @@ exports.createPaymentPreference = onCall(
 
       mpItems.push({
         id: pricedItem.offerId,
-        title: pricedItem.title,
+        title: pricedItem.qty > 1 ?
+          `${pricedItem.title} x${pricedItem.qty}` :
+          pricedItem.title,
         description: pricedItem.description,
         category_id: pricedItem.categoryId,
-        quantity: pricedItem.qty,
-        unit_price: pricedItem.unitPrice,
+        quantity: 1,
+        unit_price: payableItemTotal,
         currency_id: "CLP",
       });
     }
+
+    const payableDeliveryFee = applyCoupon(serverDeliveryFee);
+    const payableServiceFee = applyCoupon(serverServiceFee);
+    const payableTax = applyCoupon(serverTax);
 
     // Add delivery fee as a separate item
     if (payableDeliveryFee > 0) {

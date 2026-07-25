@@ -168,9 +168,12 @@ async function _prepareOrderForCreate({transaction, db, rawOrder, orderId, heroI
     offerUpdates.push({ref: offerDoc.ref, updateData});
   }
 
+  const serverSubtotal = aggregatedItems.reduce((sum, item) => {
+    return sum + (Math.max(0, toInt(offerPricesById.get(item.offerId))) * item.qty);
+  }, 0);
   const discountBase = Math.max(
     0,
-    toInt(order.deliveryFee) + toInt(order.serviceFee) + toInt(order.tax),
+    serverSubtotal + toInt(order.deliveryFee) + toInt(order.serviceFee) + toInt(order.tax),
   );
   const couponResult = await readCouponDiscount({
     transaction,

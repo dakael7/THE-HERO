@@ -341,7 +341,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   double _couponBase(CartSummary summary) {
-    final total = summary.shippingCost + summary.serviceFee + summary.tax;
+    final total =
+        summary.subtotal +
+        summary.shippingCost +
+        summary.serviceFee +
+        summary.tax;
     return total.isFinite ? total.clamp(0.0, double.infinity).toDouble() : 0.0;
   }
 
@@ -972,7 +976,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
         final shouldUseMercadoPago =
             !devCheckoutBypass &&
-            _selectedPaymentMethod == PaymentMethod.mercadopago;
+            _selectedPaymentMethod == PaymentMethod.mercadopago &&
+            discountedSummary.total > 0;
         final documentType = devCheckoutBypass
             ? 'debug'
             : _selectedDocumentType;
@@ -1208,7 +1213,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       final shouldUseMercadoPago =
           !devCheckoutBypass &&
-          _selectedPaymentMethod == PaymentMethod.mercadopago;
+          _selectedPaymentMethod == PaymentMethod.mercadopago &&
+          (discountedSummary.total + _selectedTip) > 0;
       final documentType = devCheckoutBypass ? 'debug' : _selectedDocumentType;
       final isFactura = documentType == 'factura';
 
@@ -1371,7 +1377,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           currentUser: user,
         );
 
-        if (_selectedPaymentMethod == PaymentMethod.cash) {
+        if (_selectedPaymentMethod == PaymentMethod.cash &&
+            createdOrder.amountTotal > 0) {
           final paymentRepo = ref.read(paymentRepositoryProvider);
           final cashPayment = domain_payment.Payment(
             id: 'cash-${createdOrder.orderId}',

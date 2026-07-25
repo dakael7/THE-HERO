@@ -10,7 +10,7 @@ test("server order money ignores client item price and coupon amount", () => {
   const coupon = couponDiscountFromData(
     "TEST",
     {active: true, type: "fixed", value: 9999},
-    1500,
+    7500,
   );
   const order = computeServerOrderMoney(
     {
@@ -29,15 +29,16 @@ test("server order money ignores client item price and coupon amount", () => {
 
   assert.equal(order.items[0].unitPriceSnapshot, 3000);
   assert.equal(order.subtotal, 6000);
-  assert.equal(order.coupon.discountAmount, 1500);
-  assert.equal(order.amountTotal, 6250);
+  assert.equal(order.deliveryFee, 1000);
+  assert.equal(order.coupon.discountAmount, 7500);
+  assert.equal(order.amountTotal, 250);
 });
 
-test("percent coupon discounts only delivery, service fee and tax", () => {
+test("percent coupon can make order free without changing rider fee", () => {
   const coupon = couponDiscountFromData(
-    "FREEFEES",
+    "FREEORDER",
     {active: true, type: "percent", value: 100},
-    700,
+    2700,
   );
   const order = computeServerOrderMoney(
     {
@@ -52,6 +53,7 @@ test("percent coupon discounts only delivery, service fee and tax", () => {
   );
 
   assert.equal(order.subtotal, 2000);
-  assert.equal(order.coupon.discountAmount, 700);
-  assert.equal(order.amountTotal, 2000);
+  assert.equal(order.deliveryFee, 500);
+  assert.equal(order.coupon.discountAmount, 2700);
+  assert.equal(order.amountTotal, 0);
 });
