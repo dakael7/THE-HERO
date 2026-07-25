@@ -9,6 +9,7 @@ import '../../../../core/utils/validators.dart';
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/user.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/registration_missing_data_notice.dart';
 import 'unverified_email_screen.dart';
 import '../../../rider/presentation/views/rider_home_screen.dart';
 
@@ -36,6 +37,8 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
   );
 
   bool _acceptedTerms = false;
+  bool _isLoadingExistingData = false;
+  bool _hasExistingPhoto = false;
 
   final RegExp passwordRegex = RegExp(
     r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,}$',
@@ -71,8 +74,9 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     final normalizedName = fileName.trim();
     setState(() {
       _profilePhotoBytes = bytes;
-      _profilePhotoName =
-          normalizedName.isEmpty ? 'profile_photo.jpg' : normalizedName;
+      _profilePhotoName = normalizedName.isEmpty
+          ? 'profile_photo.jpg'
+          : normalizedName;
     });
   }
 
@@ -201,12 +205,99 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     );
   }
 
+  void _fillIfEmpty(TextEditingController controller, dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    if (controller.text.trim().isEmpty && text.isNotEmpty) {
+      controller.text = text;
+    }
+  }
+
+  List<String> _missingUpgradeItems() {
+    final missing = <String>[];
+    if (_firstNameController.text.trim().isEmpty) missing.add('Nombre');
+    if (_lastNameController.text.trim().isEmpty) missing.add('Apellido');
+    if (_phoneController.text.trim().isEmpty) missing.add('Telefono');
+    final rut = _rutController.text.trim();
+    if (rut.isEmpty) {
+      missing.add('RUT');
+    } else if (Validators.rut(rut) != null) {
+      missing.add('RUT valido');
+    }
+    if (!_acceptedTerms) missing.add('Terminos');
+    return missing;
+  }
+
+  Future<void> _loadExistingUserData() async {
+    final existingUser = widget.existingUser;
+    if (existingUser == null) return;
+    final uid =
+        (ref.read(firebaseAuthProvider).currentUser?.uid ?? existingUser.id)
+            .trim();
+    if (uid.isEmpty) return;
+
+    _isLoadingExistingData = true;
+    try {
+      final doc = await ref
+          .read(firebaseFirestoreProvider)
+          .collection('users')
+          .doc(uid)
+          .get();
+      final data = doc.data();
+      if (!mounted) return;
+      if (data == null) {
+        setState(() => _isLoadingExistingData = false);
+        return;
+      }
+
+      final identity = data['identity'] is Map
+          ? Map<String, dynamic>.from(data['identity'] as Map)
+          : const <String, dynamic>{};
+      final contact = data['contact'] is Map
+          ? Map<String, dynamic>.from(data['contact'] as Map)
+          : const <String, dynamic>{};
+      final status = data['status'] is Map
+          ? Map<String, dynamic>.from(data['status'] as Map)
+          : const <String, dynamic>{};
+      final riderProfile = data['riderProfile'] is Map
+          ? Map<String, dynamic>.from(data['riderProfile'] as Map)
+          : const <String, dynamic>{};
+
+      _fillIfEmpty(_emailController, contact['email']);
+      _fillIfEmpty(_firstNameController, identity['firstName']);
+      _fillIfEmpty(_lastNameController, identity['lastName']);
+      _fillIfEmpty(_phoneController, contact['phoneNumber']);
+
+      final identityDocumentType =
+          identity['documentType']?.toString().trim().toLowerCase() ?? '';
+      final identityDocumentId =
+          identity['documentId']?.toString().trim() ?? '';
+      final riderRut = riderProfile['rut']?.toString().trim() ?? '';
+      final rut = identityDocumentType == 'rut' && identityDocumentId.isNotEmpty
+          ? identityDocumentId
+          : riderRut;
+      _fillIfEmpty(_rutController, rut);
+
+      if (!mounted) return;
+      setState(() {
+        _isLoadingExistingData = false;
+        _hasExistingPhoto =
+            _hasExistingPhoto ||
+            (data['profilePhotoUrl']?.toString().trim().isNotEmpty ?? false);
+        if (status['termsAccepted'] == true) _acceptedTerms = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingExistingData = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
 
     final user = widget.existingUser;
     final authUser = ref.read(firebaseAuthProvider).currentUser;
+    _acceptedTerms = user?.status.termsAccepted ?? false;
+    _hasExistingPhoto = (user?.profilePhotoUrl ?? '').trim().isNotEmpty;
 
     String authFirstName = '';
     String authLastName = '';
@@ -226,14 +317,13 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     _lastNameController = TextEditingController(
       text: user?.identity.lastName ?? authLastName,
     );
-    _rutController = TextEditingController(
-      text: user?.identity.documentId ?? '',
-    );
+    _rutController = TextEditingController(text: user?.rutDocumentId ?? '');
     _phoneController = TextEditingController(
       text: user?.contact.phoneNumber ?? '',
     );
     _passwordController = TextEditingController();
     _confirmPasswordController = TextEditingController();
+    _loadExistingUserData();
 
     _controller = AnimationController(
       vsync: this,
@@ -352,17 +442,28 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
       prefixIcon: prefixIconData != null
           ? Padding(
               padding: const EdgeInsets.only(left: 14, right: 8),
-              child: Icon(prefixIconData,
-                  size: 18, color: prefixIconColor ?? textGray600),
+              child: Icon(
+                prefixIconData,
+                size: 18,
+                color: prefixIconColor ?? textGray600,
+              ),
             )
           : null,
       prefixIconConstraints: const BoxConstraints(minWidth: 44),
-      hintStyle:
-          TextStyle(color: textGray600.withValues(alpha: 0.45), fontSize: 13),
+      hintStyle: TextStyle(
+        color: textGray600.withValues(alpha: 0.45),
+        fontSize: 13,
+      ),
       labelStyle: const TextStyle(
-          color: textGray600, fontSize: 13, fontWeight: FontWeight.w500),
+        color: textGray600,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
       floatingLabelStyle: const TextStyle(
-          color: primaryOrange, fontSize: 12, fontWeight: FontWeight.w700),
+        color: primaryOrange,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
       filled: true,
       fillColor: const Color(0xFFFAFAFA),
       border: OutlineInputBorder(
@@ -371,8 +472,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide:
-            const BorderSide(color: Color(0xFFEBEBEB), width: 1.0),
+        borderSide: const BorderSide(color: Color(0xFFEBEBEB), width: 1.0),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
@@ -380,16 +480,13 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide:
-            const BorderSide(color: Color(0xFFDC2626), width: 1.5),
+        borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.5),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(13),
-        borderSide:
-            const BorderSide(color: Color(0xFFDC2626), width: 1.8),
+        borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.8),
       ),
-      contentPadding:
-          const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
     );
   }
 
@@ -449,28 +546,51 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // LOGO 
+                    // LOGO
                     Center(
                       child: Padding(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 16),
-                        child: Image.asset('assets/logo_1.png',
-                            height: 72, fit: BoxFit.contain),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Image.asset(
+                          'assets/logo_1.png',
+                          height: 72,
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
 
-                    // PHOTO PICKER 
+                    // PHOTO PICKER
                     _PhotoPicker(
                       photoBytes: _profilePhotoBytes,
+                      hasExistingPhoto: _hasExistingPhoto,
+                      isRequired: !isUpgrade,
                       isLoading: authState.isLoading,
                       uploadProgress: authState.uploadProgress,
                       loadingMessage: authState.loadingMessage,
                       onTap: _showProfilePhotoOptions,
                     ),
 
+                    if (isUpgrade) ...[
+                      const SizedBox(height: 12),
+                      AnimatedBuilder(
+                        animation: Listenable.merge([
+                          _firstNameController,
+                          _lastNameController,
+                          _phoneController,
+                          _rutController,
+                        ]),
+                        builder: (context, _) {
+                          return RegistrationMissingDataNotice(
+                            isLoading: _isLoadingExistingData,
+                            missingItems: _missingUpgradeItems(),
+                            readyText: 'Solo falta activar el perfil Rider.',
+                          );
+                        },
+                      ),
+                    ],
+
                     const SizedBox(height: 32),
 
-                    //  DATOS PERSONALES 
+                    //  DATOS PERSONALES
                     const _SectionLabel(
                       label: 'Datos personales',
                       icon: Icons.person_outline_rounded,
@@ -485,7 +605,9 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                           keyboardType: TextInputType.emailAddress,
                           enabled: widget.email == null,
                           style: const TextStyle(
-                              color: textGray900, fontSize: 14),
+                            color: textGray900,
+                            fontSize: 14,
+                          ),
                           decoration: _inputDecoration(
                             label: 'Correo electrónico',
                             hint: 'email@dominio.com',
@@ -512,7 +634,9 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                               child: TextFormField(
                                 controller: _firstNameController,
                                 style: const TextStyle(
-                                    color: textGray900, fontSize: 14),
+                                  color: textGray900,
+                                  fontSize: 14,
+                                ),
                                 decoration: _inputDecoration(
                                   label: 'Nombre',
                                   hint: 'Tu nombre',
@@ -530,7 +654,9 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                               child: TextFormField(
                                 controller: _lastNameController,
                                 style: const TextStyle(
-                                    color: textGray900, fontSize: 14),
+                                  color: textGray900,
+                                  fontSize: 14,
+                                ),
                                 decoration: _inputDecoration(
                                   label: 'Apellido',
                                   hint: 'Tu apellido',
@@ -553,7 +679,9 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
                           style: const TextStyle(
-                              color: textGray900, fontSize: 14),
+                            color: textGray900,
+                            fontSize: 14,
+                          ),
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(9),
@@ -578,7 +706,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
 
                     const SizedBox(height: 20),
 
-                    //  DOCUMENTO 
+                    //  DOCUMENTO
                     const _SectionLabel(
                       label: 'Documento de identidad',
                       icon: Icons.badge_outlined,
@@ -591,7 +719,9 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                           controller: _rutController,
                           keyboardType: TextInputType.text,
                           style: const TextStyle(
-                              color: textGray900, fontSize: 14),
+                            color: textGray900,
+                            fontSize: 14,
+                          ),
                           decoration: _inputDecoration(
                             label: 'RUT',
                             hint: 'Ej: 19.123.456-K',
@@ -602,7 +732,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                       ],
                     ),
 
-                    //  SEGURIDAD (solo nuevo registro) 
+                    //  SEGURIDAD (solo nuevo registro)
                     if (widget.existingUser == null) ...[
                       const SizedBox(height: 20),
                       const _SectionLabel(
@@ -618,17 +748,17 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                             onChanged: (_) => _recomputePasswordChecklist(),
                             keyboardType: TextInputType.visiblePassword,
                             style: const TextStyle(
-                                color: textGray900, fontSize: 14),
+                              color: textGray900,
+                              fontSize: 14,
+                            ),
                             decoration: _inputDecoration(
                               label: 'Contraseña',
-                              hint:
-                                  'Mín. 8 car., 1 mayúsc, 1 minúsc, 1 número',
-                              prefixIconData:
-                                  Icons.lock_outline_rounded,
+                              hint: 'Mín. 8 car., 1 mayúsc, 1 minúsc, 1 número',
+                              prefixIconData: Icons.lock_outline_rounded,
                               suffixIcon: IconButton(
-                                onPressed: () => setState(() =>
-                                    _obscurePassword =
-                                        !_obscurePassword),
+                                onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
+                                ),
                                 icon: Icon(
                                   _obscurePassword
                                       ? Icons.visibility_off_outlined
@@ -653,16 +783,18 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                             onChanged: (_) => _recomputePasswordChecklist(),
                             keyboardType: TextInputType.visiblePassword,
                             style: const TextStyle(
-                                color: textGray900, fontSize: 14),
+                              color: textGray900,
+                              fontSize: 14,
+                            ),
                             decoration: _inputDecoration(
                               label: 'Confirmar contraseña',
                               hint: 'Repite tu contraseña',
-                              prefixIconData:
-                                  Icons.lock_outline_rounded,
+                              prefixIconData: Icons.lock_outline_rounded,
                               suffixIcon: IconButton(
-                                onPressed: () => setState(() =>
-                                    _obscureConfirmPassword =
-                                        !_obscureConfirmPassword),
+                                onPressed: () => setState(
+                                  () => _obscureConfirmPassword =
+                                      !_obscureConfirmPassword,
+                                ),
                                 icon: Icon(
                                   _obscureConfirmPassword
                                       ? Icons.visibility_off_outlined
@@ -728,14 +860,16 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                       onChanged: (v) =>
                           setState(() => _acceptedTerms = v ?? false),
                       onTapLink: () async {
-                        await launchUrl(_termsAndConditionsUri,
-                            mode: LaunchMode.externalApplication);
+                        await launchUrl(
+                          _termsAndConditionsUri,
+                          mode: LaunchMode.externalApplication,
+                        );
                       },
                     ),
 
                     const SizedBox(height: 28),
 
-                    //  SUBMIT 
+                    //  SUBMIT
                     Builder(
                       builder: (BuildContext buttonContext) {
                         return GestureDetector(
@@ -744,59 +878,62 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                               : () async {
                                   if (_formKey.currentState!.validate()) {
                                     if (!_acceptedTerms) {
-                                      ScaffoldMessenger.of(buttonContext)
-                                          .showSnackBar(const SnackBar(
-                                        content: Text(
-                                            'Debes aceptar los Términos y Condiciones para continuar.'),
-                                        duration:
-                                            Duration(milliseconds: 2000),
-                                      ));
+                                      ScaffoldMessenger.of(
+                                        buttonContext,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Debes aceptar los Términos y Condiciones para continuar.',
+                                          ),
+                                          duration: Duration(
+                                            milliseconds: 2000,
+                                          ),
+                                        ),
+                                      );
                                       return;
                                     }
 
                                     // 1. UPGRADE (HERO  RIDER)
                                     if (widget.existingUser != null) {
                                       final user = widget.existingUser!;
-                                      final auth =
-                                          ref.read(firebaseAuthProvider);
+                                      final auth = ref.read(
+                                        firebaseAuthProvider,
+                                      );
                                       final uid =
                                           auth.currentUser?.uid ?? user.id;
 
                                       await ref
-                                          .read(
-                                              authNotifierProvider.notifier)
+                                          .read(authNotifierProvider.notifier)
                                           .upgradeToRider(
                                             uid: uid,
-                                            firstName: _firstNameController
-                                                .text
+                                            firstName: _firstNameController.text
                                                 .trim(),
-                                            lastName: _lastNameController
-                                                .text
+                                            lastName: _lastNameController.text
                                                 .trim(),
-                                            rut:
-                                                _rutController.text.trim(),
-                                            phone: _phoneController.text
-                                                .trim(),
+                                            rut: _rutController.text.trim(),
+                                            phone: _phoneController.text.trim(),
                                             profilePhotoBytes:
                                                 _profilePhotoBytes,
-                                            profilePhotoName:
-                                                _profilePhotoName,
+                                            profilePhotoName: _profilePhotoName,
                                           );
 
-                                      final currentState =
-                                          ref.read(authNotifierProvider);
-                                      if (currentState.errorMessage ==
-                                          null) {
+                                      final currentState = ref.read(
+                                        authNotifierProvider,
+                                      );
+                                      if (currentState.errorMessage == null) {
                                         if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             const SnackBar(
                                               content: Text(
-                                                  '¡Perfil Rider Activado!'),
+                                                '¡Perfil Rider Activado!',
+                                              ),
                                             ),
                                           );
-                                          Navigator.of(context)
-                                              .pushAndRemoveUntil(
+                                          Navigator.of(
+                                            context,
+                                          ).pushAndRemoveUntil(
                                             MaterialPageRoute(
                                               builder: (_) =>
                                                   const RiderHomeScreen(),
@@ -810,57 +947,61 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
 
                                     // 2. NUEVO REGISTRO
                                     if (_profilePhotoBytes == null) {
-                                      ScaffoldMessenger.of(buttonContext)
-                                          .showSnackBar(const SnackBar(
-                                        content: Text(
-                                            'Debes seleccionar una foto de perfil para continuar.'),
-                                        duration:
-                                            Duration(milliseconds: 2000),
-                                      ));
+                                      ScaffoldMessenger.of(
+                                        buttonContext,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Debes seleccionar una foto de perfil para continuar.',
+                                          ),
+                                          duration: Duration(
+                                            milliseconds: 2000,
+                                          ),
+                                        ),
+                                      );
                                       return;
                                     }
 
-                                    final email =
-                                        _emailController.text.trim();
+                                    final email = _emailController.text.trim();
                                     if (email.isEmpty) {
-                                      ScaffoldMessenger.of(buttonContext)
-                                          .showSnackBar(const SnackBar(
-                                        content: Text(
-                                            'Error: Email no válidos. Por favor intenta de nuevo.'),
-                                      ));
+                                      ScaffoldMessenger.of(
+                                        buttonContext,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Error: Email no válidos. Por favor intenta de nuevo.',
+                                          ),
+                                        ),
+                                      );
                                       return;
                                     }
 
                                     await ref
-                                        .read(
-                                            authNotifierProvider.notifier)
+                                        .read(authNotifierProvider.notifier)
                                         .registerRider(
                                           email: email,
-                                          password: _passwordController
-                                              .text
+                                          password: _passwordController.text
                                               .trim(),
-                                          firstName: _firstNameController
-                                              .text
+                                          firstName: _firstNameController.text
                                               .trim(),
-                                          lastName: _lastNameController
-                                              .text
+                                          lastName: _lastNameController.text
                                               .trim(),
                                           rut: _rutController.text.trim(),
-                                          phone:
-                                              _phoneController.text.trim(),
-                                          profilePhotoBytes:
-                                              _profilePhotoBytes,
-                                          profilePhotoName:
-                                              _profilePhotoName,
+                                          phone: _phoneController.text.trim(),
+                                          profilePhotoBytes: _profilePhotoBytes,
+                                          profilePhotoName: _profilePhotoName,
                                         );
 
-                                    ScaffoldMessenger.of(buttonContext)
-                                        .showSnackBar(const SnackBar(
-                                      content: Text(
-                                          'Datos válidos. Registrando Rider...'),
-                                      duration:
-                                          Duration(milliseconds: 1500),
-                                    ));
+                                    ScaffoldMessenger.of(
+                                      buttonContext,
+                                    ).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Datos válidos. Registrando Rider...',
+                                        ),
+                                        duration: Duration(milliseconds: 1500),
+                                      ),
+                                    );
                                   }
                                 },
                           child: AnimatedContainer(
@@ -876,8 +1017,9 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                   ? []
                                   : [
                                       BoxShadow(
-                                        color: primaryOrange
-                                            .withValues(alpha: 0.38),
+                                        color: primaryOrange.withValues(
+                                          alpha: 0.38,
+                                        ),
                                         blurRadius: 18,
                                         offset: const Offset(0, 8),
                                       ),
@@ -915,8 +1057,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                                     ),
                                   )
                                 : Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Icon(
                                         isUpgrade
@@ -956,16 +1097,20 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
 
 // TERMS ROW
 //  PHOTO PICKER
-// 
+//
 class _PhotoPicker extends StatelessWidget {
   const _PhotoPicker({
     required this.photoBytes,
+    required this.hasExistingPhoto,
+    required this.isRequired,
     required this.isLoading,
     this.uploadProgress,
     this.loadingMessage,
     required this.onTap,
   });
   final Uint8List? photoBytes;
+  final bool hasExistingPhoto;
+  final bool isRequired;
   final bool isLoading;
   final double? uploadProgress;
   final String? loadingMessage;
@@ -974,15 +1119,24 @@ class _PhotoPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasPhoto = photoBytes != null;
+    final photoReady = hasPhoto || hasExistingPhoto;
     final isUploadingPhoto = isLoading && uploadProgress != null;
     final normalizedProgress = uploadProgress?.clamp(0.0, 1.0) ?? 0.0;
     final progressPercent = (normalizedProgress * 100).round();
     final statusTitle = isUploadingPhoto
         ? 'Subiendo foto de perfil'
-        : (hasPhoto ? 'Foto de perfil lista' : 'Foto de perfil');
+        : (hasPhoto
+              ? 'Foto de perfil lista'
+              : hasExistingPhoto
+              ? 'Foto de perfil guardada'
+              : 'Foto de perfil');
     final statusDescription = isUploadingPhoto
         ? '${loadingMessage ?? 'Subiendo imagen...'} $progressPercent%'
-        : (hasPhoto ? 'Toca para cambiarla' : 'Requerida - galeria o archivos');
+        : (photoReady
+              ? 'Toca para cambiarla'
+              : isRequired
+              ? 'Requerida - galeria o archivos'
+              : 'Opcional - toca para agregarla');
 
     return GestureDetector(
       onTap: isLoading ? null : onTap,
@@ -991,13 +1145,13 @@ class _PhotoPicker extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
         decoration: BoxDecoration(
-          color: hasPhoto ? const Color(0xFFFFF8F0) : Colors.white,
+          color: photoReady ? const Color(0xFFFFF8F0) : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: hasPhoto ? primaryOrange : const Color(0xFFE8E8E8),
-            width: hasPhoto ? 2 : 1.5,
+            color: photoReady ? primaryOrange : const Color(0xFFE8E8E8),
+            width: photoReady ? 2 : 1.5,
           ),
-          boxShadow: hasPhoto
+          boxShadow: photoReady
               ? [
                   BoxShadow(
                     color: primaryOrange.withValues(alpha: 0.12),
@@ -1022,10 +1176,11 @@ class _PhotoPicker extends StatelessWidget {
                   height: 72,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color:
-                        hasPhoto ? const Color(0xFFF0F0EE) : const Color(0xFFF5F5F5),
+                    color: photoReady
+                        ? const Color(0xFFF0F0EE)
+                        : const Color(0xFFF5F5F5),
                     border: Border.all(
-                      color: hasPhoto
+                      color: photoReady
                           ? primaryOrange.withValues(alpha: 0.3)
                           : const Color(0xFFE0E0E0),
                       width: 2,
@@ -1043,7 +1198,7 @@ class _PhotoPicker extends StatelessWidget {
                           ),
                   ),
                 ),
-                if (hasPhoto)
+                if (photoReady)
                   Positioned(
                     bottom: 0,
                     right: 0,
@@ -1103,8 +1258,10 @@ class _PhotoPicker extends StatelessWidget {
                       color: isUploadingPhoto
                           ? primaryOrange
                           : hasPhoto
-                              ? const Color(0xFF10B981)
-                              : textGray900,
+                          ? const Color(0xFF10B981)
+                          : hasExistingPhoto
+                          ? const Color(0xFF10B981)
+                          : textGray900,
                       letterSpacing: -0.2,
                     ),
                   ),
@@ -1117,8 +1274,10 @@ class _PhotoPicker extends StatelessWidget {
                       color: isUploadingPhoto
                           ? primaryOrange.withValues(alpha: 0.85)
                           : hasPhoto
-                              ? const Color(0xFF10B981).withValues(alpha: 0.7)
-                              : textGray600,
+                          ? const Color(0xFF10B981).withValues(alpha: 0.7)
+                          : hasExistingPhoto
+                          ? const Color(0xFF10B981).withValues(alpha: 0.7)
+                          : textGray600,
                     ),
                   ),
                   if (isUploadingPhoto) ...[
@@ -1129,8 +1288,9 @@ class _PhotoPicker extends StatelessWidget {
                         minHeight: 6,
                         value: normalizedProgress,
                         backgroundColor: const Color(0xFFFFE9D2),
-                        valueColor:
-                            const AlwaysStoppedAnimation<Color>(primaryOrange),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          primaryOrange,
+                        ),
                       ),
                     ),
                   ],
@@ -1141,21 +1301,23 @@ class _PhotoPicker extends StatelessWidget {
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: hasPhoto ? const Color(0xFFE6FDF4) : const Color(0xFFFFF3E0),
+                color: photoReady
+                    ? const Color(0xFFE6FDF4)
+                    : const Color(0xFFFFF3E0),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
                 isUploadingPhoto
                     ? Icons.cloud_upload_rounded
-                    : hasPhoto
-                        ? Icons.edit_rounded
-                        : Icons.arrow_forward_ios_rounded,
+                    : photoReady
+                    ? Icons.edit_rounded
+                    : Icons.arrow_forward_ios_rounded,
                 size: 15,
                 color: isUploadingPhoto
                     ? primaryOrange
-                    : hasPhoto
-                        ? const Color(0xFF10B981)
-                        : primaryOrange,
+                    : photoReady
+                    ? const Color(0xFF10B981)
+                    : primaryOrange,
               ),
             ),
           ],
@@ -1164,7 +1326,6 @@ class _PhotoPicker extends StatelessWidget {
     );
   }
 }
-
 
 class _SectionLabel extends StatelessWidget {
   const _SectionLabel({required this.label, required this.icon});
@@ -1208,9 +1369,9 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// 
+//
 //  FIELD GROUP
-// 
+//
 class _FieldGroup extends StatelessWidget {
   const _FieldGroup({required this.children});
   final List<Widget> children;
@@ -1251,9 +1412,9 @@ class _FieldDivider extends StatelessWidget {
   }
 }
 
-// 
+//
 //  TERMS ROW
-// 
+//
 class _TermsRow extends StatelessWidget {
   const _TermsRow({
     required this.accepted,
@@ -1268,8 +1429,7 @@ class _TermsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      padding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: accepted ? const Color(0xFFFFF8F0) : Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -1295,11 +1455,10 @@ class _TermsRow extends StatelessWidget {
               value: accepted,
               activeColor: primaryOrange,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(5)),
+                borderRadius: BorderRadius.circular(5),
+              ),
               side: BorderSide(
-                color: accepted
-                    ? primaryOrange
-                    : const Color(0xFFBBBBBB),
+                color: accepted ? primaryOrange : const Color(0xFFBBBBBB),
                 width: 1.5,
               ),
               onChanged: onChanged,
@@ -1336,12 +1495,14 @@ class _TermsRow extends StatelessWidget {
           if (accepted)
             const Padding(
               padding: EdgeInsets.only(left: 8),
-              child: Icon(Icons.check_circle_rounded,
-                  color: primaryOrange, size: 18),
+              child: Icon(
+                Icons.check_circle_rounded,
+                color: primaryOrange,
+                size: 18,
+              ),
             ),
         ],
       ),
     );
   }
 }
-

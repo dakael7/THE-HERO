@@ -56,11 +56,17 @@ class RiderStatsService {
     int earningsCents = 0;
     int tipsCents = 0;
     bool sawCents = false;
+    final deliveryEarningsOrderIds = <String>{};
 
     for (final doc in walletTxDocs) {
       final data = doc.data();
       final type = data['type']?.toString() ?? '';
       if (type != 'delivery_earnings') continue;
+
+      final orderId = data['orderId']?.toString() ?? '';
+      if (orderId.isNotEmpty) {
+        deliveryEarningsOrderIds.add(orderId);
+      }
 
       final createdAt = data['createdAt'];
       if (cutoff != null && createdAt is Timestamp) {
@@ -103,6 +109,27 @@ class RiderStatsService {
         } else {
           totalEarnings += commission.netEarnings;
         }
+      }
+    }
+
+    for (final order in orders) {
+      if (order.status != OrderStatus.delivered) continue;
+      if (!order.rider.isCashOrder) continue;
+      if (deliveryEarningsOrderIds.contains(order.orderId)) continue;
+      if (cutoff != null) {
+        final deliveredAt = order.timestamps.deliveredAt;
+        if (deliveredAt == null || deliveredAt.isBefore(cutoff)) continue;
+      }
+
+      final commission = RiderCommissionCalculator.calculateCommission(
+        deliveryFee: order.deliveryFee,
+      );
+      if (sawCents) {
+        earningsCents += _toCents(commission.netEarnings);
+        tipsCents += _toCents(order.tip);
+      } else {
+        totalEarnings += commission.netEarnings;
+        totalTips += order.tip;
       }
     }
 

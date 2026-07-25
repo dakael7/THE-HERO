@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -51,7 +51,9 @@ class _EmailVerificationScreenState
   bool _obscurePassword = true;
   bool _navigated = false;
 
-  Future<_ResolvedGoogleRoutingUser> _resolveFreshGoogleUser(User fallback) async {
+  Future<_ResolvedGoogleRoutingUser> _resolveFreshGoogleUser(
+    User fallback,
+  ) async {
     final uid = fallback.id.trim();
     if (uid.isEmpty) {
       return _ResolvedGoogleRoutingUser(
@@ -65,7 +67,8 @@ class _EmailVerificationScreenState
         (fb_auth.FirebaseAuth.instance.currentUser?.photoURL ?? '').trim();
 
     User withAuthPhoto(User user) {
-      if ((user.profilePhotoUrl ?? '').trim().isNotEmpty || authPhotoUrl.isEmpty) {
+      if ((user.profilePhotoUrl ?? '').trim().isNotEmpty ||
+          authPhotoUrl.isEmpty) {
         return user;
       }
       return user.copyWith(profilePhotoUrl: authPhotoUrl);
@@ -73,7 +76,10 @@ class _EmailVerificationScreenState
 
     int scoreByKeyFields(User user) {
       var score = 0;
-      if (user.identity.documentId.trim().isNotEmpty) score += 3;
+      final requiredDocumentId = widget.userRole == UserRole.rider
+          ? user.rutDocumentId
+          : user.profileDocumentId;
+      if (requiredDocumentId.trim().isNotEmpty) score += 3;
       if (user.contact.phoneNumber.trim().isNotEmpty) score += 3;
       if (widget.userRole == UserRole.hero ? user.isHero : user.isRider) {
         score += 3;
@@ -144,25 +150,17 @@ class _EmailVerificationScreenState
     }
 
     // 3) Default read as a short fallback.
-    consider(
-      await readUserDoc(
-        timeout: const Duration(milliseconds: 1200),
-      ),
-    );
+    consider(await readUserDoc(timeout: const Duration(milliseconds: 1200)));
 
-    if ((bestUser.profilePhotoUrl ?? '').trim().isEmpty && authPhotoUrl.isNotEmpty) {
+    if ((bestUser.profilePhotoUrl ?? '').trim().isEmpty &&
+        authPhotoUrl.isNotEmpty) {
       bestUser = bestUser.copyWith(profilePhotoUrl: authPhotoUrl);
       unawaited(() async {
         try {
-          await firestore.collection('users').doc(uid).set(
-            {
-              'profilePhotoUrl': authPhotoUrl,
-              'status': {
-                'lastUpdated': DateTime.now().toIso8601String(),
-              },
-            },
-            SetOptions(merge: true),
-          );
+          await firestore.collection('users').doc(uid).set({
+            'profilePhotoUrl': authPhotoUrl,
+            'status': {'lastUpdated': DateTime.now().toIso8601String()},
+          }, SetOptions(merge: true));
         } catch (_) {}
       }());
     }
@@ -225,7 +223,7 @@ class _EmailVerificationScreenState
               Expanded(
                 child: Text(
                   isGoogleFallback
-                       ? 'Inicia sesión con Google'
+                      ? 'Inicia sesión con Google'
                       : 'Error de Autenticación',
                   style: const TextStyle(
                     fontSize: 18,
@@ -303,6 +301,71 @@ class _EmailVerificationScreenState
     );
   }
 
+  Future<bool> _tryActivateExistingRole(
+    User user,
+    void Function(String message) logRoute,
+  ) async {
+    final uid = (fb_auth.FirebaseAuth.instance.currentUser?.uid ?? user.id)
+        .trim();
+    final firstName = user.identity.firstName.trim();
+    final lastName = user.identity.lastName.trim();
+    final phone = user.contact.phoneNumber.trim();
+
+    if (uid.isEmpty || firstName.isEmpty || lastName.isEmpty || phone.isEmpty) {
+      return false;
+    }
+
+    final authNotifier = ref.read(authNotifierProvider.notifier);
+    if (widget.userRole == UserRole.hero) {
+      final documentId = user.profileDocumentId.trim();
+      if (documentId.isEmpty) return false;
+      await authNotifier.upgradeToHero(
+        uid: uid,
+        firstName: firstName,
+        lastName: lastName,
+        documentType: user.profileDocumentType,
+        documentId: documentId,
+        phone: phone,
+      );
+      final state = ref.read(authNotifierProvider);
+      if (state.errorMessage != null) {
+        logRoute('auto_upgrade_hero failed error=${state.errorMessage}');
+        return false;
+      }
+      await authNotifier.saveLastRole('hero');
+      if (!mounted) return true;
+      logRoute('route=hero_home auto_upgrade=true');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HeroHomeScreen()),
+      );
+      return true;
+    }
+
+    final rut = user.rutDocumentId.trim();
+    if (rut.isEmpty) return false;
+    await authNotifier.upgradeToRider(
+      uid: uid,
+      firstName: firstName,
+      lastName: lastName,
+      rut: rut,
+      phone: phone,
+    );
+    final state = ref.read(authNotifierProvider);
+    if (state.errorMessage != null) {
+      logRoute('auto_upgrade_rider failed error=${state.errorMessage}');
+      return false;
+    }
+    await authNotifier.saveLastRole('rider');
+    if (!mounted) return true;
+    logRoute('route=rider_home auto_upgrade=true');
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+    );
+    return true;
+  }
+
   Future<void> _handleGoogleSignIn() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
@@ -316,17 +379,16 @@ class _EmailVerificationScreenState
     try {
       final authNotifier = ref.read(authNotifierProvider.notifier);
       logRoute('google_sign_in:start role=${widget.userRole}');
-      final currentUser =
-          await authNotifier.signInWithGoogleAndCreateUser(widget.userRole);
+      final currentUser = await authNotifier.signInWithGoogleAndCreateUser(
+        widget.userRole,
+      );
       if (!mounted) return;
 
       final authUser = fb_auth.FirebaseAuth.instance.currentUser;
       final isEmailVerified = authUser?.emailVerified ?? false;
 
       if (!isEmailVerified) {
-        logRoute(
-          'route=unverified_email isEmailVerified=$isEmailVerified',
-        );
+        logRoute('route=unverified_email isEmailVerified=$isEmailVerified');
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -348,7 +410,9 @@ class _EmailVerificationScreenState
       );
       final routedUser = resolvedUser.user;
       final hasFirebaseSnapshot = resolvedUser.hasFirebaseSnapshot;
-      final missingDocId = routedUser.identity.documentId.trim().isEmpty;
+      final missingDocId = widget.userRole == UserRole.rider
+          ? routedUser.rutDocumentId.trim().isEmpty
+          : routedUser.profileDocumentId.trim().isEmpty;
       final missingPhone = routedUser.contact.phoneNumber.trim().isEmpty;
       final needsCriticalData =
           hasFirebaseSnapshot && (missingDocId || missingPhone);
@@ -361,6 +425,11 @@ class _EmailVerificationScreenState
 
       if (widget.userRole == UserRole.hero) {
         final needsRoleUpgrade = hasFirebaseSnapshot && !routedUser.isHero;
+        if (needsRoleUpgrade &&
+            !needsCriticalData &&
+            await _tryActivateExistingRole(routedUser, logRoute)) {
+          return;
+        }
         if (needsCriticalData || needsRoleUpgrade) {
           logRoute(
             'route=register_hero reason needsCriticalData=$needsCriticalData needsRoleUpgrade=$needsRoleUpgrade isHero=${routedUser.isHero} missingPhoto=$missingPhoto',
@@ -388,6 +457,11 @@ class _EmailVerificationScreenState
       }
 
       final needsRoleUpgrade = hasFirebaseSnapshot && !routedUser.isRider;
+      if (needsRoleUpgrade &&
+          !needsCriticalData &&
+          await _tryActivateExistingRole(routedUser, logRoute)) {
+        return;
+      }
       if (needsCriticalData || needsRoleUpgrade) {
         logRoute(
           'route=register_rider reason needsCriticalData=$needsCriticalData needsRoleUpgrade=$needsRoleUpgrade isRider=${routedUser.isRider} missingPhoto=$missingPhoto',
@@ -528,6 +602,12 @@ class _EmailVerificationScreenState
 
               if (widget.userRole == UserRole.hero) {
                 if (!currentUser.isHero) {
+                  if (await _tryActivateExistingRole(
+                    currentUser,
+                    (message) => debugPrint('[AUTH][ROUTE] $message'),
+                  )) {
+                    return;
+                  }
                   if (context.mounted) {
                     Navigator.pushReplacement(
                       context,
@@ -541,7 +621,9 @@ class _EmailVerificationScreenState
                   }
                   return;
                 }
-                await ref.read(authNotifierProvider.notifier).saveLastRole('hero');
+                await ref
+                    .read(authNotifierProvider.notifier)
+                    .saveLastRole('hero');
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
@@ -550,6 +632,12 @@ class _EmailVerificationScreenState
                 );
               } else {
                 if (!currentUser.isRider) {
+                  if (await _tryActivateExistingRole(
+                    currentUser,
+                    (message) => debugPrint('[AUTH][ROUTE] $message'),
+                  )) {
+                    return;
+                  }
                   if (context.mounted) {
                     Navigator.pushReplacement(
                       context,
@@ -564,9 +652,13 @@ class _EmailVerificationScreenState
                   return;
                 }
 
-                await ref.read(authNotifierProvider.notifier).saveLastRole('rider');
+                await ref
+                    .read(authNotifierProvider.notifier)
+                    .saveLastRole('rider');
 
-                final uid = (await ref.read(firebaseAuthUserProvider.future))?.uid;
+                final uid = (await ref.read(
+                  firebaseAuthUserProvider.future,
+                ))?.uid;
                 if (uid != null && currentUser.riderProfile?.isActive != true) {
                   try {
                     await ref
@@ -679,368 +771,370 @@ class _EmailVerificationScreenState
                 children: [
                   _buildLogoSection(),
 
-                const SizedBox(height: 30),
+                  const SizedBox(height: 30),
 
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: primaryOrange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _getRoleBadgeLabel(),
+                      style: TextStyle(
+                        color: primaryOrange,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
-                  decoration: BoxDecoration(
-                    color: primaryOrange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _getRoleBadgeLabel(),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Verifica tu correo',
                     style: TextStyle(
-                      color: primaryOrange,
+                      fontSize: 24,
                       fontWeight: FontWeight.w500,
+                      color: textGray900,
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Verifica tu correo',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w500,
-                    color: textGray900,
+                  const SizedBox(height: 10),
+                  Text(
+                    _getRoleDescription(),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 16, color: textGray600),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  _getRoleDescription(),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16, color: textGray600),
-                ),
 
-                const SizedBox(height: 40),
+                  const SizedBox(height: 40),
 
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  enabled: !_isLoading,
-                  onChanged: (value) {
-                    if (_accountExists || _requiresGoogleSignIn) {
-                      setState(() {
-                        _accountExists = false;
-                        _requiresGoogleSignIn = false;
-                        _passwordController.clear();
-                      });
-                    }
-                  },
-                  style: const TextStyle(
-                    color: textGray900,
-                    fontSize: 16,
-                    fontWeight: FontWeight.normal,
-                  ),
-                  decoration: _getEmailInputDecoration(),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Por favor ingresa un correo';
-                    }
-                    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
-                    if (!emailRegex.hasMatch(value)) {
-                      return 'Ingresa un correo válido';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 20),
-
-                if (_accountExists) ...[
                   TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
                     enabled: !_isLoading,
-                    style: const TextStyle(color: textGray900, fontSize: 16),
-                    decoration: InputDecoration(
-                      hintText: 'Contraseña',
-                      hintStyle: TextStyle(color: textGray600.withValues(alpha: 0.5)),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 16,
-                        horizontal: 20,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
-                          color: Colors.grey,
-                          width: 1.0,
-                        ),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(
-                          color: Colors.grey.shade300,
-                          width: 1.0,
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
-                          color: primaryOrange,
-                          width: 2,
-                        ),
-                      ),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                          color: textGray600,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
-                      ),
+                    onChanged: (value) {
+                      if (_accountExists || _requiresGoogleSignIn) {
+                        setState(() {
+                          _accountExists = false;
+                          _requiresGoogleSignIn = false;
+                          _passwordController.clear();
+                        });
+                      }
+                    },
+                    style: const TextStyle(
+                      color: textGray900,
+                      fontSize: 16,
+                      fontWeight: FontWeight.normal,
                     ),
+                    decoration: _getEmailInputDecoration(),
                     validator: (value) {
-                      if (_accountExists) {
-                        if (value == null || value.isEmpty) {
-                          return 'Por favor ingresa tu contraseña';
-                        }
-                        if (value.length < 6) {
-                          return 'La contraseña debe tener al menos 6 caracteres';
-                        }
+                      if (value == null || value.isEmpty) {
+                        return 'Por favor ingresa un correo';
+                      }
+                      final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+                      if (!emailRegex.hasMatch(value)) {
+                        return 'Ingresa un correo válido';
                       }
                       return null;
                     },
                   ),
+
                   const SizedBox(height: 20),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
+
+                  if (_accountExists) ...[
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      enabled: !_isLoading,
+                      style: const TextStyle(color: textGray900, fontSize: 16),
+                      decoration: InputDecoration(
+                        hintText: 'Contraseña',
+                        hintStyle: TextStyle(
+                          color: textGray600.withValues(alpha: 0.5),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 20,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Colors.grey,
+                            width: 1.0,
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: Colors.grey.shade300,
+                            width: 1.0,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: primaryOrange,
+                            width: 2,
+                          ),
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            color: textGray600,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
+                        ),
+                      ),
+                      validator: (value) {
+                        if (_accountExists) {
+                          if (value == null || value.isEmpty) {
+                            return 'Por favor ingresa tu contraseña';
+                          }
+                          if (value.length < 6) {
+                            return 'La contraseña debe tener al menos 6 caracteres';
+                          }
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _isLoading
+                            ? null
+                            : () async {
+                                final email = _emailController.text.trim();
+                                if (email.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Por favor ingresa tu correo para recuperar tu contraseña.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                try {
+                                  await ref
+                                      .read(authNotifierProvider.notifier)
+                                      .resetPassword(email);
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Te enviamos un correo para recuperar tu contraseña.',
+                                      ),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(e.toString())),
+                                  );
+                                }
+                              },
+                        child: const Text(
+                          '¿Olvidaste tu contraseña?',
+                          style: TextStyle(
+                            color: primaryOrange,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
                       onPressed: _isLoading
                           ? null
                           : () async {
-                              final email = _emailController.text.trim();
-                              if (email.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Por favor ingresa tu correo para recuperar tu contraseña.',
-                                    ),
-                                  ),
-                                );
-                                return;
+                              if (!_accountExists &&
+                                  _emailController.text.trim().isNotEmpty) {
+                                await _checkEmail();
+                                if (_requiresGoogleSignIn) {
+                                  _showErrorDialog(
+                                    'Esta cuenta está registrada con Google. Inicia sesión con Google.',
+                                  );
+                                  return;
+                                }
+                                if (_accountExists) {
+                                  return;
+                                }
                               }
-                              try {
-                                await ref
-                                    .read(authNotifierProvider.notifier)
-                                    .resetPassword(email);
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Te enviamos un correo para recuperar tu contraseña.',
+                              _submitForm();
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryOrange,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2.0,
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                          : Text(
+                              _accountExists
+                                  ? 'Ingresar'
+                                  : (_requiresGoogleSignIn
+                                        ? 'Continuar con Google'
+                                        : 'Continuar'),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  Center(
+                    child: TextButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              final email = _emailController.text.trim();
+                              if (widget.userRole == UserRole.hero) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => RegisterHeroScreen(
+                                      email: email.isNotEmpty ? email : null,
                                     ),
                                   ),
                                 );
-                              } catch (e) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(e.toString())),
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => RegisterRiderScreen(
+                                      email: email.isNotEmpty ? email : null,
+                                    ),
+                                  ),
                                 );
                               }
                             },
-                      child: const Text(
-                        '¿Olvidaste tu contraseña?',
-                        style: TextStyle(
-                          color: primaryOrange,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () async {
-                            if (!_accountExists &&
-                                _emailController.text.trim().isNotEmpty) {
-                              await _checkEmail();
-                              if (_requiresGoogleSignIn) {
-                                _showErrorDialog(
-                                  'Esta cuenta está registrada con Google. Inicia sesión con Google.',
-                                );
-                                return;
-                              }
-                              if (_accountExists) {
-                                return;
-                              }
-                            }
-                            _submitForm();
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryOrange,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2.0,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
+                      child: RichText(
+                        text: const TextSpan(
+                          text: '¿No tienes cuenta? ',
+                          style: TextStyle(color: textGray600, fontSize: 14),
+                          children: [
+                            TextSpan(
+                              text: 'Regístrate',
+                              style: TextStyle(
+                                color: primaryOrange,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                          )
-                        : Text(
-                            _accountExists
-                                ? 'Ingresar'
-                                : (_requiresGoogleSignIn
-                                    ? 'Continuar con Google'
-                                    : 'Continuar'),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                Center(
-                  child: TextButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () {
-                            final email = _emailController.text.trim();
-                            if (widget.userRole == UserRole.hero) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => RegisterHeroScreen(
-                                    email: email.isNotEmpty ? email : null,
-                                  ),
-                                ),
-                              );
-                            } else {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => RegisterRiderScreen(
-                                    email: email.isNotEmpty ? email : null,
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                    child: RichText(
-                      text: const TextSpan(
-                        text: '¿No tienes cuenta? ',
-                        style: TextStyle(color: textGray600, fontSize: 14),
-                        children: [
-                          TextSpan(
-                            text: 'Regístrate',
-                            style: TextStyle(
-                              color: primaryOrange,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 30),
+                  const SizedBox(height: 30),
 
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text('o', style: TextStyle(color: textGray600)),
-                    ),
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                  ],
-                ),
-
-                const SizedBox(height: 30),
-
-                _buildSocialButton(
-                  iconWidget: SvgPicture.asset(
-                    'assets/icono-google.svg',
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.contain,
-                    placeholderBuilder: (context) {
-                      return Icon(
-                        Icons.g_mobiledata,
-                        color: Colors.blue.shade700,
-                        size: 28,
-                      );
-                    },
-                  ),
-                  label: 'Continuar con Google',
-                  isApple: false,
-                  onTap: _isLoading
-                      ? null
-                      : () async {
-                          await _handleGoogleSignIn();
-                        },
-                ),
-
-                const SizedBox(height: 40),
-
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  child: Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+                  Row(
                     children: [
-                      Text(
-                        'Al hacer clic en continuar, aceptas nuestros ',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: textGray600.withValues(alpha: 0.7),
-                        ),
+                      Expanded(child: Divider(color: Colors.grey.shade300)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Text('o', style: TextStyle(color: textGray600)),
                       ),
-                      InkWell(
-                        onTap: () async {
-                          await launchUrl(
-                            _termsAndConditionsUri,
-                            mode: LaunchMode.externalApplication,
-                          );
-                        },
-                        child: const Text(
-                          'Términos y Condiciones',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: primaryOrange,
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: textGray600.withValues(alpha: 0.7),
-                        ),
-                      ),
+                      Expanded(child: Divider(color: Colors.grey.shade300)),
                     ],
                   ),
-                ),
+
+                  const SizedBox(height: 30),
+
+                  _buildSocialButton(
+                    iconWidget: SvgPicture.asset(
+                      'assets/icono-google.svg',
+                      width: 24,
+                      height: 24,
+                      fit: BoxFit.contain,
+                      placeholderBuilder: (context) {
+                        return Icon(
+                          Icons.g_mobiledata,
+                          color: Colors.blue.shade700,
+                          size: 28,
+                        );
+                      },
+                    ),
+                    label: 'Continuar con Google',
+                    isApple: false,
+                    onTap: _isLoading
+                        ? null
+                        : () async {
+                            await _handleGoogleSignIn();
+                          },
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          'Al hacer clic en continuar, aceptas nuestros ',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: textGray600.withValues(alpha: 0.7),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () async {
+                            await launchUrl(
+                              _termsAndConditionsUri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          },
+                          child: const Text(
+                            'Términos y Condiciones',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: primaryOrange,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: textGray600.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1104,4 +1198,3 @@ class _EmailVerificationScreenState
     );
   }
 }
-

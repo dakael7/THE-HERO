@@ -14,11 +14,7 @@ part 'orders_usecase_providers.g.dart';
 @Riverpod(keepAlive: true)
 CreateOrderUseCase createOrderUseCase(Ref ref) {
   final ordersRepository = ref.read(ordersRepositoryProvider);
-  final offersRepository = ref.read(offersRepositoryProvider);
-  return CreateOrderUseCase(
-    ordersRepository: ordersRepository,
-    offersRepository: offersRepository,
-  );
+  return CreateOrderUseCase(ordersRepository: ordersRepository);
 }
 
 @Riverpod(keepAlive: true)

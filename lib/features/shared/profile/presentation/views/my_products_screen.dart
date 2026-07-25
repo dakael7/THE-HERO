@@ -281,6 +281,18 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
         confirmText: 'Eliminar',
       );
       if (!confirmed) return;
+      if (orderCount > 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No puedes eliminar una donacion con pedidos. Pausala para ocultarla.',
+            ),
+            duration: Duration(milliseconds: 2400),
+          ),
+        );
+        return;
+      }
       if (_busyOfferIds.contains(offer.offerId)) return;
       setState(() => _busyOfferIds.add(offer.offerId));
       try {

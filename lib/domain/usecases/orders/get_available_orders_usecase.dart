@@ -11,6 +11,7 @@ class GetAvailableOrdersUseCase {
 
   Stream<List<Order>> execute({
     required VehicleType riderVehicleType,
+    required String countryCode,
     int limit = 50,
   }) {
     final compatibleVehicles = OrderRequirements.getCompatibleVehicles(
@@ -20,6 +21,7 @@ class GetAvailableOrdersUseCase {
     return _repository
         .getAvailableOrders(
           requiredVehicles: compatibleVehicles.map((v) => v.name).toList(),
+          countryCode: countryCode,
           limit: limit,
         )
         .map((orders) {

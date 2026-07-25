@@ -22,6 +22,7 @@ class OrderBuilder {
     double tip = 0.0,
     double estimatedDistanceKm = 0.0,
     required String heroId,
+    String? countryCode,
     String documentType = 'boleta',
     String? invoiceBusinessName,
     String? invoiceRut,
@@ -139,6 +140,7 @@ class OrderBuilder {
     final timestamps = OrderTimestamps(createdAt: now);
 
     final safeTip = tip.isNaN || tip.isInfinite ? 0.0 : tip;
+    final normalizedCountryCode = countryCode?.trim().toUpperCase();
 
     // Build the order
     return Order(
@@ -153,6 +155,9 @@ class OrderBuilder {
       tip: safeTip,
       amountTotal: cartSummary.total + safeTip,
       currency: 'CLP',
+      countryCode: normalizedCountryCode?.isEmpty == true
+          ? null
+          : normalizedCountryCode,
       documentType: documentType,
       invoiceBusinessName: invoiceBusinessName,
       invoiceRut: invoiceRut,

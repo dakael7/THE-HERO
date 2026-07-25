@@ -21,32 +21,45 @@ service cloud.firestore {
     
     function isRider() {
       return isAuthenticated()
-        && (getUserData().roles is list)
-        && getUserData().roles.hasAny(['rider']);
+        && (
+          (
+            (getUserData().roles is list)
+            && getUserData().roles.hasAny(['rider'])
+          )
+          || (getUserData().riderProfile is map)
+        );
     }
 
     function isWebAdmin() {
       return isAuthenticated()
         && exists(/databases/$(database)/documents/web_admins/$(request.auth.uid));
     }
-    
-    function _activeVehicleIsVerified(profile) {
-      let legacyVehicle = profile.get('vehicle', {});
-      let legacyType = (legacyVehicle is map) ? legacyVehicle.get('type', '') : '';
-      let activeType = profile.get('activeVehicleType', legacyType);
-      let vehicles = profile.get('vehicles', {});
-      let entry = (vehicles is map) ? vehicles[activeType] : {};
-      let verification = (entry is map) ? entry.get('verification', {}) : {};
-      let status = (verification is map) ? verification.get('status', '') : '';
-      return profile.isVerified == true
-        || status in ['approved', 'not_required'];
+
+    function _authCountryCode() {
+      let data = getUserData();
+      let address = data.get('address', {});
+      let primarySlot = data.get('primaryAddressSlot', data.get('primaryAddressUnitType', ''));
+      let slots = data.get('addressSlots', data.get('addressUnits', {}));
+      let primaryAddress = (
+        (primarySlot is string)
+        && (slots is map)
+        && (slots[primarySlot] is map)
+      ) ? slots[primarySlot] : {};
+      let fromPrimary = (primaryAddress is map) ? primaryAddress.get('countryCode', '') : '';
+      let fromAddress = (address is map) ? address.get('countryCode', '') : '';
+      return (fromPrimary is string && fromPrimary.size() > 0)
+        ? fromPrimary
+        : fromAddress;
     }
-     
-    function isActiveRider() {
-      return isRider()
-        && (getUserData().riderProfile is map)
-        && getUserData().riderProfile.isActive == true
-        && _activeVehicleIsVerified(getUserData().riderProfile);
+
+    function _orderCountryMatchesAuth(data) {
+      let orderCountry = data.get('countryCode', '');
+      let authCountry = _authCountryCode();
+      return orderCountry is string
+        && authCountry is string
+        && orderCountry.size() > 0
+        && authCountry.size() > 0
+        && orderCountry == authCountry;
     }
 
     function _orderSellerContainsUid(data, uid) {
@@ -104,11 +117,12 @@ service cloud.firestore {
       let orderExists = exists(orderPath);
       let orderData = orderExists ? get(orderPath).data : {};
 
-      return isActiveRider()
+      return isRider()
         && orderId.size() > 0
         && orderExists
         && orderData.status == 'queued'
-        && _orderHasNoAssignedRider(orderData);
+        && _orderHasNoAssignedRider(orderData)
+        && _orderCountryMatchesAuth(orderData);
     }
 
     function _isAssignedRiderForOrder(orderId, riderId) {
@@ -283,21 +297,23 @@ service cloud.firestore {
     }
 
     function _pickupProgressFieldsSafe() {
-      return request.resource.data.pickupProgress is map
-        && request.resource.data.pickupProgress.currentStopIndex is int
-        && request.resource.data.pickupProgress.updatedAt is timestamp
+      let beforeProgress = resource.data.get('pickupProgress', {});
+      let afterProgress = request.resource.data.get('pickupProgress', {});
+      return afterProgress is map
+        && afterProgress.get('currentStopIndex', -1) is int
+        && afterProgress.get('updatedAt', request.time) is timestamp
         && (
           (
-            !(resource.data.pickupProgress is map)
-            && request.resource.data.pickupProgress.keys().hasOnly([
+            !(beforeProgress is map)
+            && afterProgress.keys().hasOnly([
               'currentStopIndex',
               'updatedAt'
             ])
           )
           || (
-            resource.data.pickupProgress is map
-            && request.resource.data.pickupProgress
-              .diff(resource.data.pickupProgress)
+            beforeProgress is map
+            && afterProgress
+              .diff(beforeProgress)
               .changedKeys()
               .hasOnly([
                 'currentStopIndex',
@@ -429,7 +445,8 @@ service cloud.firestore {
     }
 
     function _riderProfileSensitiveFieldsSafe() {
-      return !('riderProfile' in request.resource.data)
+      return !request.resource.data.diff(resource.data).changedKeys().hasAny(['riderProfile'])
+        || !('riderProfile' in request.resource.data)
         || !(request.resource.data.riderProfile is map)
         || (
           !(resource.data.riderProfile is map)
@@ -458,7 +475,8 @@ service cloud.firestore {
     }
 
     function _riderWalletUnchangedOrInitialized() {
-      return !('riderWallet' in request.resource.data)
+      return !request.resource.data.diff(resource.data).changedKeys().hasAny(['riderWallet'])
+        || !('riderWallet' in request.resource.data)
         || (
           resource.data.riderWallet is map
           && request.resource.data.riderWallet == resource.data.riderWallet
@@ -617,7 +635,15 @@ service cloud.firestore {
     }
 
     function _clientAllowedRutVerificationStatus(status) {
-      return status in ['pending', 'submitted', 'failed', 'rejected', 'needs_review'];
+      return status in ['pending', 'submitted', 'failed', 'rejected', 'needs_review', 'not_required'];
+    }
+
+    function _rutVerificationStatusSafeForOwnerUpdate() {
+      return !request.resource.data.diff(resource.data).changedKeys().hasAny(['rutVerification'])
+        || !('rutVerification' in request.resource.data)
+        || !(request.resource.data.rutVerification is map)
+        || !('status' in request.resource.data.rutVerification)
+        || _clientAllowedRutVerificationStatus(request.resource.data.rutVerification.status);
     }
 
     function _clientAllowedLicenseVerificationStatus(status) {
@@ -629,25 +655,15 @@ service cloud.firestore {
         && data.get('worksCorrectly', false) == true;
     }
 
-    function _isWithinDonationProtectionWindow(data) {
-      let publishedAt = data.get('publishedAt', null);
-      let createdAt = data.get('createdAt', null);
-      return (publishedAt is timestamp
-          && request.time < publishedAt + duration.value(7, 'd'))
-        || (!(publishedAt is timestamp)
-          && createdAt is timestamp
-          && request.time < createdAt + duration.value(7, 'd'));
+    function _donationHasOrders(data) {
+      let orderCount = data.get('orderCount', 0);
+      return orderCount is int && orderCount > 0;
     }
 
-    function _isProtectedDonationPause() {
-      return resource.data.status == 'active'
-        && request.resource.data.status in ['paused', 'archived', 'draft']
-        && _isWithinDonationProtectionWindow(resource.data);
-    }
-
-    function _isProtectedDonationDelete() {
-      return resource.data.status in ['active', 'sold_out']
-        && _isWithinDonationProtectionWindow(resource.data);
+    function _offerOrderCountUnchanged() {
+      let before = resource.data.get('orderCount', 0);
+      let after = request.resource.data.get('orderCount', before);
+      return after == before;
     }
 
     function _identityFieldUnchangedOrWasEmpty(fieldKey) {
@@ -693,9 +709,10 @@ service cloud.firestore {
           )
         );
 
-      // Active riders can read queued orders to see available deliveries.
-      allow read: if isActiveRider()
-        && resource.data.status == 'queued';
+      // Riders can read queued orders to see available deliveries.
+      allow read: if isRider()
+        && resource.data.status == 'queued'
+        && _orderCountryMatchesAuth(resource.data);
 
       // Orders are created through Cloud Functions so the weekly hero limit
       // cannot be bypassed by direct client writes.
@@ -927,68 +944,14 @@ service cloud.firestore {
           'lastReportedAt',
           'supportReviewStatus'
         ])
+        && _offerOrderCountUnchanged()
         && (
           request.resource.data.status != 'active'
           || _hasRequiredDonationPublicationAnswers(request.resource.data)
-        )
-        && !_isProtectedDonationPause();
-
-      // Allow authenticated users to restore availability / stock transitions.
-      allow update: if isAuthenticated()
-        && (resource.data.status == 'active' || resource.data.status == 'sold_out')
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          'availableQty',
-          'updatedAt',
-          'status'
-        ])
-        && (request.resource.data.availableQty is int)
-        && request.resource.data.availableQty >= resource.data.availableQty
-        && request.resource.data.availableQty >= 0
-        && request.resource.data.availableQty <= resource.data.stock
-        && (
-          request.resource.data.status == resource.data.status
-          || (
-            resource.data.status == 'sold_out'
-            && request.resource.data.status == 'active'
-            && request.resource.data.availableQty > 0
-          )
-        );
-
-      allow update: if isAuthenticated()
-        && (resource.data.status == 'active' || resource.data.status == 'sold_out')
-        && request.resource.data.heroId == resource.data.heroId
-        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          'stock',
-          'availableQty',
-          'orderCount',
-          'updatedAt',
-          'status'
-        ])
-        && (request.resource.data.stock is int)
-        && (request.resource.data.availableQty is int)
-        && (request.resource.data.orderCount is int)
-        && request.resource.data.stock >= 0
-        && request.resource.data.stock <= resource.data.stock
-        && request.resource.data.availableQty >= 0
-        && request.resource.data.availableQty <= resource.data.stock
-        && request.resource.data.orderCount >= resource.data.orderCount
-        && (
-          request.resource.data.status == resource.data.status
-          || (
-            resource.data.status == 'active'
-            && request.resource.data.status == 'sold_out'
-            && request.resource.data.availableQty == 0
-            && request.resource.data.stock == 0
-          )
-          || (
-            resource.data.status == 'sold_out'
-            && request.resource.data.status == 'active'
-            && request.resource.data.availableQty > 0
-          )
         );
 
       allow delete: if isOwner(resource.data.heroId)
-        && !_isProtectedDonationDelete();
+        && !_donationHasOrders(resource.data);
     }
 
     match /favorites/{userId}/offers/{offerId} {
@@ -1110,7 +1073,8 @@ service cloud.firestore {
         ])
         && _rolesAreClientSafe()
         && _riderProfileSensitiveFieldsSafe()
-        && _riderWalletUnchangedOrInitialized();
+        && _riderWalletUnchangedOrInitialized()
+        && _rutVerificationStatusSafeForOwnerUpdate();
 
       // Allow owner to set/migrate authProvider (e.g., old accounts missing the field).
       // Client is only allowed to set it to a known value and optionally bump status.lastUpdated.
@@ -1158,9 +1122,7 @@ service cloud.firestore {
         && (!('riderProfile' in request.resource.data) || request.resource.data.riderProfile is map)
         && (!('rutVerification' in request.resource.data)
           || (request.resource.data.rutVerification is map))
-        && (!('rutVerification' in request.resource.data)
-          || !('status' in request.resource.data.rutVerification)
-          || _clientAllowedRutVerificationStatus(request.resource.data.rutVerification.status))
+        && _rutVerificationStatusSafeForOwnerUpdate()
         && _rolesAreClientSafe()
         && _riderProfileSensitiveFieldsSafe()
         && _riderWalletUnchangedOrInitialized();

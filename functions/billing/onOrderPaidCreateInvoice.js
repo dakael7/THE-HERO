@@ -10,6 +10,7 @@ const {
   getDocumentStatus,
   downloadDocumentFile,
 } = require('./wasabilService');
+const {isDevCheckoutBypassEnabled} = require('../devMode');
 
 const BILLING_REGION = 'southamerica-west1';
 const WASABIL_STATUS = {
@@ -813,18 +814,24 @@ exports.onOrderPaidCreateInvoice = onDocumentWritten(
     async (event) => {
       const before = event.data?.before?.exists ? event.data.before.data() : null;
       const after = event.data?.after?.exists ? event.data.after.data() : null;
-      const documentType = _normalizeDocumentType(after);
-      if (
-        !after ||
-      !_isPaidTransition(before, after) ||
-      !_isSupportedDocumentType(documentType)
-      ) {
+      if (!after || !_isPaidTransition(before, after)) {
         return;
       }
-
       const orderId = _readString(event.params?.orderId) ||
       _readString(after?.orderId);
       if (!orderId) return;
+
+      if (isDevCheckoutBypassEnabled()) {
+        logger.info('DEV_CHECKOUT_BYPASS enabled; skipping invoice emission', {
+          orderId,
+        });
+        return;
+      }
+
+      const documentType = _normalizeDocumentType(after);
+      if (!_isSupportedDocumentType(documentType)) {
+        return;
+      }
 
       const db = admin.firestore();
       const invoiceRef = db.collection('invoices').doc(orderId);

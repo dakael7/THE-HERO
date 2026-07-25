@@ -5,11 +5,9 @@ import '../../../../core/common/hero_header_app_bar.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../domain/entities/order_status.dart';
 import '../../../../domain/entities/order.dart';
-import '../../../../domain/services/rider_commission_calculator.dart';
-import '../../../../domain/config/pricing_config_provider.dart';
 import '../../../../domain/providers/orders_usecase_providers.dart';
 import '../providers/rider_cumulative_stats_provider.dart';
-import '../providers/rider_earnings_breakdown_provider.dart';
+import '../providers/rider_payout_summary_provider.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 
 class RiderEarningsScreen extends ConsumerWidget {
@@ -33,9 +31,7 @@ class RiderEarningsScreen extends ConsumerWidget {
 
           final ordersUseCase = ref.read(getOrdersByRiderUseCaseProvider);
           final statsAsync = ref.watch(riderCumulativeStatsProvider(user.id));
-          final breakdownAsync = ref.watch(
-            riderEarningsBreakdownProvider(user.id),
-          );
+          final balanceAsync = ref.watch(riderPendingEarningsProvider(user.id));
 
           return StreamBuilder(
             stream: ordersUseCase.execute(user.id),
@@ -54,18 +50,8 @@ class RiderEarningsScreen extends ConsumerWidget {
               final stats = statsAsync.asData?.value;
               final int deliveryCount = stats?.completedTrips ?? 0;
               final int? canceledCount = stats?.canceledTrips;
-              final double totalTips = stats?.totalTips ?? 0.0;
-              final double totalEarnings = stats?.totalEarnings ?? 0.0;
-              final double totalNetEarnings = totalEarnings + totalTips;
-              final double pendingBalance = stats?.pendingBalance ?? 0.0;
-
-              final breakdown = breakdownAsync.asData?.value;
-              final earningsOnline = breakdown?.earningsOnline ?? 0.0;
-              final earningsCash = breakdown?.earningsCash ?? 0.0;
-              final cashToRender = breakdown?.cashToRender ?? 0.0;
-              final avgPerDelivery = deliveryCount <= 0
-                  ? 0.0
-                  : (totalNetEarnings / deliveryCount);
+              final double pendingBalance =
+                  balanceAsync.asData?.value ?? stats?.pendingBalance ?? 0.0;
 
               final completedCountText =
                   '$deliveryCount entrega${deliveryCount == 1 ? '' : 's'} completada${deliveryCount == 1 ? '' : 's'}';
@@ -115,7 +101,7 @@ class RiderEarningsScreen extends ConsumerWidget {
                               const SizedBox(width: 12),
                               const Expanded(
                                 child: Text(
-                                  'Ganancias netas',
+                                  'Saldo a favor',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w800,
@@ -127,7 +113,7 @@ class RiderEarningsScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 14),
                           Text(
-                            '\$${totalNetEarnings.toStringAsFixed(0)}',
+                            '\$${pendingBalance.toStringAsFixed(0)}',
                             style: const TextStyle(
                               fontSize: 44,
                               fontWeight: FontWeight.w900,
@@ -137,7 +123,7 @@ class RiderEarningsScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            completedCountText,
+                            'Disponible para cobrar o respaldar pedidos en efectivo',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -157,69 +143,22 @@ class RiderEarningsScreen extends ConsumerWidget {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: _MetricChip(
-                                  icon: Icons.trending_up,
-                                  label: 'Promedio',
-                                  value:
-                                      '\$${avgPerDelivery.toStringAsFixed(0)}',
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _MetricChip(
                                   icon: Icons.cancel_outlined,
                                   label: 'Cancelaciones',
                                   value: canceledCount?.toString() ?? '...',
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _MetricChip(
-                                  icon: Icons.volunteer_activism_outlined,
-                                  label: 'Propinas',
-                                  value: '\$${totalTips.toStringAsFixed(0)}',
-                                ),
-                              ),
                             ],
                           ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _MetricChip(
-                                  icon: Icons.credit_card,
-                                  label: 'Online',
-                                  value:
-                                      '\$${earningsOnline.toStringAsFixed(0)}',
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _MetricChip(
-                                  icon: Icons.payments_outlined,
-                                  label: 'Efectivo',
-                                  value: '\$${earningsCash.toStringAsFixed(0)}',
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          _MetricChip(
-                            icon: Icons.account_balance_wallet_outlined,
-                            label: 'Pendiente por pagar',
-                            value: '\$${pendingBalance.toStringAsFixed(0)}',
-                          ),
-                          if (cashToRender > 0) ...[
-                            const SizedBox(height: 12),
-                            _MetricChip(
-                              icon: Icons.account_balance_outlined,
-                              label: 'Efectivo compensado',
-                              value: '\$${cashToRender.toStringAsFixed(0)}',
+                          const SizedBox(height: 8),
+                          Text(
+                            completedCountText,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white.withValues(alpha: 0.90),
                             ),
-                          ],
+                          ),
                         ],
                       ),
                     ),
@@ -286,24 +225,10 @@ class RiderEarningsScreen extends ConsumerWidget {
                         ),
                       ),
                       ...completedOrders.take(10).map((order) {
-                        final commissionConfig = ref.watch(
-                          riderCommissionConfigProvider,
-                        );
-                        final earnings =
-                            RiderCommissionCalculator.calculateCommissionWith(
-                              deliveryFee: order.deliveryFee,
-                              serviceFeeCLP: commissionConfig.serviceFeeCLP,
-                              taxPercentage: commissionConfig.taxPercentage,
-                            );
                         final shortId = order.orderId.length <= 8
                             ? order.orderId
                             : order.orderId.substring(0, 8);
                         final isCash = order.rider.isCashOrder;
-                        // Efectivo: rider cobró el total en mano
-                        // Online: rider recibe netEarnings + propina via plataforma
-                        final displayAmount = isCash
-                            ? order.amountTotal
-                            : (earnings.netEarnings + order.tip);
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 10),
@@ -340,20 +265,18 @@ class RiderEarningsScreen extends ConsumerWidget {
                               ),
                             ),
                             subtitle: Text(
-                              isCash ? 'Entregada · Efectivo' : 'Entregada',
+                              isCash
+                                  ? 'Entregada · Efectivo cobrado'
+                                  : 'Entregada · App',
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 color: textGray600,
                               ),
                             ),
-                            trailing: Text(
-                              '\$${displayAmount.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.green,
-                              ),
+                            trailing: const Icon(
+                              Icons.chevron_right,
+                              color: textGray600,
                             ),
                           ),
                         );

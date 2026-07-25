@@ -66,11 +66,16 @@ class OrdersRepositoryImpl implements OrdersRepository {
   @override
   Stream<List<Order>> getAvailableOrders({
     required List<String> requiredVehicles,
+    required String countryCode,
     int limit = 50,
   }) {
     try {
       return _remoteDataSource
-          .getAvailableOrders(requiredVehicles: requiredVehicles, limit: limit)
+          .getAvailableOrders(
+            requiredVehicles: requiredVehicles,
+            countryCode: countryCode,
+            limit: limit,
+          )
           .map((models) => OrderMapper.toEntityList(models));
     } catch (e) {
       throw Exception('Error al obtener pedidos disponibles: $e');

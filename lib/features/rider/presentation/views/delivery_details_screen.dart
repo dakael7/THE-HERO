@@ -14,6 +14,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/map_camera_utils.dart';
 import '../../../../domain/entities/location_entity.dart';
 import '../../../../domain/entities/order.dart';
+import '../../../../domain/entities/vehicle.dart';
 import '../../../../domain/services/rider_commission_calculator.dart';
 import '../../../../domain/config/pricing_config_provider.dart';
 import '../../../../data/repositories/location_repository_impl.dart';
@@ -371,17 +372,26 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
     final paymentAsync = ref.watch(
       watchPaymentByOrderIdProvider(widget.order.orderId),
     );
+    final isPaymentLoading = paymentAsync.isLoading;
     final payment = paymentAsync.asData?.value;
     final isCashPayment =
+        widget.order.rider.isCashOrder ||
         payment?.paymentMethod == PaymentMethod.cash ||
         (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
         (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
-    final baseAmountToShow = isCashPayment
-        ? (widget.order.amountTotal - widget.order.tip).clamp(
-            0,
-            double.infinity,
-          )
-        : earnings.netEarnings;
+    final hasKnownPaymentMethod =
+        !isPaymentLoading || widget.order.rider.isCashOrder;
+    final amountToShow = !hasKnownPaymentMethod
+        ? null
+        : (isCashPayment
+              ? widget.order.amountTotal.toDouble()
+              : earnings.netEarnings + widget.order.tip);
+    final amountLabel = !hasKnownPaymentMethod
+        ? 'calculando'
+        : (isCashPayment ? 'a cobrar' : 'ganancia');
+    final amountCaption = !hasKnownPaymentMethod
+        ? null
+        : (isCashPayment ? 'descuenta saldo' : null);
 
     final primaryPickupGeo = stops.isNotEmpty
         ? stops.first.geo
@@ -561,10 +571,11 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                       if (!mounted || _mapController == null) return;
                       final moved = await animateCameraWhenMapReady(
                         controller: _mapController!,
-                        cameraUpdateBuilder: () => gmap.CameraUpdate.newLatLngBounds(
-                          boundsForPoints(cameraPoints),
-                          80,
-                        ),
+                        cameraUpdateBuilder: () =>
+                            gmap.CameraUpdate.newLatLngBounds(
+                              boundsForPoints(cameraPoints),
+                              80,
+                            ),
                       );
                       if (!moved) {
                         debugPrint(
@@ -864,8 +875,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                               width: 22,
                                               height: 22,
                                               decoration: BoxDecoration(
-                                                color: primaryOrange
-                                                    .withValues(alpha: 0.12),
+                                                color: primaryOrange.withValues(
+                                                  alpha: 0.12,
+                                                ),
                                                 shape: BoxShape.circle,
                                               ),
                                               clipBehavior: Clip.antiAlias,
@@ -970,7 +982,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '\$${baseAmountToShow.toStringAsFixed(0)}',
+                                      amountToShow == null
+                                          ? '...'
+                                          : '\$${amountToShow.toStringAsFixed(0)}',
                                       style: const TextStyle(
                                         fontSize: 17,
                                         fontWeight: FontWeight.w900,
@@ -978,14 +992,23 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                         letterSpacing: -0.5,
                                       ),
                                     ),
-                                    const Text(
-                                      'ganancia',
-                                      style: TextStyle(
+                                    Text(
+                                      amountLabel,
+                                      style: const TextStyle(
                                         fontSize: 10,
                                         color: Colors.white70,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
+                                    if (amountCaption != null)
+                                      Text(
+                                        amountCaption,
+                                        style: const TextStyle(
+                                          fontSize: 9,
+                                          color: Colors.white70,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -1340,7 +1363,9 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
                                   ? []
                                   : [
                                       BoxShadow(
-                                        color: primaryOrange.withValues(alpha: 0.4),
+                                        color: primaryOrange.withValues(
+                                          alpha: 0.4,
+                                        ),
                                         blurRadius: 14,
                                         offset: const Offset(0, 6),
                                       ),
@@ -1494,7 +1519,8 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
     });
     final profile = await ref.read(profileStreamProvider.future);
     final user = profile;
-    if (user == null || user.riderProfile == null) {
+    final devCheckoutBypass = Env.devCheckoutBypass;
+    if (user == null || (!devCheckoutBypass && user.riderProfile == null)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1512,7 +1538,7 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       return;
     }
 
-    if (!user.isRutVerified) {
+    if (!devCheckoutBypass && !user.isRutVerified) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1533,8 +1559,12 @@ class _DeliveryDetailsScreenState extends ConsumerState<DeliveryDetailsScreen> {
       return;
     }
 
-    final riderVehicleType = user.riderProfile!.activeVehicleTypeEnum;
-    final riderName = user.identity.fullName;
+    final riderVehicleType = devCheckoutBypass
+        ? VehicleType.truck
+        : user.riderProfile!.activeVehicleTypeEnum;
+    final riderName = user.identity.fullName.trim().isNotEmpty
+        ? user.identity.fullName
+        : 'Rider dev';
     final riderPhone = user.contact.phoneNumber;
 
     try {

@@ -80,8 +80,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     final withDash = cleaned.contains('-')
         ? cleaned
         : cleaned.length >= 2
-            ? '${cleaned.substring(0, cleaned.length - 1)}-${cleaned.substring(cleaned.length - 1)}'
-            : cleaned;
+        ? '${cleaned.substring(0, cleaned.length - 1)}-${cleaned.substring(cleaned.length - 1)}'
+        : cleaned;
 
     final match = RegExp(r'^(\d{7,8})-([0-9K])$').firstMatch(withDash);
     if (match == null) {
@@ -99,14 +99,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
   Future<void> _syncEmailVerified(User user) async {
     if (user.emailVerified) {
-      await _firestore.collection('users').doc(user.uid).set(
-        {
-          'contact': {
-            'emailVerified': true,
-          },
-        },
-        SetOptions(merge: true),
-      );
+      await _firestore.collection('users').doc(user.uid).set({
+        'contact': {'emailVerified': true},
+      }, SetOptions(merge: true));
     }
   }
 
@@ -118,6 +113,19 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           .where((r) => r.isNotEmpty),
     };
     roles.add(role);
+    return roles.toList();
+  }
+
+  List<String> _mergeRoleAndExistingProfiles(
+    Map<String, dynamic> currentData,
+    String role,
+  ) {
+    final roles = _mergeRole(
+      currentData['roles'] as List<dynamic>?,
+      role,
+    ).toSet();
+    if (currentData['heroProfile'] is Map) roles.add('hero');
+    if (currentData['riderProfile'] is Map) roles.add('rider');
     return roles.toList();
   }
 
@@ -208,11 +216,18 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     return value is String && value.trim().isNotEmpty;
   }
 
+  String _readString(dynamic value) {
+    return value?.toString().trim() ?? '';
+  }
+
   bool _hasCriticalProfileData(Map<String, dynamic> userData) {
     final contact = _asStringDynamicMap(userData['contact']);
     final identity = _asStringDynamicMap(userData['identity']);
-    return _hasNonEmptyString(contact['phoneNumber']) &&
-        _hasNonEmptyString(identity['documentId']);
+    final riderProfile = _asStringDynamicMap(userData['riderProfile']);
+    final documentId = _readString(identity['documentId']).isNotEmpty
+        ? _readString(identity['documentId'])
+        : _readString(riderProfile['rut']);
+    return _hasNonEmptyString(contact['phoneNumber']) && documentId.isNotEmpty;
   }
 
   Map<String, dynamic> _pickMoreCompleteGoogleData({
@@ -246,9 +261,14 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     return primary;
   }
 
-  List<String> _mergeGoogleRoles(Map<String, dynamic> existingData, String role) {
-    final roles = _mergeRole(existingData['roles'] as List<dynamic>?, role)
-        .toSet();
+  List<String> _mergeGoogleRoles(
+    Map<String, dynamic> existingData,
+    String role,
+  ) {
+    final roles = _mergeRole(
+      existingData['roles'] as List<dynamic>?,
+      role,
+    ).toSet();
     if (existingData['heroProfile'] != null) {
       roles.add('hero');
     }
@@ -275,10 +295,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       try {
         final docRef = _firestore.collection('users').doc(uid);
         final docFuture = options == null ? docRef.get() : docRef.get(options);
-        final doc = await docFuture
-            .timeout(timeout, onTimeout: () {
-          throw TimeoutException('timeout_stage=$stage attempt=$attempt');
-        });
+        final doc = await docFuture.timeout(
+          timeout,
+          onTimeout: () {
+            throw TimeoutException('timeout_stage=$stage attempt=$attempt');
+          },
+        );
         _logRegGoogle(
           'stage=$stage attempt=$attempt end elapsedMs=${sw.elapsedMilliseconds} uid=$uid exists=${doc.exists}',
         );
@@ -326,9 +348,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
             .collection('users')
             .doc(uid)
             .set(data, SetOptions(merge: true))
-            .timeout(timeout, onTimeout: () {
-          throw TimeoutException('timeout_stage=$stage attempt=$attempt');
-        });
+            .timeout(
+              timeout,
+              onTimeout: () {
+                throw TimeoutException('timeout_stage=$stage attempt=$attempt');
+              },
+            );
         _logRegGoogle(
           'stage=$stage attempt=$attempt end elapsedMs=${sw.elapsedMilliseconds} uid=$uid',
         );
@@ -419,7 +444,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
     final contact = _asStringDynamicMap(existingData['contact']);
     final identity = _asStringDynamicMap(existingData['identity']);
+    final riderProfile = _asStringDynamicMap(existingData['riderProfile']);
     final status = _asStringDynamicMap(existingData['status']);
+    final riderRut = _readString(riderProfile['rut']);
 
     final resolvedEmail = _isBlankValue(contact['email'])
         ? normalizedEmail
@@ -435,10 +462,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         ? lastName
         : identity['lastName'];
     final resolvedDocumentType = _isBlankValue(identity['documentType'])
-        ? null
+        ? (riderRut.isEmpty ? null : 'rut')
         : identity['documentType'];
     final resolvedDocumentId = _isBlankValue(identity['documentId'])
-        ? null
+        ? (riderRut.isEmpty ? null : riderRut)
         : identity['documentId'];
 
     final contactPatch = <String, dynamic>{
@@ -499,15 +526,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           'model': null,
           'year': null,
         },
-        'documents': {
-          'idCardUrl': '',
-          'licenseUrl': null,
-          'padronUrl': null,
-        },
-        'limits': {
-          'maxDistanceKm': 3.0,
-          'maxWeightKg': 7.0,
-        },
+        'documents': {'idCardUrl': '', 'licenseUrl': null, 'padronUrl': null},
+        'limits': {'maxDistanceKm': 3.0, 'maxWeightKg': 7.0},
         'verification': null,
         'deliveredOrders': 0,
         'rating': 0.0,
@@ -534,14 +554,25 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String normalizedRut,
     String? ignoreUserId,
   }) async {
-    final snapshot = await _firestore
-        .collection('users')
-        .where('identity.documentId', isEqualTo: normalizedRut)
-        .get();
+    final snapshots = await Future.wait([
+      _firestore
+          .collection('users')
+          .where('identity.documentId', isEqualTo: normalizedRut)
+          .get(),
+      _firestore
+          .collection('users')
+          .where('riderProfile.rut', isEqualTo: normalizedRut)
+          .get(),
+    ]);
 
-    if (snapshot.docs.isEmpty) return;
+    final docsById = {
+      for (final snapshot in snapshots)
+        for (final doc in snapshot.docs) doc.id: doc,
+    };
 
-    final conflicting = snapshot.docs.where((d) {
+    if (docsById.isEmpty) return;
+
+    final conflicting = docsById.values.where((d) {
       if (ignoreUserId == null) return true;
 
       if (d.id == ignoreUserId) return false;
@@ -619,12 +650,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       if (userDoc.exists && (userData['authProvider'] == null)) {
         try {
-          await _firestore.collection('users').doc(user.uid).update(
-            {
-              'authProvider': 'password',
-              'status.lastUpdated': DateTime.now().toIso8601String(),
-            },
-          );
+          await _firestore.collection('users').doc(user.uid).update({
+            'authProvider': 'password',
+            'status.lastUpdated': DateTime.now().toIso8601String(),
+          });
         } catch (_) {}
       }
 
@@ -647,12 +676,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
             final data = doc.data();
             if (data['authProvider'] == null) {
               try {
-                await _firestore.collection('users').doc(doc.id).update(
-                  {
-                    'authProvider': 'google',
-                    'status.lastUpdated': DateTime.now().toIso8601String(),
-                  },
-                );
+                await _firestore.collection('users').doc(doc.id).update({
+                  'authProvider': 'google',
+                  'status.lastUpdated': DateTime.now().toIso8601String(),
+                });
               } catch (_) {}
             }
             throw Exception(
@@ -1061,10 +1088,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         rethrowOnFailure: false,
       );
 
-      final cachedData =
-          (cachedDoc != null && cachedDoc.exists) ? cachedDoc.data() : null;
-      final remoteData =
-          (remoteDoc != null && remoteDoc.exists) ? remoteDoc.data() : null;
+      final cachedData = (cachedDoc != null && cachedDoc.exists)
+          ? cachedDoc.data()
+          : null;
+      final remoteData = (remoteDoc != null && remoteDoc.exists)
+          ? remoteDoc.data()
+          : null;
       final baseExistingData = remoteData ?? cachedData ?? <String, dynamic>{};
       final existingData = _pickMoreCompleteGoogleData(
         primary: baseExistingData,
@@ -1177,17 +1206,50 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String phone,
   }) async {
     try {
-      if (firstName.isEmpty || lastName.isEmpty) {
+      final currentDoc = await _firestore.collection('users').doc(uid).get();
+      if (!currentDoc.exists || currentDoc.data() == null) {
+        throw Exception('Usuario no encontrado para actualizar a Rider');
+      }
+
+      final currentData = currentDoc.data()!;
+      final currentIdentity = currentData['identity'] is Map
+          ? (currentData['identity'] as Map)
+          : const <String, dynamic>{};
+      final currentContact = currentData['contact'] is Map
+          ? (currentData['contact'] as Map)
+          : const <String, dynamic>{};
+
+      final resolvedFirstName = _readString(firstName).isNotEmpty
+          ? _readString(firstName)
+          : _readString(currentIdentity['firstName']);
+      final resolvedLastName = _readString(lastName).isNotEmpty
+          ? _readString(lastName)
+          : _readString(currentIdentity['lastName']);
+      final resolvedPhone = _readString(phone).isNotEmpty
+          ? _readString(phone)
+          : _readString(currentContact['phoneNumber']);
+      final currentDocumentType = _readString(
+        currentIdentity['documentType'],
+      ).toLowerCase();
+      final existingRut = currentDocumentType == 'rut'
+          ? _readString(currentIdentity['documentId'])
+          : '';
+      final rutSource = _readString(rut).isNotEmpty
+          ? _readString(rut)
+          : existingRut;
+      final normalizedRut = _normalizeRutForStorage(rutSource);
+
+      if (resolvedFirstName.isEmpty || resolvedLastName.isEmpty) {
         throw Exception('Nombre y apellido son obligatorios.');
+      }
+      if (resolvedPhone.isEmpty) {
+        throw Exception('Telefono es obligatorio.');
+      }
+      if (normalizedRut.isEmpty) {
+        throw Exception('RUT es obligatorio para activar Rider.');
       }
 
       final now = DateTime.now().toIso8601String();
-      final normalizedRut = _normalizeRutForStorage(rut);
-
-      await _assertRutNotRegistered(
-        normalizedRut: normalizedRut,
-        ignoreUserId: uid,
-      );
 
       final riderProfileData = {
         'rut': normalizedRut,
@@ -1206,19 +1268,12 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'rating': 0.0,
       };
 
-      final currentDoc = await _firestore.collection('users').doc(uid).get();
-      if (!currentDoc.exists || currentDoc.data() == null) {
-        throw Exception('Usuario no encontrado para actualizar a Rider');
-      }
+      await _assertRutNotRegistered(
+        normalizedRut: normalizedRut,
+        ignoreUserId: uid,
+      );
 
-      final currentData = currentDoc.data()!;
-
-      final currentRolesRaw = currentData['roles'] as List<dynamic>?;
-      final nextRoles = _mergeRole(currentRolesRaw, 'rider');
-
-      final currentIdentity = currentData['identity'] is Map
-          ? (currentData['identity'] as Map)
-          : const <String, dynamic>{};
+      final nextRoles = _mergeRoleAndExistingProfiles(currentData, 'rider');
 
       bool _isEmptyString(dynamic v) {
         return v == null || (v is String && v.trim().isEmpty);
@@ -1229,18 +1284,21 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       );
 
       final updateData = <String, dynamic>{
-        'rutVerification': {
+        'contact.phoneNumber': resolvedPhone,
+        'status.lastUpdated': now,
+        'roles': nextRoles,
+        'riderProfile': riderProfileData,
+      };
+
+      if (currentData['rutVerification'] == null) {
+        updateData['rutVerification'] = {
           'status': 'pending',
           'requestId': null,
           'submittedAt': null,
           'verifiedAt': null,
           'mode': null,
-        },
-        'contact.phoneNumber': phone,
-        'status.lastUpdated': now,
-        'roles': nextRoles,
-        'riderProfile': riderProfileData,
-      };
+        };
+      }
 
       if (currentData['riderWallet'] == null) {
         updateData['riderWallet'] = {
@@ -1258,10 +1316,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       // Identity fields are immutable after set per Firestore rules.
       // Only write them if they were empty.
       if (_isEmptyString(currentIdentity['firstName'])) {
-        updateData['identity.firstName'] = firstName;
+        updateData['identity.firstName'] = resolvedFirstName;
       }
       if (_isEmptyString(currentIdentity['lastName'])) {
-        updateData['identity.lastName'] = lastName;
+        updateData['identity.lastName'] = resolvedLastName;
       }
 
       if (canWriteIdentityDocument) {
@@ -1294,16 +1352,64 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String phone,
   }) async {
     try {
-      if (firstName.isEmpty || lastName.isEmpty) {
-        throw Exception('Nombre y apellido son obligatorios.');
+      final currentDoc = await _firestore.collection('users').doc(uid).get();
+      if (!currentDoc.exists || currentDoc.data() == null) {
+        throw Exception('Usuario no encontrado para actualizar a Hero');
       }
 
-      final now = DateTime.now().toIso8601String();
+      final currentData = currentDoc.data()!;
 
-      final normalizedDocumentType = documentType.trim().toLowerCase();
+      final nextRoles = _mergeRoleAndExistingProfiles(currentData, 'hero');
+
+      final currentIdentity = currentData['identity'] is Map
+          ? (currentData['identity'] as Map)
+          : const <String, dynamic>{};
+      final currentContact = currentData['contact'] is Map
+          ? (currentData['contact'] as Map)
+          : const <String, dynamic>{};
+      final currentRiderProfile = currentData['riderProfile'] is Map
+          ? (currentData['riderProfile'] as Map)
+          : const <String, dynamic>{};
+
+      bool _isEmptyString(dynamic v) {
+        return v == null || (v is String && v.trim().isEmpty);
+      }
+
+      final resolvedFirstName = _readString(firstName).isNotEmpty
+          ? _readString(firstName)
+          : _readString(currentIdentity['firstName']);
+      final resolvedLastName = _readString(lastName).isNotEmpty
+          ? _readString(lastName)
+          : _readString(currentIdentity['lastName']);
+      final resolvedPhone = _readString(phone).isNotEmpty
+          ? _readString(phone)
+          : _readString(currentContact['phoneNumber']);
+      final existingDocumentId = _readString(currentIdentity['documentId']);
+      final riderRut = _readString(currentRiderProfile['rut']);
+      final documentSource = _readString(documentId).isNotEmpty
+          ? _readString(documentId)
+          : (existingDocumentId.isNotEmpty ? existingDocumentId : riderRut);
+      final typeSource = _readString(documentType).isNotEmpty
+          ? _readString(documentType)
+          : (existingDocumentId.isNotEmpty
+                ? _readString(currentIdentity['documentType'])
+                : (riderRut.isNotEmpty ? 'rut' : ''));
+      final normalizedDocumentType = typeSource.trim().isEmpty
+          ? 'rut'
+          : typeSource.toLowerCase();
       final normalizedDocumentId = normalizedDocumentType == 'rut'
-          ? _normalizeRutForStorage(documentId)
-          : documentId.trim();
+          ? _normalizeRutForStorage(documentSource)
+          : documentSource.trim();
+
+      if (resolvedFirstName.isEmpty || resolvedLastName.isEmpty) {
+        throw Exception('Nombre y apellido son obligatorios.');
+      }
+      if (resolvedPhone.isEmpty) {
+        throw Exception('Telefono es obligatorio.');
+      }
+      if (normalizedDocumentId.isEmpty) {
+        throw Exception('Documento es obligatorio para activar Hero.');
+      }
 
       if (normalizedDocumentType == 'rut') {
         await _assertRutNotRegistered(
@@ -1312,6 +1418,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         );
       }
 
+      final now = DateTime.now().toIso8601String();
+
       final heroProfileData = {
         'isActive': true,
         'completedOrders': 0,
@@ -1319,24 +1427,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'totalRatings': 0,
         'totalSpent': 0.0,
       };
-
-      final currentDoc = await _firestore.collection('users').doc(uid).get();
-      if (!currentDoc.exists || currentDoc.data() == null) {
-        throw Exception('Usuario no encontrado para actualizar a Hero');
-      }
-
-      final currentData = currentDoc.data()!;
-
-      final currentRolesRaw = currentData['roles'] as List<dynamic>?;
-      final nextRoles = _mergeRole(currentRolesRaw, 'hero');
-
-      final currentIdentity = currentData['identity'] is Map
-          ? (currentData['identity'] as Map)
-          : const <String, dynamic>{};
-
-      bool _isEmptyString(dynamic v) {
-        return v == null || (v is String && v.trim().isEmpty);
-      }
 
       final canWriteIdentityDocument = _isEmptyString(
         currentIdentity['documentId'],
@@ -1359,20 +1449,23 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
             };
 
       final updateData = <String, dynamic>{
-        'rutVerification': rutVerificationData,
-        'contact.phoneNumber': phone,
+        'contact.phoneNumber': resolvedPhone,
         'status.lastUpdated': now,
         'roles': nextRoles,
         'heroProfile': heroProfileData,
       };
 
+      if (currentData['rutVerification'] == null) {
+        updateData['rutVerification'] = rutVerificationData;
+      }
+
       // Identity fields are immutable after set per Firestore rules.
       // Only write them if they were empty.
       if (_isEmptyString(currentIdentity['firstName'])) {
-        updateData['identity.firstName'] = firstName;
+        updateData['identity.firstName'] = resolvedFirstName;
       }
       if (_isEmptyString(currentIdentity['lastName'])) {
-        updateData['identity.lastName'] = lastName;
+        updateData['identity.lastName'] = resolvedLastName;
       }
 
       if (canWriteIdentityDocument) {

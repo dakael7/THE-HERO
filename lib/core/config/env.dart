@@ -12,6 +12,22 @@ class Env {
     return (dotenv.maybeGet(key) ?? '').trim();
   }
 
+  static bool _boolFlag(String key, {bool defaultValue = false}) {
+    final raw = _fromDotEnv(key).toLowerCase();
+    if (raw.isNotEmpty) {
+      return raw == 'true' || raw == '1' || raw == 'yes' || raw == 'on';
+    }
+    return defaultValue;
+  }
+
+  static bool get devCheckoutBypass => _boolFlag(
+    'DEV_CHECKOUT_BYPASS',
+    defaultValue: const bool.fromEnvironment(
+      'DEV_CHECKOUT_BYPASS',
+      defaultValue: false,
+    ),
+  );
+
   static bool get mapsLiteMode {
     final raw = _fromDotEnv('MAPS_LITE_MODE').toLowerCase();
     if (raw.isNotEmpty) {
@@ -29,27 +45,26 @@ class Env {
   static String get googleMapsApiKey {
     final fromDotEnv = _fromDotEnv('GOOGLE_MAPS_API_KEY');
     if (fromDotEnv.isNotEmpty) return fromDotEnv;
-    return const String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
+    return const String.fromEnvironment(
+      'GOOGLE_MAPS_API_KEY',
+      defaultValue: '',
+    );
   }
 
   static String get directionsApiKey {
     final dotEnvDirections = _fromDotEnv('GOOGLE_DIRECTIONS_API_KEY');
     if (dotEnvDirections.isNotEmpty) return dotEnvDirections;
 
-    final mapsKey = googleMapsApiKey;
-    if (mapsKey.isNotEmpty) return mapsKey;
+    const defineDirections = String.fromEnvironment(
+      'GOOGLE_DIRECTIONS_API_KEY',
+      defaultValue: '',
+    );
+    if (defineDirections.trim().isNotEmpty) return defineDirections;
 
     final placesKey = placesApiKey;
     if (placesKey.isNotEmpty) return placesKey;
 
-    const defineDirections =
-        String.fromEnvironment('GOOGLE_DIRECTIONS_API_KEY', defaultValue: '');
-    if (defineDirections.trim().isNotEmpty) return defineDirections;
-
-    const definePlaces = String.fromEnvironment('PLACES_API_KEY', defaultValue: '');
-    if (definePlaces.trim().isNotEmpty) return definePlaces;
-
-    return const String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
+    return googleMapsApiKey;
   }
 
   static const int donationBuyerShippingCostCLP = int.fromEnvironment(

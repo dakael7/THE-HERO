@@ -4,11 +4,8 @@ import '../../../../core/constants/app_colors.dart';
 class RiderHomeMetricsDashboard extends StatelessWidget {
   final String headlineTitle;
   final double headlineAmount;
-  final String headlineSecondaryLabel;
-  final double headlineSecondaryAmount;
   final int totalTrips;
   final double averageRating;
-  final double tips;
   final int canceledTrips;
   final double completionRate;
   final VoidCallback? onTapViewRequests;
@@ -17,11 +14,8 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
     super.key,
     required this.headlineTitle,
     required this.headlineAmount,
-    required this.headlineSecondaryLabel,
-    required this.headlineSecondaryAmount,
     required this.totalTrips,
     required this.averageRating,
-    required this.tips,
     required this.canceledTrips,
     required this.completionRate,
     this.onTapViewRequests,
@@ -29,7 +23,9 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final completionPercent = (completionRate * 100).clamp(0, 100).toStringAsFixed(0);
+    final completionPercent = (completionRate * 100)
+        .clamp(0, 100)
+        .toStringAsFixed(0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -37,8 +33,6 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
         _TotalEarningsCard(
           title: headlineTitle,
           headlineAmount: headlineAmount,
-          secondaryLabel: headlineSecondaryLabel,
-          secondaryAmount: headlineSecondaryAmount,
           onTapViewRequests: onTapViewRequests,
         ),
         const SizedBox(height: 14),
@@ -61,13 +55,6 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
               iconColor: const Color(0xFFF59E0B),
               value: averageRating.toStringAsFixed(1),
               label: 'Calificación promedio',
-            ),
-            _MetricCard(
-              icon: Icons.emoji_events_outlined,
-              iconColor: const Color(0xFF16A34A),
-              value: _formatCurrency(tips),
-              label: 'Propinas',
-              valuePrefix: '',
             ),
             _MetricCard(
               icon: Icons.close_rounded,
@@ -164,7 +151,7 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Los pagos se realizan semanalmente los días lunes. El costo de entrega varía según el tamaño del producto y la distancia del recorrido.',
+                      'Los pagos se realizan semanalmente los lunes. En APP se acredita la ganancia; en efectivo cobras el total y se compensa con tu saldo.',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
@@ -186,15 +173,11 @@ class RiderHomeMetricsDashboard extends StatelessWidget {
 class _TotalEarningsCard extends StatelessWidget {
   final String title;
   final double headlineAmount;
-  final String secondaryLabel;
-  final double secondaryAmount;
   final VoidCallback? onTapViewRequests;
 
   const _TotalEarningsCard({
     required this.title,
     required this.headlineAmount,
-    required this.secondaryLabel,
-    required this.secondaryAmount,
     required this.onTapViewRequests,
   });
 
@@ -285,70 +268,13 @@ class _TotalEarningsCard extends StatelessWidget {
                       letterSpacing: -0.6,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: backgroundWhite.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: backgroundWhite.withValues(alpha: 0.18),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                secondaryLabel,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: backgroundWhite.withValues(alpha: 0.92),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _formatCurrency(secondaryAmount),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: backgroundWhite,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (onTapViewRequests != null) ...[
-                          const SizedBox(width: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: backgroundWhite.withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: backgroundWhite.withValues(alpha: 0.18),
-                              ),
-                            ),
-                            child: Text(
-                              'Ver envíos',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: backgroundWhite.withValues(alpha: 0.98),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                  const SizedBox(height: 4),
+                  Text(
+                    'Disponible para cobrar o respaldar pedidos en efectivo',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: backgroundWhite.withValues(alpha: 0.92),
                     ),
                   ),
                 ],

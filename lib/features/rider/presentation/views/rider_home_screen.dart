@@ -180,63 +180,6 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
 
   static const gmap.LatLng _fallbackCenter = gmap.LatLng(-33.4489, -70.6693);
 
-  Future<bool> _maybeConfirmCashPayment({required String orderId}) async {
-    final paymentRepo = ref.read(paymentRepositoryProvider);
-    final payment = await paymentRepo.getPaymentByOrderId(orderId);
-    if (!mounted) return false;
-    if (payment == null) return true;
-
-    final isCashPayment =
-        payment.paymentMethod == PaymentMethod.cash ||
-        (payment.paymentMethodId?.toLowerCase() == 'cash') ||
-        (payment.statusDetail?.toLowerCase() == 'cash_on_delivery');
-
-    final shouldConfirm =
-        isCashPayment && payment.status == PaymentStatus.pending;
-    if (!shouldConfirm) return true;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar cobro'),
-        content: const Text(
-          'Este pedido es con pago en efectivo. ¿Confirmas que cobraste el dinero al entregar?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Aún no'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Confirmar cobro'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true || !mounted) return false;
-
-    try {
-      await paymentRepo.updatePaymentStatus(
-        paymentId: payment.id,
-        status: PaymentStatus.approved,
-        statusDetail: 'cash_collected',
-      );
-      if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cobro en efectivo confirmado')),
-      );
-      return true;
-    } catch (e) {
-      if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo confirmar el cobro: $e')),
-      );
-      return false;
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -263,6 +206,14 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
     final controller = ref.read(mapControllerProvider);
     controller?.animateCamera(
       gmap.CameraUpdate.newLatLng(gmap.LatLng(lat, lng)),
+    );
+  }
+
+  void _openDeliveryMap(String orderId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RiderDeliveryMapScreen(orderId: orderId),
+      ),
     );
   }
 
@@ -307,6 +258,18 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
   String _formatTime(DateTime dateTime) {
     final formatter = DateFormat('HH:mm');
     return formatter.format(dateTime);
+  }
+
+  String _activeDeliveryActionLabel(OrderStatus status) {
+    switch (status) {
+      case OrderStatus.assigned:
+        return 'Ir a la recogida';
+      case OrderStatus.pickedUp:
+      case OrderStatus.inTransit:
+        return 'Ir a la entrega';
+      default:
+        return 'Continuar entrega';
+    }
   }
 
   Widget _buildBody(int selectedIndex) {
@@ -377,6 +340,7 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
         final ordersAsync = ref.watch(riderOrdersProvider(user.id));
         final riderProfile = user.riderProfile;
         final rating = riderProfile?.rating ?? 0.0;
+        final devCheckoutBypass = Env.devCheckoutBypass;
 
         final pendingAsync = ref.watch(riderPendingEarningsProvider(user.id));
         final pendingAmount = pendingAsync.asData?.value;
@@ -390,8 +354,6 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
         final canceledTrips = cumulative?.canceledTrips ?? 0;
         final effectiveTotalTrips = cumulative?.totalTrips ?? 0;
         final effectiveFailedTrips = computedFailedTrips;
-        final tips = cumulative?.totalTips ?? 0.0;
-
         final effectiveCompletionRate =
             (effectiveDeliveredTrips + canceledTrips + effectiveFailedTrips) ==
                 0
@@ -401,8 +363,8 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                       canceledTrips +
                       effectiveFailedTrips);
 
-        final headlineAmount = cumulative?.totalEarnings ?? 0.0;
-        final secondaryAmount = pendingAmount ?? 0.0;
+        final balanceAmount =
+            pendingAmount ?? cumulative?.pendingBalance ?? 0.0;
 
         return CustomScrollView(
           slivers: [
@@ -412,25 +374,24 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    RutVerificationCtaBanner(
-                      user: user,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const RutVerificationScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                    if (!user.isRutVerified) const SizedBox(height: 16),
+                    if (!devCheckoutBypass)
+                      RutVerificationCtaBanner(
+                        user: user,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const RutVerificationScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (!devCheckoutBypass && !user.isRutVerified)
+                      const SizedBox(height: 16),
                     RiderHomeMetricsDashboard(
-                      headlineTitle: 'Ganancias acumuladas',
-                      headlineAmount: headlineAmount,
-                      headlineSecondaryLabel: 'Pendiente por pagar',
-                      headlineSecondaryAmount: secondaryAmount,
+                      headlineTitle: 'Saldo a favor',
+                      headlineAmount: balanceAmount,
                       totalTrips: effectiveTotalTrips,
                       averageRating: rating,
-                      tips: tips,
                       canceledTrips: canceledTrips,
                       completionRate: effectiveCompletionRate,
                       onTapViewRequests: () {
@@ -644,17 +605,20 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
     );
   }
 
-  Widget _buildActiveDeliveryCard(dynamic order) {
+  Widget _buildActiveDeliveryCard(Order order) {
     final currentStatus = order.status;
 
     final paymentAsync = ref.watch(
       watchPaymentByOrderIdProvider(order.orderId),
     );
+    final isPaymentLoading = paymentAsync.isLoading;
     final payment = paymentAsync.asData?.value;
     final isCashPayment =
+        order.rider.isCashOrder ||
         payment?.paymentMethod == PaymentMethod.cash ||
         (payment?.paymentMethodId?.toLowerCase() == 'cash') ||
         (payment?.statusDetail?.toLowerCase() == 'cash_on_delivery');
+    final hasKnownPaymentMethod = !isPaymentLoading || order.rider.isCashOrder;
 
     final commissionConfig = ref.watch(riderCommissionConfigProvider);
     final earnings = RiderCommissionCalculator.calculateCommissionWith(
@@ -663,22 +627,30 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
       taxPercentage: commissionConfig.taxPercentage,
     );
 
-    final baseAmountToShow = isCashPayment
-        ? order.amountTotal.toDouble()
-        : earnings.netEarnings;
+    final amountToShow = !hasKnownPaymentMethod
+        ? null
+        : (isCashPayment
+              ? order.amountTotal.toDouble()
+              : earnings.netEarnings + order.tip);
+    final amountLabel = !hasKnownPaymentMethod
+        ? 'Calculando'
+        : isCashPayment
+        ? 'Cobras en efectivo'
+        : 'Ganas por este pedido';
+    final amountCaption = !hasKnownPaymentMethod
+        ? null
+        : (isCashPayment
+              ? 'Se descuenta de tu saldo'
+              : (order.tip > 0
+                    ? 'Incluye propina \$${order.tip.toStringAsFixed(0)}'
+                    : null));
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => RiderDeliveryMapScreen(orderId: order.orderId),
-            ),
-          );
-        },
+        onTap: () => _openDeliveryMap(order.orderId),
         borderRadius: BorderRadius.circular(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -696,38 +668,55 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Pedido HRO-${order.orderId}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pedido HRO-${order.orderId}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      Text(
-                        '\$${baseAmountToShow.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      if (order.tip > 0) ...[
                         const SizedBox(height: 2),
                         Text(
-                          '+ Propina \$${order.tip.toStringAsFixed(0)}',
+                          amountLabel,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.9),
+                            color: Colors.white.withValues(alpha: 0.88),
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 2),
+                        Text(
+                          amountToShow == null
+                              ? 'Cargando...'
+                              : '\$${amountToShow.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (amountCaption != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            amountCaption,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
+                  const SizedBox(width: 10),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -863,33 +852,27 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Action buttons
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _statusButton(
-                        context: context,
-                        label: 'Recogido',
-                        target: 'picked_up',
-                        enabled: currentStatus == OrderStatus.assigned,
-                        orderId: order.orderId,
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _openDeliveryMap(order.orderId),
+                      icon: const Icon(Icons.navigation_outlined, size: 18),
+                      label: Text(
+                        _activeDeliveryActionLabel(currentStatus),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                        ),
                       ),
-                      _statusButton(
-                        context: context,
-                        label: 'En ruta',
-                        target: 'in_transit',
-                        enabled: currentStatus == OrderStatus.pickedUp,
-                        orderId: order.orderId,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryOrange,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      _statusButton(
-                        context: context,
-                        label: 'Entregado',
-                        target: 'delivered',
-                        enabled: currentStatus == OrderStatus.inTransit,
-                        orderId: order.orderId,
-                      ),
-                    ],
+                    ),
                   ),
 
                   if (order.status != OrderStatus.pendingPayment) ...[
@@ -931,64 +914,6 @@ class _RiderHomeScreenState extends ConsumerState<RiderHomeScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _statusButton({
-    required BuildContext context,
-    required String label,
-    required String target,
-    required bool enabled,
-    required String orderId,
-  }) {
-    return ElevatedButton(
-      onPressed: enabled
-          ? () async {
-              try {
-                if (target == 'delivered') {
-                  final okToDeliver = await _maybeConfirmCashPayment(
-                    orderId: orderId,
-                  );
-                  if (!okToDeliver || !context.mounted) return;
-                }
-
-                await ref
-                    .read(orderNotifierProvider.notifier)
-                    .updateStatus(orderId, target);
-
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Estado actualizado a $label'),
-                      backgroundColor: primaryOrange,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al actualizar estado: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            }
-          : null,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: enabled
-            ? primaryOrange
-            : textGray600.withValues(alpha: 0.2),
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        elevation: enabled ? 2 : 0,
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
       ),
     );
   }
@@ -1383,11 +1308,21 @@ class _OrderListSliver extends ConsumerWidget {
       taxPercentage: commissionConfig2.taxPercentage,
     );
 
-    final baseAmountToShow = isPaymentLoading
+    final amountToShow = isPaymentLoading
         ? null
         : (isCashPayment
               ? n.order.amountTotal.toDouble()
-              : earnings.netEarnings);
+              : earnings.netEarnings + n.order.tip);
+    final amountLabel = isPaymentLoading
+        ? 'Calculando'
+        : (isCashPayment ? 'Cobras en efectivo' : 'Ganas por este pedido');
+    final amountCaption = isPaymentLoading
+        ? null
+        : (isCashPayment
+              ? 'Requiere saldo \$${n.order.amountTotal.toStringAsFixed(0)}'
+              : (n.order.tip > 0
+                    ? 'Incluye propina \$${n.order.tip.toStringAsFixed(0)}'
+                    : null));
 
     final distanceToPickupKm = n.distanceMeters != null
         ? (n.distanceMeters! / 1000)
@@ -1434,40 +1369,55 @@ class _OrderListSliver extends ConsumerWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Pedido HRO-${n.order.orderId}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pedido HRO-${n.order.orderId}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      Text(
-                        baseAmountToShow == null
-                            ? 'Cargando...'
-                            : '\$${baseAmountToShow.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      if (n.order.tip > 0) ...[
                         const SizedBox(height: 2),
                         Text(
-                          '+ Propina \$${n.order.tip.toStringAsFixed(0)}',
+                          amountLabel,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.9),
+                            color: Colors.white.withValues(alpha: 0.88),
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 2),
+                        Text(
+                          amountToShow == null
+                              ? 'Cargando...'
+                              : '\$${amountToShow.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if (amountCaption != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            amountCaption,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
+                  const SizedBox(width: 10),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,

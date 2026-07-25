@@ -10,6 +10,16 @@ import '../../../../data/models/order_model.dart';
 import '../../../shared/profile/presentation/providers/profile_provider.dart';
 import '../../../../domain/config/pricing_config_provider.dart';
 import '../../../../core/utils/stream_first_event_timeout.dart';
+import '../../../../core/config/env.dart';
+
+String? _riderCountryCode(dynamic profile) {
+  final primaryAddress = profile?.primaryAddressSlot == null
+      ? null
+      : profile?.addressSlots[profile.primaryAddressSlot];
+  return (primaryAddress?.countryCode ?? profile?.address?.countryCode)
+      ?.trim()
+      .toUpperCase();
+}
 
 final myOrdersProvider = StreamProvider.family<List<Order>, String>((
   ref,
@@ -144,21 +154,32 @@ final availableOrdersProvider = StreamProvider.autoDispose
       debugPrint(
         '🔍 [AvailableOrders] Fetching orders for vehicle type: ${riderVehicleType.name}',
       );
+      final profile = ref.watch(profileStreamProvider).value;
+      final countryCode = _riderCountryCode(profile);
+      if (countryCode == null || countryCode.isEmpty) {
+        debugPrint('[AvailableOrders] Rider has no country configured');
+        return Stream.value(const []);
+      }
+
       final useCase = ref.read(getAvailableOrdersUseCaseProvider);
-      return useCase.execute(riderVehicleType: riderVehicleType, limit: 20).map((
-        orders,
-      ) {
-        final filtered = orders.where((o) => !o.inPersonPickup).toList();
-        debugPrint(
-          '📦 [AvailableOrders] Received ${filtered.length} orders from stream',
-        );
-        for (var order in filtered) {
-          debugPrint(
-            '   - Order ${order.orderId}: status=${order.status.name}, vehicle=${order.requirements.requiredVehicle.name}',
-          );
-        }
-        return filtered;
-      });
+      return useCase
+          .execute(
+            riderVehicleType: riderVehicleType,
+            countryCode: countryCode,
+            limit: 20,
+          )
+          .map((orders) {
+            final filtered = orders.where((o) => !o.inPersonPickup).toList();
+            debugPrint(
+              '📦 [AvailableOrders] Received ${filtered.length} orders from stream',
+            );
+            for (var order in filtered) {
+              debugPrint(
+                '   - Order ${order.orderId}: status=${order.status.name}, vehicle=${order.requirements.requiredVehicle.name}',
+              );
+            }
+            return filtered;
+          });
     });
 
 class OrderNotifier extends Notifier<AsyncValue<Order?>> {
@@ -194,21 +215,33 @@ class OrderNotifier extends Notifier<AsyncValue<Order?>> {
     try {
       final profile = await ref.read(profileProvider.future);
       final riderProfile = profile?.riderProfile;
-      if (riderProfile == null) {
+      final devCheckoutBypass = Env.devCheckoutBypass;
+      if (!devCheckoutBypass && riderProfile == null) {
         throw Exception('Debes completar tu perfil de rider.');
       }
 
-      final isActive = riderProfile.isActive == true;
-      final isActiveVehicleVerified = riderProfile.isActiveVehicleVerified;
+      final riderCountry = _riderCountryCode(profile);
+      final orderCountry = order.countryCode?.trim().toUpperCase();
+      if (riderCountry == null ||
+          riderCountry.isEmpty ||
+          orderCountry == null ||
+          orderCountry.isEmpty ||
+          riderCountry != orderCountry) {
+        throw Exception('Este pedido no esta disponible en tu pais.');
+      }
+
+      final isActive = riderProfile?.isActive == true;
+      final isActiveVehicleVerified =
+          riderProfile?.isActiveVehicleVerified == true;
 
       // Business rule: bicycle riders can accept without full verification flow.
-      if (riderVehicleType == VehicleType.bicycle) {
+      if (!devCheckoutBypass && riderVehicleType == VehicleType.bicycle) {
         if (!isActive) {
           throw Exception(
             'Debes activar tu perfil de rider para aceptar pedidos',
           );
         }
-      } else {
+      } else if (!devCheckoutBypass) {
         if (!isActive) {
           throw Exception(
             'Debes activar tu perfil de rider para aceptar pedidos',

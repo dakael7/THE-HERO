@@ -12,6 +12,7 @@ abstract class OrdersRemoteDataSource {
   Stream<List<OrderModel>> getOrdersByRider(String riderId);
   Stream<List<OrderModel>> getAvailableOrders({
     required List<String> requiredVehicles,
+    required String countryCode,
     int limit = 50,
   });
   Future<void> updateOrderStatus(
@@ -290,13 +291,25 @@ class OrdersRemoteDataSourceImpl implements OrdersRemoteDataSource {
   @override
   Stream<List<OrderModel>> getAvailableOrders({
     required List<String> requiredVehicles,
+    required String countryCode,
     int limit = 50,
   }) {
     try {
+      final vehicles = requiredVehicles
+          .map((v) => v.trim())
+          .where((v) => v.isNotEmpty)
+          .toSet()
+          .toList();
+      final country = countryCode.trim().toUpperCase();
+      if (vehicles.isEmpty || country.isEmpty) {
+        return Stream.value(const []);
+      }
+
       return _firestore
           .collection('orders')
           .where('status', isEqualTo: 'queued')
-          .where('requirements.requiredVehicle', whereIn: requiredVehicles)
+          .where('countryCode', isEqualTo: country)
+          .where('requirements.requiredVehicle', whereIn: vehicles)
           .orderBy('timestamps.queuedAt', descending: true)
           .limit(limit)
           .snapshots()

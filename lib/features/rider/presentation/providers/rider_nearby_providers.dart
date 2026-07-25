@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' show GeoPoint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../../core/config/env.dart';
 import '../../../../data/repositories/location_repository_impl.dart';
 import '../../../../domain/entities/location_entity.dart';
 import '../../../../domain/entities/order.dart';
@@ -36,14 +37,12 @@ const _radiusByVehicle = {
 };
 
 // Max order distance (km) by vehicle type (pickup(s) -> delivery)
-const _maxOrderDistanceKmByVehicle = {
-  VehicleType.bicycle: 3.5,
-};
+const _maxOrderDistanceKmByVehicle = {VehicleType.bicycle: 3.5};
 
 final nearbyOrdersProvider =
     AsyncNotifierProvider.autoDispose<NearbyOrdersNotifier, List<NearbyOrder>>(
-  NearbyOrdersNotifier.new,
-);
+      NearbyOrdersNotifier.new,
+    );
 
 class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
   LocationEntity? _lastLoc;
@@ -58,36 +57,46 @@ class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
     final profile = await ref.watch(profileStreamProvider.future);
     developer.log('👤 [NearbyOrders] Profile loaded: ${profile?.id}');
 
+    final devCheckoutBypass = Env.devCheckoutBypass;
     final riderProfile = profile?.riderProfile;
     final vehicle = riderProfile?.activeVehicle;
+    final vehicleType = devCheckoutBypass ? VehicleType.truck : vehicle?.type;
     if (vehicle != null) {
       developer.log('🚗 [NearbyOrders] Vehicle: ${vehicle.type.name}');
     } else {
       developer.log('🚗 [NearbyOrders] Vehicle: null');
     }
 
-    if (vehicle == null || riderProfile == null) {
+    if (vehicleType == null || (!devCheckoutBypass && riderProfile == null)) {
       developer.log('⚠️ [NearbyOrders] No vehicle found, returning empty list');
       return [];
     }
 
-    final radius = _radiusByVehicle[vehicle.type] ?? 5000.0;
+    final radius = devCheckoutBypass
+        ? double.infinity
+        : (_radiusByVehicle[vehicleType] ?? 5000.0);
     _radius = radius;
     developer.log('📏 [NearbyOrders] Search radius: ${radius}m');
 
-    final maxByVehicleKm = _maxOrderDistanceKmByVehicle[vehicle.type];
-    final maxByProfileKm = riderProfile.activeLimits.maxDistanceKm;
-    final hasProfileCap = maxByProfileKm.isFinite && !maxByProfileKm.isInfinite;
-
-    if (maxByVehicleKm == null && !hasProfileCap) {
+    if (devCheckoutBypass) {
       _maxOrderKm = null;
-    } else if (maxByVehicleKm == null) {
-      _maxOrderKm = maxByProfileKm;
-    } else if (!hasProfileCap) {
-      _maxOrderKm = maxByVehicleKm;
     } else {
-      _maxOrderKm =
-          (maxByVehicleKm < maxByProfileKm) ? maxByVehicleKm : maxByProfileKm;
+      final maxByVehicleKm = _maxOrderDistanceKmByVehicle[vehicleType];
+      final maxByProfileKm = riderProfile!.activeLimits.maxDistanceKm;
+      final hasProfileCap =
+          maxByProfileKm.isFinite && !maxByProfileKm.isInfinite;
+
+      if (maxByVehicleKm == null && !hasProfileCap) {
+        _maxOrderKm = null;
+      } else if (maxByVehicleKm == null) {
+        _maxOrderKm = maxByProfileKm;
+      } else if (!hasProfileCap) {
+        _maxOrderKm = maxByVehicleKm;
+      } else {
+        _maxOrderKm = (maxByVehicleKm < maxByProfileKm)
+            ? maxByVehicleKm
+            : maxByProfileKm;
+      }
     }
 
     ref.listen(riderLocationStreamProvider, (prev, next) {
@@ -100,7 +109,7 @@ class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
       _recompute();
     });
 
-    ref.listen(availableOrdersProvider(vehicle.type), (prev, next) {
+    ref.listen(availableOrdersProvider(vehicleType), (prev, next) {
       if (next.hasError) {
         state = AsyncValue.error(next.error!, next.stackTrace!);
         return;
@@ -120,7 +129,6 @@ class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
     final maxOrderKm = _maxOrderKm;
     if (orders == null || radius == null) return;
 
-   
     if (loc == null) {
       final distanceCalc = Distance();
       state = AsyncValue.data(
@@ -190,8 +198,8 @@ class NearbyOrdersNotifier extends AsyncNotifier<List<NearbyOrder>> {
     final pickupStops = o.pickupStops;
     final List<GeoPoint> pickupPoints =
         (pickupStops != null && pickupStops.isNotEmpty)
-            ? pickupStops.map((s) => s.geo).toList(growable: false)
-            : <GeoPoint>[o.pickup.geo];
+        ? pickupStops.map((s) => s.geo).toList(growable: false)
+        : <GeoPoint>[o.pickup.geo];
 
     if (pickupPoints.isEmpty) return null;
 

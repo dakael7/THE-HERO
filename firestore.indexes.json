@@ -48,6 +48,16 @@
         { "fieldPath": "requirements.requiredVehicle", "order": "ASCENDING" },
         { "fieldPath": "timestamps.queuedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "countryCode", "order": "ASCENDING" },
+        { "fieldPath": "requirements.requiredVehicle", "order": "ASCENDING" },
+        { "fieldPath": "timestamps.queuedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

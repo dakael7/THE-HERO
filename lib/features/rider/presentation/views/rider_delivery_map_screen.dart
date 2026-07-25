@@ -103,6 +103,7 @@ class _RiderDeliveryMapScreenState
   StreamSubscription? _trackingSub;
   int _pickupStopIndex = 0;
   bool _arrivedAtPickupStop = false;
+  bool _isSavingPickupProgress = false;
 
   double _roundCoord(double v) => double.parse(v.toStringAsFixed(5));
 
@@ -887,40 +888,52 @@ class _RiderDeliveryMapScreenState
                   onArrivedAtPickupStop: (!needsPickup || stops.isEmpty)
                       ? null
                       : () async {
+                          if (_isSavingPickupProgress) return;
+
                           final isLast =
                               effectivePickupStopIndex >= stops.length - 1;
 
-                          // Persist progress for per-stop hero notifications.
-                          // Store NEXT stop index so the app can resume correctly
-                          // after rebuilds (current stop becomes the next one).
-                          final nextStopIndex = isLast
-                              ? effectivePickupStopIndex
-                              : (effectivePickupStopIndex + 1);
-                          final ok = await _markPickupStopCompleted(
-                            orderId: order.orderId,
-                            stopIndex: nextStopIndex,
-                          );
-
-                          if (!ok) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'No se pudo guardar el progreso. Intenta de nuevo.',
-                                ),
-                              ),
+                          setState(() => _isSavingPickupProgress = true);
+                          try {
+                            // Persist progress for per-stop hero notifications.
+                            // Store NEXT stop index so the app can resume correctly
+                            // after rebuilds (current stop becomes the next one).
+                            final nextStopIndex = isLast
+                                ? effectivePickupStopIndex
+                                : (effectivePickupStopIndex + 1);
+                            final ok = await _markPickupStopCompleted(
+                              orderId: order.orderId,
+                              stopIndex: nextStopIndex,
                             );
-                            return;
-                          }
 
-                          if (!isLast) {
-                            setState(() {
-                              _pickupStopIndex = (effectivePickupStopIndex + 1)
-                                  .clamp(0, 9999);
-                              _arrivedAtPickupStop = false;
-                            });
-                          } else {
-                            setState(() => _arrivedAtPickupStop = true);
+                            if (!ok) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'No se pudo guardar el progreso. Intenta de nuevo.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            if (!isLast) {
+                              setState(() {
+                                _pickupStopIndex =
+                                    (effectivePickupStopIndex + 1).clamp(
+                                      0,
+                                      9999,
+                                    );
+                                _arrivedAtPickupStop = false;
+                              });
+                            } else {
+                              setState(() => _arrivedAtPickupStop = true);
+                            }
+                          } finally {
+                            if (mounted) {
+                              setState(() => _isSavingPickupProgress = false);
+                            }
                           }
                         },
                   onPickedUp: order.status == OrderStatus.assigned
@@ -939,6 +952,7 @@ class _RiderDeliveryMapScreenState
                   onDelivered: (order.status == OrderStatus.inTransit)
                       ? () => _setStatus(order, OrderStatus.delivered)
                       : null,
+                  isSavingPickupProgress: _isSavingPickupProgress,
                 ),
               ),
             ],
@@ -969,6 +983,7 @@ class _BottomPanel extends ConsumerWidget {
   final VoidCallback? onPickedUp;
   final VoidCallback? onInTransit;
   final VoidCallback? onDelivered;
+  final bool isSavingPickupProgress;
 
   const _BottomPanel({
     required this.order,
@@ -986,12 +1001,15 @@ class _BottomPanel extends ConsumerWidget {
     required this.onPickedUp,
     required this.onInTransit,
     required this.onDelivered,
+    required this.isSavingPickupProgress,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hasStops = pickupStopsCount > 0;
-    final currentPickupHuman = (pickupStopIndex + 1).clamp(1, pickupStopsCount);
+    final currentPickupHuman = hasStops
+        ? (pickupStopIndex + 1).clamp(1, pickupStopsCount)
+        : 1;
     final isLastPickupStop =
         !hasStops || pickupStopIndex >= pickupStopsCount - 1;
     final arrivedLabel = hasStops
@@ -1004,6 +1022,39 @@ class _BottomPanel extends ConsumerWidget {
     final pickedUpEnabled = onPickedUp != null;
     final inTransitEnabled = onInTransit != null;
     final deliveredEnabled = onDelivered != null;
+    final isUpdating =
+        isSavingPickupProgress ||
+        ref.watch(orderNotifierProvider.select((state) => state.isLoading));
+    final bool shouldConfirmArrival =
+        hasStops && needsPickup && !arrivedAtPickupStop;
+
+    late final IconData actionIcon;
+    late final String actionLabel;
+    VoidCallback? actionCallback;
+
+    if (shouldConfirmArrival) {
+      actionIcon = Icons.store_mall_directory_outlined;
+      actionLabel = arrivedLabel;
+      actionCallback = arrivedEnabled ? onArrivedAtPickupStop : null;
+    } else if (needsPickup) {
+      actionIcon = Icons.shopping_bag_outlined;
+      actionLabel = 'Retiré el pedido';
+      actionCallback = pickedUpEnabled ? onPickedUp : null;
+    } else if (inTransitEnabled) {
+      actionIcon = Icons.local_shipping_outlined;
+      actionLabel = 'Voy hacia la entrega';
+      actionCallback = onInTransit;
+    } else if (deliveredEnabled) {
+      actionIcon = Icons.check_circle_outline;
+      actionLabel = 'Entregué el pedido';
+      actionCallback = onDelivered;
+    } else {
+      actionIcon = Icons.check_circle_outline;
+      actionLabel = order.status == OrderStatus.delivered
+          ? 'Entrega completada'
+          : 'Esperando estado';
+      actionCallback = null;
+    }
 
     final String? targetPhone;
     final String? chatBuyerId;
@@ -1311,33 +1362,12 @@ class _BottomPanel extends ConsumerWidget {
               ),
             ),
           const SizedBox(height: 10),
-          if (needsPickup) ...[
-            _ActionButton(
-              icon: Icons.store_mall_directory_outlined,
-              label: arrivedLabel,
-              onPressed: arrivedEnabled ? onArrivedAtPickupStop : null,
-            ),
-            if (isLastPickupStop) ...[
-              const SizedBox(height: 8),
-              _ActionButton(
-                icon: Icons.shopping_bag_outlined,
-                label: 'Retiré el pedido',
-                onPressed: pickedUpEnabled ? onPickedUp : null,
-              ),
-            ],
-          ] else ...[
-            _ActionButton(
-              icon: Icons.local_shipping_outlined,
-              label: 'En vía',
-              onPressed: inTransitEnabled ? onInTransit : null,
-            ),
-            const SizedBox(height: 8),
-            _ActionButton(
-              icon: Icons.check_circle_outline,
-              label: 'Entregado',
-              onPressed: deliveredEnabled ? onDelivered : null,
-            ),
-          ],
+          _ActionButton(
+            icon: actionIcon,
+            label: isUpdating ? 'Actualizando...' : actionLabel,
+            onPressed: isUpdating ? null : actionCallback,
+            isLoading: isUpdating,
+          ),
         ],
       ),
     );
@@ -1581,11 +1611,13 @@ class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback? onPressed;
+  final bool isLoading;
 
   const _ActionButton({
     required this.icon,
     required this.label,
     required this.onPressed,
+    this.isLoading = false,
   });
 
   @override
@@ -1604,7 +1636,17 @@ class _ActionButton extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 18),
+            if (isLoading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: textGray600,
+                ),
+              )
+            else
+              Icon(icon, size: 18),
             const SizedBox(width: 8),
             Flexible(
               child: Text(

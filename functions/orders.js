@@ -8,6 +8,14 @@ const {
   toCents: _toCents,
 } = require("./money");
 const {assertHeroWeeklyOrderLimit} = require("./orderLimits");
+const {isDevCheckoutBypassEnabled} = require('./devMode');
+const {
+  aggregateOrderItems,
+  computeServerOrderMoney,
+  isPendingPaymentOrder,
+  readCouponDiscount,
+  toInt,
+} = require("./orderPricing");
 
 function _parseDate(value) {
   if (!value) return null;
@@ -29,6 +37,12 @@ function _normalizeOrderForCreate(rawOrder, orderId, heroId) {
   const now = new Date();
   const order = rawOrder && typeof rawOrder === "object" ? {...rawOrder} : {};
   delete order.authIdToken;
+  const countryCode = String(order.countryCode || "").trim().toUpperCase();
+  if (countryCode) {
+    order.countryCode = countryCode;
+  } else {
+    delete order.countryCode;
+  }
   const timestamps = order.timestamps && typeof order.timestamps === "object" ?
     {...order.timestamps} :
     {};
@@ -46,6 +60,21 @@ function _normalizeOrderForCreate(rawOrder, orderId, heroId) {
     updatedAt: _toTimestamp(order.updatedAt, now),
     ...(order.paymentExpiresAt ? {paymentExpiresAt: _toTimestamp(order.paymentExpiresAt, now)} : {}),
   };
+}
+
+function _countryCodeFromUser(data) {
+  const address = data?.address && typeof data.address === "object" ?
+    data.address :
+    {};
+  const primarySlot = String(data?.primaryAddressSlot || data?.primaryAddressUnitType || "").trim();
+  const slots = data?.addressSlots && typeof data.addressSlots === "object" ?
+    data.addressSlots :
+    (data?.addressUnits && typeof data.addressUnits === "object" ? data.addressUnits : {});
+  const primaryAddress = primarySlot && slots[primarySlot] && typeof slots[primarySlot] === "object" ?
+    slots[primarySlot] :
+    {};
+
+  return String(primaryAddress.countryCode || address.countryCode || "").trim().toUpperCase();
 }
 
 function _normalizePercentage(value) {
@@ -86,6 +115,74 @@ function _writeUserOrdersIndex(transaction, db, orderId, order) {
       {...order, role: "seller"},
     );
   }
+}
+
+async function _prepareOrderForCreate({transaction, db, rawOrder, orderId, heroId}) {
+  const order = _normalizeOrderForCreate(rawOrder, orderId, heroId);
+  if (isPendingPaymentOrder(order.status)) {
+    return {order, offerUpdates: []};
+  }
+
+  const aggregatedItems = aggregateOrderItems(order.items);
+  const offerDocs = [];
+  for (const item of aggregatedItems) {
+    offerDocs.push(await transaction.get(db.collection("offers").doc(item.offerId)));
+  }
+
+  const offerPricesById = new Map();
+  const offerUpdates = [];
+  for (let idx = 0; idx < aggregatedItems.length; idx++) {
+    const item = aggregatedItems[idx];
+    const offerDoc = offerDocs[idx];
+    if (!offerDoc.exists) {
+      throw new HttpsError("not-found", `Oferta no encontrada: ${item.offerId}`);
+    }
+
+    const offer = offerDoc.data() || {};
+    offerPricesById.set(item.offerId, toInt(offer.price ?? 0));
+
+    const currentQty = Number(offer.availableQty ?? offer.stock ?? 0);
+    if (!Number.isFinite(currentQty)) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Stock invalido para la oferta ${item.offerId}`,
+      );
+    }
+
+    const newQty = Math.round(currentQty) - item.qty;
+    if (newQty < 0) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Stock insuficiente para la oferta ${item.offerId}`,
+      );
+    }
+
+    const updateData = {
+      stock: newQty,
+      availableQty: newQty,
+      orderCount: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (newQty === 0) updateData.status = "sold_out";
+
+    offerUpdates.push({ref: offerDoc.ref, updateData});
+  }
+
+  const discountBase = Math.max(
+    0,
+    toInt(order.deliveryFee) + toInt(order.serviceFee) + toInt(order.tax),
+  );
+  const couponResult = await readCouponDiscount({
+    transaction,
+    db,
+    source: order.coupon,
+    discountBase,
+  });
+
+  return {
+    order: computeServerOrderMoney(order, offerPricesById, couponResult),
+    offerUpdates,
+  };
 }
 
 async function _resolveCallableAuth(request) {
@@ -140,14 +237,26 @@ exports.createOrder = onCall({memory: "512MiB"}, async (request) => {
       return;
     }
 
-    await assertHeroWeeklyOrderLimit({
+    if (!isDevCheckoutBypassEnabled()) {
+      await assertHeroWeeklyOrderLimit({
+        transaction,
+        db,
+        heroId,
+        excludingOrderId: orderId,
+      });
+    }
+
+    const prepared = await _prepareOrderForCreate({
       transaction,
       db,
+      rawOrder,
+      orderId,
       heroId,
-      excludingOrderId: orderId,
     });
-
-    createdOrder = _normalizeOrderForCreate(rawOrder, orderId, heroId);
+    createdOrder = prepared.order;
+    for (const update of prepared.offerUpdates) {
+      transaction.update(update.ref, update.updateData);
+    }
     transaction.set(orderRef, createdOrder);
     _writeUserOrdersIndex(transaction, db, orderId, createdOrder);
   });
@@ -163,7 +272,7 @@ exports.createOrder = onCall({memory: "512MiB"}, async (request) => {
  * @param {Object} context - Firebase auth context
  * @returns {Promise<Object>} - { success: boolean, orderId: string, message: string }
  */
-exports.claimOrder = onCall(async (request) => {
+exports.claimOrder = onCall({invoker: "public"}, async (request) => {
   // ==========================================
   // 1. VALIDAR AUTENTICACIÓN
   // ==========================================
@@ -193,8 +302,20 @@ exports.claimOrder = onCall(async (request) => {
     throw new HttpsError("not-found", "Rider no encontrado");
   }
 
-  const riderData = riderDoc.data();
-  const riderProfile = riderData.riderProfile;
+  const riderData = riderDoc.data() || {};
+  const devCheckoutBypass = isDevCheckoutBypassEnabled();
+  const riderProfile =
+    riderData.riderProfile && typeof riderData.riderProfile === 'object' ?
+      riderData.riderProfile :
+      null;
+  const identity =
+    riderData.identity && typeof riderData.identity === 'object' ?
+      riderData.identity :
+      {};
+  const contact =
+    riderData.contact && typeof riderData.contact === 'object' ?
+      riderData.contact :
+      {};
   const normalizeVehicleType = (value) => {
     const raw = String(value || "").trim().toLowerCase();
     return ["bicycle", "motorcycle", "car", "truck"].includes(raw) ?
@@ -210,31 +331,36 @@ exports.claimOrder = onCall(async (request) => {
   // ==========================================
   // 3. VALIDAR RIDER VERIFICADO (CRÍTICO)
   // ==========================================
-  if (!riderProfile) {
+  if (!devCheckoutBypass && !riderProfile) {
     throw new HttpsError(
       "failed-precondition",
       "Debes completar tu perfil de rider",
     );
   }
 
-  if (!riderProfile.isActive) {
+  if (!devCheckoutBypass && !riderProfile.isActive) {
     throw new HttpsError("failed-precondition", "Tu cuenta no está activa");
   }
 
   const rutStatus = String(riderData?.rutVerification?.status || "").trim().toLowerCase();
-  if (rutStatus !== "approved" && rutStatus !== "not_required") {
+  if (
+    !devCheckoutBypass &&
+    rutStatus !== "approved" &&
+    rutStatus !== "not_required"
+  ) {
     throw new HttpsError(
       "failed-precondition",
       "Debes verificar tu RUT para tomar pedidos",
     );
   }
 
-  const activeVehicleType =
-    normalizeVehicleType(riderProfile.activeVehicleType) ||
-    normalizeVehicleType(riderProfile.vehicle?.type) ||
-    "bicycle";
+  const activeVehicleType = devCheckoutBypass ?
+    'truck' :
+    (normalizeVehicleType(riderProfile?.activeVehicleType) ||
+      normalizeVehicleType(riderProfile?.vehicle?.type) ||
+      'bicycle');
   const vehicles =
-    riderProfile.vehicles && typeof riderProfile.vehicles === "object" ?
+    riderProfile?.vehicles && typeof riderProfile.vehicles === 'object' ?
       riderProfile.vehicles :
       {};
   const activeVehicleEntry =
@@ -253,16 +379,16 @@ exports.claimOrder = onCall(async (request) => {
   const activeVehicleVerified =
     activeVerificationStatus === "approved" ||
     activeVerificationStatus === "not_required" ||
-    (riderProfile.isVerified === true && activeVerificationStatus === "");
+    (riderProfile?.isVerified === true && activeVerificationStatus === "");
 
-  if (!activeVehicleVerified) {
+  if (!devCheckoutBypass && !activeVehicleVerified) {
     throw new HttpsError(
       "failed-precondition",
       "Tu vehiculo activo no esta verificado para aceptar este pedido",
     );
   }
 
-  console.log(`[claimOrder] Rider verificado: ${riderData.identity.firstName}`);
+  console.log(`[claimOrder] Rider verificado: ${identity.firstName || riderId}`);
 
   // ==========================================
   // 4. TRANSACCIÓN ATÓMICA
@@ -290,30 +416,45 @@ exports.claimOrder = onCall(async (request) => {
       throw new HttpsError('failed-precondition', 'Pedido ya tiene rider asignado');
     }
 
+    const orderCountry = String(order.countryCode || "").trim().toUpperCase();
+    const riderCountry = _countryCodeFromUser(riderData);
+    if (!orderCountry || !riderCountry || orderCountry !== riderCountry) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Este pedido no esta disponible en tu pais",
+      );
+    }
+
     // ==========================================
     // 5. VALIDAR COMPATIBILIDAD DE VEHÍCULO
     // ==========================================
-    const requiredVehicle = order.requirements.requiredVehicle;
-    const riderVehicle =
-      normalizeVehicleType(activeVehicle.type) ||
-      normalizeVehicleType(riderProfile.vehicle?.type) ||
-      activeVehicleType;
+    const orderRequirements =
+      order.requirements && typeof order.requirements === 'object' ?
+        order.requirements :
+        {};
+    const requiredVehicle = orderRequirements.requiredVehicle;
+    const riderVehicle = devCheckoutBypass ?
+      'truck' :
+      (normalizeVehicleType(activeVehicle.type) ||
+        normalizeVehicleType(riderProfile?.vehicle?.type) ||
+        activeVehicleType);
     const compatibleVehicles = getCompatibleVehicles(riderVehicle);
 
-    if (!compatibleVehicles.includes(requiredVehicle)) {
+    if (!devCheckoutBypass && !compatibleVehicles.includes(requiredVehicle)) {
       throw new HttpsError(
         'failed-precondition',
         `Tu vehículo (${riderVehicle}) no es compatible con este pedido (requiere ${requiredVehicle})`,
       );
     }
 
-    const riderLimits =
-      activeVehicleEntry.limits && typeof activeVehicleEntry.limits === "object" ?
+    const riderLimits = devCheckoutBypass ?
+      null :
+      (activeVehicleEntry.limits && typeof activeVehicleEntry.limits === 'object' ?
         activeVehicleEntry.limits :
-        riderProfile.limits;
+        riderProfile?.limits);
 
     if (riderLimits && riderLimits.maxWeightKg) {
-      if (order.requirements.weightKg > riderLimits.maxWeightKg) {
+      if (orderRequirements.weightKg > riderLimits.maxWeightKg) {
         throw new HttpsError(
           'failed-precondition',
           `El peso del pedido excede tu capacidad`,
@@ -322,7 +463,7 @@ exports.claimOrder = onCall(async (request) => {
     }
 
     if (riderLimits && riderLimits.maxDistanceKm) {
-      if (order.requirements.estimatedDistanceKm > riderLimits.maxDistanceKm) {
+      if (orderRequirements.estimatedDistanceKm > riderLimits.maxDistanceKm) {
         throw new HttpsError(
           'failed-precondition',
           `La distancia del pedido excede tu rango`,
@@ -351,7 +492,7 @@ exports.claimOrder = onCall(async (request) => {
 
     let cashAmountToCollect = 0;
 
-    if (isCashOrder) {
+    if (isCashOrder && !devCheckoutBypass) {
       const total = typeof order.amountTotal === 'number' ? order.amountTotal : 0;
       cashAmountToCollect = Math.max(0, total); // incluye propina — el rider cobra el total completo
 
@@ -387,8 +528,8 @@ exports.claimOrder = onCall(async (request) => {
       'rider.assignedAt': now,
       'rider.vehicleTypeSnapshot': riderVehicle,
       'rider.riderNameSnapshot':
-        riderData.identity.firstName + ' ' + (riderData.identity.lastName || ''),
-      'rider.riderPhoneSnapshot': riderData.contact.phoneNumber || '',
+        `${identity.firstName || 'Rider'} ${identity.lastName || ''}`.trim(),
+      'rider.riderPhoneSnapshot': contact.phoneNumber || '',
       'timestamps.assignedAt': now,
       updatedAt: now,
     };

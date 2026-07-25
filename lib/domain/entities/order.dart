@@ -21,6 +21,7 @@ class Order {
   final double tip;
   final double amountTotal;
   final String currency;
+  final String? countryCode;
   final String documentType;
   final String? invoiceBusinessName;
   final String? invoiceRut;
@@ -70,6 +71,7 @@ class Order {
     this.tip = 0.0,
     required this.amountTotal,
     required this.currency,
+    this.countryCode,
     this.documentType = 'boleta',
     this.invoiceBusinessName,
     this.invoiceRut,
@@ -156,6 +158,7 @@ class Order {
     double? tip,
     double? amountTotal,
     String? currency,
+    String? countryCode,
     String? documentType,
     String? invoiceBusinessName,
     String? invoiceRut,
@@ -204,6 +207,7 @@ class Order {
       tip: tip ?? this.tip,
       amountTotal: amountTotal ?? this.amountTotal,
       currency: currency ?? this.currency,
+      countryCode: countryCode ?? this.countryCode,
       documentType: documentType ?? this.documentType,
       invoiceBusinessName: invoiceBusinessName ?? this.invoiceBusinessName,
       invoiceRut: invoiceRut ?? this.invoiceRut,

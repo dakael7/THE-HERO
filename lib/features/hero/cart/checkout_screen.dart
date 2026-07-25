@@ -776,6 +776,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
+    final devCheckoutBypass = Env.devCheckoutBypass;
     final cartItems = _getCheckoutItems();
     final deliveryGeo = ref.read(deliveryGeoProvider);
     final routeDistanceKm = ref.read(routeDistanceKmProvider);
@@ -853,13 +854,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       return;
     }
 
+    final deliveryCountryCodeForOrder = _deliveryCountryCode
+        ?.trim()
+        .toUpperCase();
+    final pickupCountryCodesForOrder = cartItems
+        .map((e) => e.pickupCountryCode?.trim().toUpperCase())
+        .whereType<String>()
+        .where((e) => e.isNotEmpty)
+        .toSet();
+    final orderCountryCode = inPersonPickupSelected
+        ? (pickupCountryCodesForOrder.length == 1
+              ? pickupCountryCodesForOrder.first
+              : null)
+        : deliveryCountryCodeForOrder;
+
     if (!inPersonPickupSelected) {
-      final deliveryCc = _deliveryCountryCode?.trim().toUpperCase();
-      final pickupCcs = cartItems
-          .map((e) => e.pickupCountryCode?.trim().toUpperCase())
-          .whereType<String>()
-          .where((e) => e.isNotEmpty)
-          .toSet();
+      final deliveryCc = deliveryCountryCodeForOrder;
+      final pickupCcs = pickupCountryCodesForOrder;
       final hasAnyMissingPickupCountry = cartItems.any(
         (e) => (e.pickupCountryCode?.trim().isEmpty ?? true),
       );
@@ -960,7 +971,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         final conciergeInfo = firstItem.conciergeInfo;
 
         final shouldUseMercadoPago =
+            !devCheckoutBypass &&
             _selectedPaymentMethod == PaymentMethod.mercadopago;
+        final documentType = devCheckoutBypass
+            ? 'debug'
+            : _selectedDocumentType;
+        final isFactura = documentType == 'factura';
 
         final preGeneratedOrderId = firestore.FirebaseFirestore.instance
             .collection('orders')
@@ -974,25 +990,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           tip: 0.0,
           estimatedDistanceKm: 0.0,
           heroId: user.id,
-          documentType: _selectedDocumentType,
-          invoiceBusinessName: _selectedDocumentType == 'factura'
+          countryCode: orderCountryCode,
+          documentType: documentType,
+          invoiceBusinessName: isFactura
               ? _invoiceBusinessNameController.text.trim()
               : null,
-          invoiceRut: _selectedDocumentType == 'factura'
-              ? _invoiceRutController.text.trim()
-              : null,
-          invoiceGiro: _selectedDocumentType == 'factura'
-              ? _invoiceGiroController.text.trim()
-              : null,
-          invoiceAddress: _selectedDocumentType == 'factura'
+          invoiceRut: isFactura ? _invoiceRutController.text.trim() : null,
+          invoiceGiro: isFactura ? _invoiceGiroController.text.trim() : null,
+          invoiceAddress: isFactura
               ? _invoiceAddressController.text.trim()
               : null,
-          invoiceEmail: _selectedDocumentType == 'factura'
-              ? _invoiceEmailController.text.trim()
-              : null,
-          invoicePhone: _selectedDocumentType == 'factura'
-              ? _invoicePhoneController.text.trim()
-              : null,
+          invoiceEmail: isFactura ? _invoiceEmailController.text.trim() : null,
+          invoicePhone: isFactura ? _invoicePhoneController.text.trim() : null,
           delivery: delivery,
           status: shouldUseMercadoPago
               ? OrderStatus.pendingPayment
@@ -1198,7 +1207,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       final conciergeInfo = firstItem.conciergeInfo;
 
       final shouldUseMercadoPago =
+          !devCheckoutBypass &&
           _selectedPaymentMethod == PaymentMethod.mercadopago;
+      final documentType = devCheckoutBypass ? 'debug' : _selectedDocumentType;
+      final isFactura = documentType == 'factura';
 
       final preGeneratedOrderId = firestore.FirebaseFirestore.instance
           .collection('orders')
@@ -1212,25 +1224,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         tip: _selectedTip.toDouble(),
         estimatedDistanceKm: effectiveDistanceKm,
         heroId: user.id,
-        documentType: _selectedDocumentType,
-        invoiceBusinessName: _selectedDocumentType == 'factura'
+        countryCode: orderCountryCode,
+        documentType: documentType,
+        invoiceBusinessName: isFactura
             ? _invoiceBusinessNameController.text.trim()
             : null,
-        invoiceRut: _selectedDocumentType == 'factura'
-            ? _invoiceRutController.text.trim()
-            : null,
-        invoiceGiro: _selectedDocumentType == 'factura'
-            ? _invoiceGiroController.text.trim()
-            : null,
-        invoiceAddress: _selectedDocumentType == 'factura'
+        invoiceRut: isFactura ? _invoiceRutController.text.trim() : null,
+        invoiceGiro: isFactura ? _invoiceGiroController.text.trim() : null,
+        invoiceAddress: isFactura
             ? _invoiceAddressController.text.trim()
             : null,
-        invoiceEmail: _selectedDocumentType == 'factura'
-            ? _invoiceEmailController.text.trim()
-            : null,
-        invoicePhone: _selectedDocumentType == 'factura'
-            ? _invoicePhoneController.text.trim()
-            : null,
+        invoiceEmail: isFactura ? _invoiceEmailController.text.trim() : null,
+        invoicePhone: isFactura ? _invoicePhoneController.text.trim() : null,
         delivery: delivery,
         status: shouldUseMercadoPago
             ? OrderStatus.pendingPayment

@@ -23,6 +23,7 @@ class OrderModel {
   final double tip;
   final double amountTotal;
   final String currency;
+  final String? countryCode;
   final String documentType;
   final String? invoiceBusinessName;
   final String? invoiceRut;
@@ -72,6 +73,7 @@ class OrderModel {
     this.tip = 0.0,
     required this.amountTotal,
     required this.currency,
+    this.countryCode,
     this.documentType = 'boleta',
     this.invoiceBusinessName,
     this.invoiceRut,
@@ -166,6 +168,7 @@ class OrderModel {
       tip: (json['tip'] as num?)?.toDouble() ?? 0.0,
       amountTotal: (json['amountTotal'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] as String? ?? 'CLP',
+      countryCode: (json['countryCode'] as String?)?.trim(),
       documentType:
           (billing?['documentType'] as String?)?.trim().isNotEmpty == true
           ? (billing?['documentType'] as String).trim()
@@ -252,6 +255,8 @@ class OrderModel {
       'tip': tip,
       'amountTotal': amountTotal,
       'currency': currency,
+      if (countryCode?.trim().isNotEmpty == true)
+        'countryCode': countryCode!.trim().toUpperCase(),
       'documentType': documentType,
       'invoiceBusinessName': invoiceBusinessName,
       'invoiceRut': invoiceRut,
@@ -305,6 +310,7 @@ class OrderModel {
       tip: tip,
       amountTotal: amountTotal,
       currency: currency,
+      countryCode: countryCode,
       documentType: documentType,
       invoiceBusinessName: invoiceBusinessName,
       invoiceRut: invoiceRut,
@@ -359,6 +365,7 @@ class OrderModel {
       tip: entity.tip,
       amountTotal: entity.amountTotal,
       currency: entity.currency,
+      countryCode: entity.countryCode,
       documentType: entity.documentType,
       invoiceBusinessName: entity.invoiceBusinessName,
       invoiceRut: entity.invoiceRut,

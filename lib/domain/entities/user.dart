@@ -57,6 +57,25 @@ class User {
   String get lastName => identity.lastName;
   String get documentType => identity.documentType;
   String get documentId => identity.documentId;
+  String get profileDocumentId {
+    final id = identity.documentId.trim();
+    if (id.isNotEmpty) return identity.documentId;
+    return riderProfile?.rut?.trim() ?? '';
+  }
+
+  String get profileDocumentType {
+    if (identity.documentId.trim().isNotEmpty) return identity.documentType;
+    return profileDocumentId.isNotEmpty ? 'rut' : identity.documentType;
+  }
+
+  String get rutDocumentId {
+    final id = identity.documentId.trim();
+    if (identity.documentType.trim().toLowerCase() == 'rut' && id.isNotEmpty) {
+      return identity.documentId;
+    }
+    return riderProfile?.rut?.trim() ?? '';
+  }
+
   String get phoneNumber => contact.phoneNumber;
   DateTime get createdAt => status.createdAt;
 
@@ -66,11 +85,15 @@ class User {
 
   bool get isRutVerified {
     if (isRider) {
-      final v = (rutVerificationStatus ?? verificationStatus)?.trim().toLowerCase();
+      final v = (rutVerificationStatus ?? verificationStatus)
+          ?.trim()
+          .toLowerCase();
       return v == 'verified' || v == 'aprobado' || v == 'approved';
     }
     if (identity.documentType.trim().toLowerCase() != 'rut') return true;
-    final v = (rutVerificationStatus ?? verificationStatus)?.trim().toLowerCase();
+    final v = (rutVerificationStatus ?? verificationStatus)
+        ?.trim()
+        .toLowerCase();
     return v == 'verified' || v == 'aprobado' || v == 'approved';
   }
 
@@ -79,9 +102,11 @@ class User {
     return v == 'approved';
   }
 
-  bool get canActAsHero => isHero && heroProfile != null && heroProfile!.isActive;
+  bool get canActAsHero =>
+      isHero && heroProfile != null && heroProfile!.isActive;
 
-  bool get canActAsRider => isRider && riderProfile != null && riderProfile!.canAcceptDeliveries;
+  bool get canActAsRider =>
+      isRider && riderProfile != null && riderProfile!.canAcceptDeliveries;
 
   bool get isSuspended =>
       accountStatus == AccountStatus.suspended &&
@@ -125,7 +150,8 @@ class User {
       riderProfile: riderProfile ?? this.riderProfile,
       profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
       verificationStatus: verificationStatus ?? this.verificationStatus,
-      rutVerificationStatus: rutVerificationStatus ?? this.rutVerificationStatus,
+      rutVerificationStatus:
+          rutVerificationStatus ?? this.rutVerificationStatus,
       licenseVerificationStatus:
           licenseVerificationStatus ?? this.licenseVerificationStatus,
       accountStatus: accountStatus ?? this.accountStatus,
