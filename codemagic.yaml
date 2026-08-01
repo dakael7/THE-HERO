@@ -12,7 +12,6 @@ workflows:
     cache:
       cache_paths:
         - $HOME/.pub-cache
-        - ios/Pods
     scripts:
       - name: Create runtime env file
         script: |
@@ -42,8 +41,13 @@ workflows:
           PY
       - name: Get Flutter packages
         script: flutter pub get
+      - name: Reset iOS pods
+        script: |
+          set -euo pipefail
+          rm -rf ios/Pods ios/Podfile.lock ios/.symlinks
       - name: Install iOS pods
         script: |
+          set -euo pipefail
           cd ios
           pod install --repo-update
       - name: Build iOS without code signing
