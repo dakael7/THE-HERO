@@ -112,6 +112,117 @@ function _parseMillisToTimestamp(value) {
   return admin.firestore.Timestamp.fromMillis(n);
 }
 
+function _timestampToMillis(value) {
+  return value && typeof value.toMillis === "function" ? value.toMillis() : null;
+}
+
+function _hasOwn(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj || {}, key);
+}
+
+function _pickOwn(obj, keys) {
+  for (const key of keys) {
+    if (_hasOwn(obj, key)) return obj[key];
+  }
+  return undefined;
+}
+
+function _hasAnyOwn(obj, keys) {
+  return keys.some((key) => _hasOwn(obj, key));
+}
+
+function _normalizeCupoCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9_-]{1,63}$/.test(code)) return null;
+  return code;
+}
+
+function _normalizeCupoType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (["percent", "percentage", "porcentual", "porcentaje"].includes(raw)) {
+    return "percent";
+  }
+  if (["fixed", "amount", "fijo", "monto"].includes(raw)) {
+    return "fixed";
+  }
+  return null;
+}
+
+function _normalizeCupoValue(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function _buildCupoWrite(raw, options = {}) {
+  if (raw == null || typeof raw !== "object") {
+    return {error: "Invalid body"};
+  }
+
+  const partial = options.partial === true;
+  const current = options.current || {};
+  const data = {};
+
+  if (!partial || _hasAnyOwn(raw, ["active", "isActive"])) {
+    const active = _pickOwn(raw, ["active", "isActive"]);
+    if (active == null && !partial) {
+      data.active = true;
+    } else if (typeof active !== "boolean") {
+      return {error: "active must be boolean"};
+    } else {
+      data.active = active;
+    }
+  }
+
+  if (!partial || _hasAnyOwn(raw, ["type", "discountType", "tipo"])) {
+    const type = _normalizeCupoType(
+      _pickOwn(raw, ["type", "discountType", "tipo"]),
+    );
+    if (!type) return {error: "Invalid type"};
+    data.type = type;
+  }
+
+  if (!partial || _hasAnyOwn(raw, ["value", "discountValue", "amount", "valor"])) {
+    const value = _normalizeCupoValue(
+      _pickOwn(raw, ["value", "discountValue", "amount", "valor"]),
+    );
+    if (value == null) return {error: "value must be > 0"};
+    data.value = value;
+  }
+
+  const nextType = data.type || _normalizeCupoType(
+    current.type ?? current.discountType ?? current.tipo,
+  );
+  const nextValue = data.value ?? _normalizeCupoValue(
+    current.value ?? current.discountValue ?? current.amount ?? current.valor,
+  );
+  if (nextType === "percent" && nextValue != null && nextValue > 100) {
+    return {error: "percent value must be <= 100"};
+  }
+
+  if (!Object.keys(data).length) {
+    return {error: "No valid fields to update"};
+  }
+  return {data};
+}
+
+function _cupoResponse(id, data) {
+  const value = _normalizeCupoValue(
+    data.value ?? data.discountValue ?? data.amount ?? data.valor,
+  );
+
+  return {
+    id,
+    code: _normalizeCupoCode(data.code) || id,
+    active: data.active === true || data.isActive === true,
+    type: _normalizeCupoType(data.type ?? data.discountType ?? data.tipo),
+    value,
+    createdAtMs: _timestampToMillis(data.createdAt),
+    updatedAtMs: _timestampToMillis(data.updatedAt),
+    updatedByUid: data.updatedByUid || null,
+    updatedByEmail: data.updatedByEmail || null,
+  };
+}
+
 function _docIdOrderBy(query, direction) {
   return query.orderBy(admin.firestore.FieldPath.documentId(), direction);
 }
@@ -323,6 +434,184 @@ exports.adminGetPricing = onRequest(
     } catch (e) {
       logger.error("[adminGetPricing] error", e);
       return res.status(500).json({ error: "Internal error" });
+    }
+  },
+);
+
+exports.adminCreateCupo = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({error: "Method not allowed"});
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({error: authCheck.message});
+      }
+
+      const code = _normalizeCupoCode(req.body?.code);
+      if (!code) return res.status(400).json({error: "Invalid code"});
+
+      const built = _buildCupoWrite(req.body);
+      if (built.error) return res.status(400).json({error: built.error});
+
+      const firestore = admin.firestore();
+      const ref = firestore.collection("cupos").doc(code);
+      const data = {
+        ...built.data,
+        code,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedByUid: authCheck.uid,
+      };
+      if (authCheck.email) data.updatedByEmail = authCheck.email;
+
+      try {
+        await ref.create(data);
+      } catch (e) {
+        const msg = String(e?.message || e || "");
+        if (e?.code === 6 || msg.toLowerCase().includes("already exists")) {
+          return res.status(409).json({error: "Cupo already exists"});
+        }
+        throw e;
+      }
+
+      const snap = await ref.get();
+      return res.status(201).json({
+        ok: true,
+        cupo: _cupoResponse(snap.id, snap.data() || {}),
+      });
+    } catch (e) {
+      logger.error("[adminCreateCupo] error", e);
+      return res.status(500).json({error: "Internal error"});
+    }
+  },
+);
+
+exports.adminListCupos = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "GET") {
+        return res.status(405).json({error: "Method not allowed"});
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({error: authCheck.message});
+      }
+
+      const firestore = admin.firestore();
+      const limit = Math.min(_normalizePositiveInt(req.query?.limit, 100), 200);
+      let query = _docIdOrderBy(firestore.collection("cupos"), "asc").limit(limit);
+      const startAfter = _normalizeCupoCode(req.query?.startAfter);
+      if (startAfter) query = query.startAfter(startAfter);
+
+      const snap = await query.get();
+      const items = snap.docs.map((doc) => _cupoResponse(doc.id, doc.data() || {}));
+      const last = snap.docs.length ? snap.docs[snap.docs.length - 1] : null;
+
+      return res.status(200).json({
+        ok: true,
+        items,
+        nextPage: last ? {startAfter: last.id} : null,
+      });
+    } catch (e) {
+      logger.error("[adminListCupos] error", e);
+      return res.status(500).json({error: "Internal error"});
+    }
+  },
+);
+
+exports.adminUpdateCupo = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({error: "Method not allowed"});
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({error: authCheck.message});
+      }
+
+      const code = _normalizeCupoCode(req.body?.code);
+      if (!code) return res.status(400).json({error: "Invalid code"});
+
+      const firestore = admin.firestore();
+      const ref = firestore.collection("cupos").doc(code);
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({error: "Cupo not found"});
+
+      const built = _buildCupoWrite(req.body, {
+        partial: true,
+        current: snap.data() || {},
+      });
+      if (built.error) return res.status(400).json({error: built.error});
+
+      const update = {
+        ...built.data,
+        code,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedByUid: authCheck.uid,
+      };
+      if (authCheck.email) update.updatedByEmail = authCheck.email;
+
+      await ref.set(update, {merge: true});
+      const nextSnap = await ref.get();
+
+      return res.status(200).json({
+        ok: true,
+        cupo: _cupoResponse(nextSnap.id, nextSnap.data() || {}),
+      });
+    } catch (e) {
+      logger.error("[adminUpdateCupo] error", e);
+      return res.status(500).json({error: "Internal error"});
+    }
+  },
+);
+
+exports.adminDeleteCupo = onRequest(
+  {
+    region: "southamerica-west1",
+    cors: true,
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        return res.status(405).json({error: "Method not allowed"});
+      }
+
+      const authCheck = await _requireWebAdmin(req);
+      if (!authCheck.ok) {
+        return res.status(authCheck.status).json({error: authCheck.message});
+      }
+
+      const code = _normalizeCupoCode(req.body?.code ?? req.query?.code);
+      if (!code) return res.status(400).json({error: "Invalid code"});
+
+      const firestore = admin.firestore();
+      const ref = firestore.collection("cupos").doc(code);
+      const snap = await ref.get();
+      if (!snap.exists) return res.status(404).json({error: "Cupo not found"});
+
+      await ref.delete();
+      return res.status(200).json({ok: true, code});
+    } catch (e) {
+      logger.error("[adminDeleteCupo] error", e);
+      return res.status(500).json({error: "Internal error"});
     }
   },
 );
@@ -1023,5 +1312,10 @@ exports.adminPayoutRider = onRequest(
     }
   },
 );
+
+exports._test = {
+  buildCupoWrite: _buildCupoWrite,
+  normalizeCupoCode: _normalizeCupoCode,
+};
 
 
