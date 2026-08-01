@@ -4,7 +4,6 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -20,11 +19,6 @@ import 'core/services/payment_deep_link_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await dotenv.load(fileName: 'lib/.env');
-  } catch (e) {
-    debugPrint('No se pudo cargar lib/.env: $e');
-  }
 
   if (Platform.isAndroid) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

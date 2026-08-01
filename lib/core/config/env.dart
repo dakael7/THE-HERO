@@ -1,50 +1,21 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
 /// Centralized environment variables.
-///
-/// Runtime values are read from `lib/.env` first (when loaded in `main.dart`).
-/// Compile-time `--dart-define` values are used as fallback.
 class Env {
   const Env._();
 
-  static String _fromDotEnv(String key) {
-    if (!dotenv.isInitialized) return '';
-    return (dotenv.maybeGet(key) ?? '').trim();
-  }
-
-  static bool _boolFlag(String key, {bool defaultValue = false}) {
-    final raw = _fromDotEnv(key).toLowerCase();
-    if (raw.isNotEmpty) {
-      return raw == 'true' || raw == '1' || raw == 'yes' || raw == 'on';
-    }
-    return defaultValue;
-  }
-
-  static bool get devCheckoutBypass => _boolFlag(
+  static const bool devCheckoutBypass = bool.fromEnvironment(
     'DEV_CHECKOUT_BYPASS',
-    defaultValue: const bool.fromEnvironment(
-      'DEV_CHECKOUT_BYPASS',
-      defaultValue: false,
-    ),
+    defaultValue: false,
   );
 
   static bool get mapsLiteMode {
-    final raw = _fromDotEnv('MAPS_LITE_MODE').toLowerCase();
-    if (raw.isNotEmpty) {
-      return raw == 'true';
-    }
     return const bool.fromEnvironment('MAPS_LITE_MODE', defaultValue: false);
   }
 
   static String get placesApiKey {
-    final fromDotEnv = _fromDotEnv('PLACES_API_KEY');
-    if (fromDotEnv.isNotEmpty) return fromDotEnv;
     return const String.fromEnvironment('PLACES_API_KEY', defaultValue: '');
   }
 
   static String get googleMapsApiKey {
-    final fromDotEnv = _fromDotEnv('GOOGLE_MAPS_API_KEY');
-    if (fromDotEnv.isNotEmpty) return fromDotEnv;
     return const String.fromEnvironment(
       'GOOGLE_MAPS_API_KEY',
       defaultValue: '',
@@ -52,9 +23,6 @@ class Env {
   }
 
   static String get directionsApiKey {
-    final dotEnvDirections = _fromDotEnv('GOOGLE_DIRECTIONS_API_KEY');
-    if (dotEnvDirections.isNotEmpty) return dotEnvDirections;
-
     const defineDirections = String.fromEnvironment(
       'GOOGLE_DIRECTIONS_API_KEY',
       defaultValue: '',

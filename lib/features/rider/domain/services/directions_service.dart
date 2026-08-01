@@ -26,10 +26,11 @@ class DirectionsRoute {
 
 /// Google Directions service (with stub fallback if API key is missing).
 class DirectionsService {
-  // Reads from Env (.env first, then --dart-define fallback) unless injected.
+  // Reads from --dart-define unless injected.
   final String apiKey;
 
-  DirectionsService({String? apiKey}) : apiKey = (apiKey ?? Env.directionsApiKey).trim();
+  DirectionsService({String? apiKey})
+    : apiKey = (apiKey ?? Env.directionsApiKey).trim();
 
   Future<DirectionsRoute> getRoute({
     required double pickupLat,

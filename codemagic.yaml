@@ -13,20 +13,10 @@ workflows:
       cache_paths:
         - $HOME/.pub-cache
     scripts:
-      - name: Create runtime env file
+      - name: Prepare iOS runtime config
         script: |
           set -euo pipefail
           GOOGLE_MAPS_API_KEY="${GOOGLE_MAPS_API_KEY:-}"
-          PLACES_API_KEY="${PLACES_API_KEY:-$GOOGLE_MAPS_API_KEY}"
-          GOOGLE_DIRECTIONS_API_KEY="${GOOGLE_DIRECTIONS_API_KEY:-$GOOGLE_MAPS_API_KEY}"
-          MAPS_LITE_MODE="${MAPS_LITE_MODE:-false}"
-
-          cat > lib/.env <<EOF
-          GOOGLE_MAPS_API_KEY=$GOOGLE_MAPS_API_KEY
-          PLACES_API_KEY=$PLACES_API_KEY
-          GOOGLE_DIRECTIONS_API_KEY=$GOOGLE_DIRECTIONS_API_KEY
-          MAPS_LITE_MODE=$MAPS_LITE_MODE
-          EOF
 
           python3 - <<'PY'
           import os
