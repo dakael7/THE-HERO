@@ -9,6 +9,10 @@ workflows:
       cocoapods: default
       vars:
         MAPS_LITE_MODE: "false"
+        BUNDLE_ID: "com.theheroprojects.thehero"
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.theheroprojects.thehero
     cache:
       cache_paths:
         - $HOME/.pub-cache
@@ -31,6 +35,15 @@ workflows:
           PY
       - name: Get Flutter packages
         script: flutter pub get
+      - name: Set up code signing
+        script: |
+          set -euo pipefail
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
       - name: Reset iOS pods
         script: |
           set -euo pipefail
@@ -40,19 +53,24 @@ workflows:
           set -euo pipefail
           cd ios
           pod install --repo-update
-      - name: Build iOS without code signing
+      - name: Build and archive IPA
         script: |
           set -euo pipefail
           BUILD_NAME="${BUILD_NAME:-1.0.0}"
           BUILD_NUMBER="${BUILD_NUMBER:-${CM_BUILD_NUMBER:-25}}"
 
-          flutter build ios --release --no-codesign \
+          flutter build ipa --release \
             --build-name="$BUILD_NAME" \
             --build-number="$BUILD_NUMBER" \
+            --export-options-plist=/Users/builder/export_options.plist \
             --dart-define=GOOGLE_MAPS_API_KEY="${GOOGLE_MAPS_API_KEY:-}" \
             --dart-define=PLACES_API_KEY="${PLACES_API_KEY:-${GOOGLE_MAPS_API_KEY:-}}" \
             --dart-define=GOOGLE_DIRECTIONS_API_KEY="${GOOGLE_DIRECTIONS_API_KEY:-${GOOGLE_MAPS_API_KEY:-}}" \
             --dart-define=MAPS_LITE_MODE="${MAPS_LITE_MODE:-false}"
     artifacts:
-      - build/ios/iphoneos/Runner.app
-      - build/ios/iphoneos/Runner.app.dSYM
+      - build/ios/ipa/*.ipa
+      - build/ios/archive/Runner.xcarchive/dSYMs/*.dSYM
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
