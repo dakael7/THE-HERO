@@ -40,9 +40,23 @@ workflows:
         script: |
           set -euo pipefail
           keychain initialize
+          export CERTIFICATE_KEY_PATH="$(mktemp)"
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          key = os.environ.get("CERTIFICATE_PRIVATE_KEY_B64", "").strip()
+          if not key:
+              raise SystemExit("CERTIFICATE_PRIVATE_KEY_B64 is empty")
+
+          Path(os.environ["CERTIFICATE_KEY_PATH"]).write_bytes(base64.b64decode(key))
+          PY
+          chmod 600 "$CERTIFICATE_KEY_PATH"
+          openssl rsa -in "$CERTIFICATE_KEY_PATH" -check -noout
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
-            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --certificate-key="@file:$CERTIFICATE_KEY_PATH" \
             --create
           keychain add-certificates
           xcode-project use-profiles
