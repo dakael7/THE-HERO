@@ -144,4 +144,7 @@ flutter_launcher_icons:
   android: "ic_launcher"
   ios: true
   image_path: "assets/wheel.png"
+  image_path_ios: "assets/app_icon_ios.png"
+  remove_alpha_ios: true
+  background_color_ios: "#FBCB65"
   min_sdk_android: 24
