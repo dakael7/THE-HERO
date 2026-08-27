@@ -64,7 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '9377083728',
     projectId: 'the-hero-67d93',
     storageBucket: 'the-hero-67d93.firebasestorage.app',
-    iosBundleId: 'com.example.theHero',
+    iosBundleId: 'com.thehero.app',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
