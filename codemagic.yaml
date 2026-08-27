@@ -9,6 +9,8 @@ workflows:
       flutter: 3.44.6
       xcode: latest
       cocoapods: default
+      groups:
+        - appstore_credentials
       vars:
         MAPS_LITE_MODE: "false"
         BUNDLE_ID: "com.thehero.app"
@@ -40,6 +42,7 @@ workflows:
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
             --create
           keychain add-certificates
           xcode-project use-profiles
