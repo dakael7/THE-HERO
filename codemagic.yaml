@@ -6,7 +6,7 @@ workflows:
     integrations:
       app_store_connect: "App Store Connect"
     environment:
-      flutter: 3.38.1
+      flutter: 3.38.4
       xcode: latest
       cocoapods: default
       vars:
