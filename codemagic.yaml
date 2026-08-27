@@ -12,9 +12,6 @@ workflows:
       vars:
         MAPS_LITE_MODE: "false"
         BUNDLE_ID: "com.thehero.app"
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.thehero.app
     cache:
       cache_paths:
         - $HOME/.pub-cache
