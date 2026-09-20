@@ -882,8 +882,19 @@ exports.mercadopagoWebhook = onRequest(
                 ` recoveryStatus=${fulfillmentResult.recoveryStatus}` +
                 ` recoveryReason=${fulfillmentResult.recoveryReason || "none"}`,
             );
-            approvedRefundResult =
-              await requestFullRefundForUnfulfillableOrder();
+            const blockedByStockOnly = String(
+              fulfillmentResult.recoveryReason || "",
+            ).startsWith("stock_unavailable");
+
+            if (blockedByStockOnly) {
+              console.warn(
+                `Holding approved payment for support order=${orderId}` +
+                  " reason=stock_unavailable (no auto-refund)",
+              );
+            } else {
+              approvedRefundResult =
+                await requestFullRefundForUnfulfillableOrder();
+            }
           }
           newOrderStatus = canFulfillOrder
             ? "queued"

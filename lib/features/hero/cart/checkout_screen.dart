@@ -340,13 +340,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         (normalized.contains('limite') || normalized.contains('límite'));
   }
 
+  /// Coupons discount the platform's service fee only, matching the server
+  /// (`orders.js` / `createPaymentPreference.js`). Products, shipping and tax
+  /// are always paid in full.
   double _couponBase(CartSummary summary) {
-    final total =
-        summary.subtotal +
-        summary.shippingCost +
-        summary.serviceFee +
-        summary.tax;
-    return total.isFinite ? total.clamp(0.0, double.infinity).toDouble() : 0.0;
+    final base = summary.serviceFee;
+    return base.isFinite ? base.clamp(0.0, double.infinity).toDouble() : 0.0;
   }
 
   double _couponDiscount(CartSummary summary) {

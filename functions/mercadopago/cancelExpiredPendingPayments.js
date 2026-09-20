@@ -1,8 +1,12 @@
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const {
+  hasApprovedPaymentAtMercadoPago,
+} = require("./paymentVerification");
 
 const PENDING_PAYMENT_TIMEOUT_MS = 5 * 60 * 1000;
+const CANCELLATION_GRACE_MS = 10 * 60 * 1000;
 const MAX_RESERVATIONS_PER_RUN = 100;
 const PENDING_ORDER_STATUSES = new Set([
   "created",
@@ -30,6 +34,12 @@ const isExpired = (reservation) => {
   const expiresAtMs = toMillis(reservation?.expiresAt);
   return expiresAtMs > 0 && expiresAtMs <= Date.now();
 };
+
+const isPastGracePeriod = (reservation, nowMs = Date.now()) => {
+  const expiresAtMs = toMillis(reservation?.expiresAt);
+  return expiresAtMs > 0 && expiresAtMs + CANCELLATION_GRACE_MS <= nowMs;
+};
+
 
 const qtyInt = (value) => {
   const parsed = Number(value ?? 1);
@@ -128,6 +138,22 @@ const releaseExpiredReservation = async (reservationRef) => {
     skippedReason: null,
   };
 
+  const preCheckReservation = (await reservationRef.get()).data() || {};
+  const preCheckOrderId = String(
+    preCheckReservation.orderId || reservationRef.id,
+  );
+  const approvedAtMercadoPago = await hasApprovedPaymentAtMercadoPago(
+    db,
+    preCheckOrderId,
+    "pending-payment-expiry",
+  );
+
+
+  if (approvedAtMercadoPago === null) {
+    result.skippedReason = "payment_verification_unavailable";
+    return result;
+  }
+
   await db.runTransaction(async (transaction) => {
     const reservationDoc = await transaction.get(reservationRef);
     if (!reservationDoc.exists) {
@@ -146,6 +172,11 @@ const releaseExpiredReservation = async (reservationRef) => {
       return;
     }
 
+    if (!isPastGracePeriod(reservation, nowMs)) {
+      result.skippedReason = "reservation_in_grace_period";
+      return;
+    }
+
     const orderId = String(reservation.orderId || reservationRef.id);
     const orderRef = db.collection("orders").doc(orderId);
     const orderDoc = await transaction.get(orderRef);
@@ -157,7 +188,9 @@ const releaseExpiredReservation = async (reservationRef) => {
       orderId,
       orderData.orderId,
     ]);
-    if (paymentDocs.some(isApprovedPaymentDoc)) {
+    // MercadoPago is authoritative; the payment docs are only a fast path for
+    // when the webhook already landed.
+    if (approvedAtMercadoPago || paymentDocs.some(isApprovedPaymentDoc)) {
       await incrementOrderCounts(
         transaction,
         db,
@@ -311,6 +344,7 @@ exports.cancelExpiredPendingPayments = onSchedule(
     timeZone: "America/Santiago",
     timeoutSeconds: 540,
     memory: "512MiB",
+    secrets: ["MERCADOPAGO_ACCESS_TOKEN"],
   },
   async () => {
     const db = admin.firestore();
@@ -322,6 +356,7 @@ exports.cancelExpiredPendingPayments = onSchedule(
 
     let scanned = 0;
     let expired = 0;
+    let inGrace = 0;
     let released = 0;
     let skipped = 0;
     let updatedPayments = 0;
@@ -332,6 +367,12 @@ exports.cancelExpiredPendingPayments = onSchedule(
       if (!isExpired(reservation)) continue;
 
       expired++;
+
+      if (!isPastGracePeriod(reservation)) {
+        inGrace++;
+        continue;
+      }
+
       try {
         const result = await releaseExpiredReservation(doc.ref);
         if (result.released) {
@@ -356,6 +397,7 @@ exports.cancelExpiredPendingPayments = onSchedule(
     logger.info("[pending-payment-expiry] run complete", {
       scanned,
       expired,
+      inGrace,
       released,
       skipped,
       updatedPayments,

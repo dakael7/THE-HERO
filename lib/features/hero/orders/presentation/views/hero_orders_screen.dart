@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../data/datasources/payment_remote_datasource.dart';
 import '../../../../../data/providers/repository_providers.dart';
 import '../../../../../domain/entities/order.dart';
 import '../../../../../domain/entities/order_status.dart';
@@ -130,6 +131,11 @@ class _OrderTile extends ConsumerWidget {
     final paymentRemaining = paymentExpiresAt.difference(DateTime.now());
     final isPaymentExpired =
         isPendingPayment && paymentRemaining.inSeconds <= 0;
+
+    final canVerifyPayment =
+        (isPendingPayment && isPaymentExpired) ||
+        order.status == OrderStatus.failed ||
+        order.status == OrderStatus.canceled;
     final canShowReceipt =
         order.status != OrderStatus.created &&
         order.status != OrderStatus.pendingPayment &&
@@ -232,6 +238,12 @@ class _OrderTile extends ConsumerWidget {
                       textColor: Color(0xFF92400E),
                       fontWeight: FontWeight.w800,
                     ),
+                  ],
+                  // Recovery path: the reservation expired (or the order was
+                  // auto-canceled) but the buyer may still have paid.
+                  if (canVerifyPayment) ...[
+                    const SizedBox(height: 10),
+                    _VerifyPaymentAction(order: order, uid: uid),
                   ],
                   // Show payment and delete buttons for pending payment orders
                   if (isPendingPayment) ...[
@@ -744,6 +756,131 @@ class _InfoRow extends StatelessWidget {
               fontSize: 12,
               fontWeight: fontWeight ?? FontWeight.w600,
               color: textColor ?? textGray600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VerifyPaymentAction extends ConsumerStatefulWidget {
+  final Order order;
+  final String uid;
+
+  const _VerifyPaymentAction({required this.order, required this.uid});
+
+  @override
+  ConsumerState<_VerifyPaymentAction> createState() =>
+      _VerifyPaymentActionState();
+}
+
+class _VerifyPaymentActionState extends ConsumerState<_VerifyPaymentAction> {
+  bool _checking = false;
+
+  Future<void> _verify() async {
+    if (_checking) return;
+    setState(() => _checking = true);
+
+    try {
+      final result = await ref
+          .read(paymentRemoteDataSourceProvider)
+          .recoverExpiredOrderPayment(widget.order.orderId);
+
+      if (!mounted) return;
+
+      final status = (result['status'] as String?) ?? '';
+      final message =
+          (result['message'] as String?) ?? 'Verificación completada.';
+      final recovered = result['recovered'] == true;
+
+      final color = switch (status) {
+        'recovered' => categoryTextGreen,
+        'needs_support' => const Color(0xFFB45309),
+        'not_paid' => textGray600,
+        _ => Colors.red,
+      };
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+
+      if (recovered) {
+        ref.invalidate(myOrdersProvider(widget.uid));
+      }
+    } on PaymentFunctionsException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message ?? 'No pudimos verificar el pago.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No pudimos verificar el pago. Revisa tu conexión e intenta de nuevo.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+
+    final isCanceled = widget.order.status == OrderStatus.canceled;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _InfoRow(
+          icon: Icons.help_outline_rounded,
+          iconColor: const Color(0xFF2563EB),
+          text: isCanceled
+              ? 'Si este pedido alcanzó a pagarse, verifica y lo recuperamos.'
+              : '¿Ya pagaste? Verifica y recuperamos tu pedido.',
+          textColor: const Color(0xFF1D4ED8),
+          fontWeight: FontWeight.w700,
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _checking ? null : _verify,
+            icon: _checking
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF2563EB),
+                    ),
+                  )
+                : const Icon(Icons.verified_outlined, size: 18),
+            label: Text(
+              _checking ? 'Verificando...' : 'Verificar pago',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF2563EB),
+              side: const BorderSide(color: Color(0xFF2563EB)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ),

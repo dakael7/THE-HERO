@@ -104,6 +104,7 @@ class _RiderDeliveryMapScreenState
   int _pickupStopIndex = 0;
   bool _arrivedAtPickupStop = false;
   bool _isSavingPickupProgress = false;
+  bool _isUpdatingStatus = false;
 
   double _roundCoord(double v) => double.parse(v.toStringAsFixed(5));
 
@@ -287,6 +288,22 @@ class _RiderDeliveryMapScreenState
   }
 
   Future<void> _setStatus(Order order, OrderStatus status) async {
+    // Guards every status button: a second tap while the first call is still
+    // in flight used to fire a duplicate request that failed on the server.
+    if (_isUpdatingStatus) return;
+    setState(() => _isUpdatingStatus = true);
+    try {
+      await _setStatusInternal(order, status);
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdatingStatus = false);
+      } else {
+        _isUpdatingStatus = false;
+      }
+    }
+  }
+
+  Future<void> _setStatusInternal(Order order, OrderStatus status) async {
     if (status == OrderStatus.delivered) {
       final okToDeliver = await _maybeConfirmCashPayment(
         orderId: order.orderId,
@@ -936,7 +953,9 @@ class _RiderDeliveryMapScreenState
                             }
                           }
                         },
-                  onPickedUp: order.status == OrderStatus.assigned
+                  onPickedUp:
+                      order.status == OrderStatus.assigned &&
+                          !_isUpdatingStatus
                       ? (stops.isNotEmpty &&
                                 effectivePickupStopIndex < stops.length - 1
                             ? null
@@ -946,10 +965,14 @@ class _RiderDeliveryMapScreenState
                                 setState(() => _arrivedAtPickupStop = false);
                               })
                       : null,
-                  onInTransit: (order.status == OrderStatus.pickedUp)
+                  onInTransit:
+                      order.status == OrderStatus.pickedUp &&
+                          !_isUpdatingStatus
                       ? () => _setStatus(order, OrderStatus.inTransit)
                       : null,
-                  onDelivered: (order.status == OrderStatus.inTransit)
+                  onDelivered:
+                      order.status == OrderStatus.inTransit &&
+                          !_isUpdatingStatus
                       ? () => _setStatus(order, OrderStatus.delivered)
                       : null,
                   isSavingPickupProgress: _isSavingPickupProgress,

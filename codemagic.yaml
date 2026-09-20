@@ -11,6 +11,7 @@ workflows:
       cocoapods: default
       groups:
         - appstore_credentials
+        - Maps
       vars:
         MAPS_LITE_MODE: "false"
         BUNDLE_ID: "com.thehero.app"

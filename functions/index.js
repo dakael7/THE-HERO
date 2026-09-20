@@ -23,6 +23,7 @@ exportLazy("mercadopagoWebhook", "./mercadopago/webhook");
 exportLazy("verifyPayment", "./mercadopago/verifyPayment");
 exportLazy("simulatePaymentApproved", "./mercadopago/simulatePaymentApproved");
 exportLazy("cancelExpiredPendingPayments", "./mercadopago/cancelExpiredPendingPayments");
+exportLazy("recoverExpiredOrderPayment", "./mercadopago/recoverExpiredOrderPayment");
 
 exportLazy("onOrderPaidCreateInvoice", "./billing/onOrderPaidCreateInvoice");
 exportLazy("retryInvoiceEmission", "./billing/onOrderPaidCreateInvoice");

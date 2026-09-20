@@ -618,11 +618,17 @@ exports.createPaymentPreference = onCall(
     );
     const serverTax = toInt(orderDataAtStart.tax ?? requestedTax);
     const serverTip = toInt(orderDataAtStart.tip ?? requestedTip);
-    const discountBase =
-      serverSubtotal + serverDeliveryFee + serverServiceFee + serverTax;
+    // Coupons discount the platform's own service fee only, so the rider's
+    // delivery fee and the tax are never funded by the discount.
+    const discountBase = Math.max(0, serverServiceFee);
     const serverCoupon = await readCouponDiscount(discountBase);
     const serverAmountTotal = toInt(
-      discountBase - serverCoupon.amount + serverTip,
+      serverSubtotal +
+        serverDeliveryFee +
+        serverServiceFee +
+        serverTax -
+        serverCoupon.amount +
+        serverTip,
     );
 
     if (requestedAmountTotal > 0 && requestedAmountTotal !== serverAmountTotal) {

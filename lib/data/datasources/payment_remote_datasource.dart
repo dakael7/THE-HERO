@@ -69,6 +69,29 @@ class PaymentRemoteDataSource {
     }
   }
 
+ 
+  Future<Map<String, dynamic>> recoverExpiredOrderPayment(
+    String orderId,
+  ) async {
+    try {
+      await _ensureFreshAuthToken();
+      final callable = _functions.httpsCallable(
+        'recoverExpiredOrderPayment',
+      );
+      final result = await callable.call({'orderId': orderId});
+
+      if (result.data == null) {
+        throw Exception('No data received from recoverExpiredOrderPayment');
+      }
+
+      return Map<String, dynamic>.from(result.data as Map);
+    } on FirebaseFunctionsException catch (e) {
+      throw PaymentFunctionsException(code: e.code, message: e.message);
+    } catch (e) {
+      throw Exception('Unexpected error recovering payment: $e');
+    }
+  }
+
   /// Gets payment information by order ID
   /// Calls the getPaymentByOrderId Firebase Function
   Future<Map<String, dynamic>?> getPaymentByOrderId(String orderId) async {

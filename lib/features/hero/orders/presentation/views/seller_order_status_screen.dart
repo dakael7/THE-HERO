@@ -371,6 +371,8 @@ class _StatusCard extends ConsumerWidget {
     String newStatus,
     String successMsg,
   ) async {
+
+    if (ref.read(orderNotifierProvider).isLoading) return;
     try {
       await ref
           .read(orderNotifierProvider.notifier)
@@ -401,6 +403,8 @@ class _StatusCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isUpdatingStatus = ref.watch(orderNotifierProvider).isLoading;
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -514,12 +518,14 @@ class _StatusCard extends ConsumerWidget {
                 label: 'Marcar listo para retiro',
                 icon: Icons.inventory_2_rounded,
                 color: primaryOrange,
-                onTap: () => _updateStatus(
-                  context,
-                  ref,
-                  'picked_up',
-                  'Marcado como listo para retiro',
-                ),
+                onTap: isUpdatingStatus
+                    ? null
+                    : () => _updateStatus(
+                        context,
+                        ref,
+                        'picked_up',
+                        'Marcado como listo para retiro',
+                      ),
               ),
             ),
 
@@ -530,12 +536,14 @@ class _StatusCard extends ConsumerWidget {
                 label: 'Marcar como entregado',
                 icon: Icons.check_circle_rounded,
                 color: categoryTextGreen,
-                onTap: () => _updateStatus(
-                  context,
-                  ref,
-                  'delivered',
-                  'Pedido marcado como entregado',
-                ),
+                onTap: isUpdatingStatus
+                    ? null
+                    : () => _updateStatus(
+                        context,
+                        ref,
+                        'delivered',
+                        'Pedido marcado como entregado',
+                      ),
               ),
             ),
 
@@ -1480,7 +1488,6 @@ class _SellerChatActions extends ConsumerWidget {
     final seller = ref.read(profileProvider).value;
     if (seller == null) return;
 
-    // Find any offer from this seller to use as offerId
     final myOffer = order.items.firstWhere(
       (i) => i.sellerHeroIdSnapshot.trim() == sellerId,
       orElse: () => order.items.first,
@@ -1988,7 +1995,10 @@ class _PrimaryActionButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
-  final VoidCallback onTap;
+
+  /// Null while a status update is in flight, so the action cannot be fired
+  /// twice.
+  final VoidCallback? onTap;
 
   const _PrimaryActionButton({
     required this.label,
@@ -1999,9 +2009,11 @@ class _PrimaryActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
+    return Opacity(
+      opacity: onTap == null ? 0.5 : 1,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
@@ -2029,7 +2041,8 @@ class _PrimaryActionButton extends StatelessWidget {
                 letterSpacing: 0.1,
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

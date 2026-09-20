@@ -1367,12 +1367,19 @@ service cloud.firestore {
     }
 
     // ==========================================
-    // COLECCIÓN: PRICING
+    // CONFIGURACIÓN ADMINISTRABLE
     // ==========================================
+
+    match /configuration/terms {
+      allow read: if true;
+      allow create, update: if isWebAdmin();
+      allow delete: if false;
+    }
 
     match /settings/pricing {
       allow read: if request.auth != null;
-      allow write: if false; // Las escrituras se manejan desde la Cloud Function
+      allow create, update: if isWebAdmin();
+      allow delete: if false;
     }
 
     // ==========================================

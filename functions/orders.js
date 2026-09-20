@@ -16,6 +16,9 @@ const {
   readCouponDiscount,
   toInt,
 } = require("./orderPricing");
+const {
+  hasApprovedPaymentAtMercadoPago,
+} = require("./mercadopago/paymentVerification");
 
 function _parseDate(value) {
   if (!value) return null;
@@ -168,13 +171,7 @@ async function _prepareOrderForCreate({transaction, db, rawOrder, orderId, heroI
     offerUpdates.push({ref: offerDoc.ref, updateData});
   }
 
-  const serverSubtotal = aggregatedItems.reduce((sum, item) => {
-    return sum + (Math.max(0, toInt(offerPricesById.get(item.offerId))) * item.qty);
-  }, 0);
-  const discountBase = Math.max(
-    0,
-    serverSubtotal + toInt(order.deliveryFee) + toInt(order.serviceFee) + toInt(order.tax),
-  );
+  const discountBase = Math.max(0, toInt(order.serviceFee));
   const couponResult = await readCouponDiscount({
     transaction,
     db,
@@ -636,6 +633,14 @@ async function _updateOrderStatusForRider({
       );
     }
 
+
+    if (order.status === newStatus) {
+      console.log(
+        `[updateOrderStatus] Pedido ${orderId} ya esta en ${newStatus}, sin cambios`,
+      );
+      return;
+    }
+
     const validTransitions = isAssignedRider ? {
       assigned: ["picked_up"],
       picked_up: ["in_transit"],
@@ -833,68 +838,6 @@ exports.updateOrderStatus = onCall(async (request) => {
     message: `Pedido actualizado a ${newStatus}`,
   };
 
-  const orderRef = admin.firestore().collection("orders").doc(orderId);
-  const orderDoc = await orderRef.get();
-
-  if (!orderDoc.exists) {
-    throw new HttpsError("not-found", "Pedido no encontrado");
-  }
-
-  const order = orderDoc.data();
-
-  // Validar que el rider sea el asignado
-  if (!order.rider || order.rider.assignedRiderId !== riderId) {
-    throw new HttpsError(
-      "permission-denied",
-      "No tienes permiso para actualizar este pedido",
-    );
-  }
-
-  // Validar transición de estado
-  const validTransitions = {
-    assigned: ["picked_up"],
-    picked_up: ["in_transit"],
-    in_transit: ["delivered"],
-  };
-
-  if (
-    !validTransitions[order.status] ||
-    !validTransitions[order.status].includes(newStatus)
-  ) {
-    throw new HttpsError(
-      "failed-precondition",
-      `No se puede cambiar de ${order.status} a ${newStatus}`,
-    );
-  }
-
-  // Actualizar estado
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const updates = {
-    status: newStatus,
-    updatedAt: now,
-  };
-
-  // Actualizar timestamp específico
-  if (newStatus === "picked_up") {
-    updates["timestamps.pickedUpAt"] = now;
-  } else if (newStatus === "in_transit") {
-    updates["timestamps.inTransitAt"] = now;
-  } else if (newStatus === "delivered") {
-    updates["timestamps.deliveredAt"] = now;
-  }
-
-  await orderRef.update(updates);
-
-  console.log(
-    `[updateOrderStatus] Pedido ${orderId} actualizado a ${newStatus}`,
-  );
-
-  return {
-    success: true,
-    orderId: orderId,
-    newStatus: newStatus,
-    message: `Pedido actualizado a ${newStatus}`,
-  };
 });
 
 function _normalizeOrderStatusForCancel(value) {
@@ -931,7 +874,9 @@ async function _readPaymentDocsForOrder(transaction, db, orderIds) {
   return snap.docs.map((doc) => doc.data() || {});
 }
 
-exports.cancelOrder = onCall(async (request) => {
+exports.cancelOrder = onCall({
+  secrets: ["MERCADOPAGO_ACCESS_TOKEN"],
+}, async (request) => {
   const auth = await _resolveCallableAuth(request);
 
   const orderId = String(request.data?.orderId || "").trim();
@@ -950,6 +895,31 @@ exports.cancelOrder = onCall(async (request) => {
     success: false,
     alreadyCanceled: false,
   };
+
+  // Asked outside the transaction (it is a network call) and before any write:
+  // the payment docs checked below can still say "pending" while the money is
+  // already captured, which is how paid orders got canceled.
+  const approvedAtMercadoPago = await hasApprovedPaymentAtMercadoPago(
+    db,
+    orderId,
+    "cancel-order",
+  );
+
+  if (approvedAtMercadoPago === true) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Este pedido ya tiene un pago aprobado y no se puede cancelar. " +
+        "Usa Verificar pago para recuperarlo.",
+    );
+  }
+
+  // Unknown: MercadoPago unreachable. Refuse rather than cancel a paid order.
+  if (approvedAtMercadoPago === null) {
+    throw new HttpsError(
+      "unavailable",
+      "No pudimos verificar el estado del pago. Intenta de nuevo en un momento.",
+    );
+  }
 
   await db.runTransaction(async (transaction) => {
     const orderDoc = await transaction.get(orderRef);
