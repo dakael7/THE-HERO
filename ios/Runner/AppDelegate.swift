@@ -1,6 +1,5 @@
 import Flutter
 import UIKit
-import FirebaseCore
 import GoogleMaps
 
 @main
@@ -14,7 +13,6 @@ import GoogleMaps
        !mapsKey.hasPrefix("$(") {
       GMSServices.provideAPIKey(mapsKey)
     }
-    FirebaseApp.configure()
     GeneratedPluginRegistrant.register(with: self)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

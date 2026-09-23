@@ -64,6 +64,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>GIDClientID</key>
+	<string>9377083728-o132r2nbgjgkjsmpk9mk7dsjjt5uu578.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>$(GOOGLE_MAPS_API_KEY)</string>
 	<key>NSCameraUsageDescription</key>
