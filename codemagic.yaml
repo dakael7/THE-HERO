@@ -22,7 +22,8 @@ workflows:
       - name: Prepare iOS runtime config
         script: |
           set -euo pipefail
-          GOOGLE_MAPS_API_KEY="${GOOGLE_MAPS_API_KEY:-}"
+          # Empty key => AppDelegate skips GMSServices.provideAPIKey => native crash on first GoogleMap.
+          : "${GOOGLE_MAPS_API_KEY:?GOOGLE_MAPS_API_KEY is empty in the Maps group}"
 
           python3 - <<'PY'
           import os
