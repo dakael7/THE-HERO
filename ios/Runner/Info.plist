@@ -37,7 +37,7 @@
 			<string>google-sign-in</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.9377083728-o132r2nbgjgkjsmpk9mk7dsjjt5uu578</string>
+				<string>com.googleusercontent.apps.9377083728-m0mid5pvuop1u7eukcouj1p2g3ph3ffu</string>
 			</array>
 		</dict>
 	</array>
@@ -65,7 +65,7 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>GIDClientID</key>
-	<string>9377083728-o132r2nbgjgkjsmpk9mk7dsjjt5uu578.apps.googleusercontent.com</string>
+	<string>9377083728-m0mid5pvuop1u7eukcouj1p2g3ph3ffu.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>$(GOOGLE_MAPS_API_KEY)</string>
 	<key>NSCameraUsageDescription</key>

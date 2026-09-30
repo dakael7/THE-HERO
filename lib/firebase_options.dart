@@ -60,7 +60,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyC4ghHN05o2YOOaKtqDRDhfmUFRwiWLZ-M',
-    appId: '1:9377083728:ios:23bd0652c94bf5e015fc55',
+    appId: '1:9377083728:ios:e056faa7e4bcfdcd15fc55',
     messagingSenderId: '9377083728',
     projectId: 'the-hero-67d93',
     storageBucket: 'the-hero-67d93.firebasestorage.app',
