@@ -326,6 +326,7 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
         final generic = {
           'Hero',
           'Comprador',
+          'Receptor',
           'Rider',
           'Cliente',
           'Vendedor',

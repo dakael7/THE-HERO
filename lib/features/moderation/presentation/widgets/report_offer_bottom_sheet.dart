@@ -1,24 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/offer_report.dart';
 import '../../../../domain/providers/moderation_usecase_providers.dart';
 
-void showReportOfferSheet(
+Future<void> showReportOfferSheet(
   BuildContext context, {
   required String offerId,
   required String offerTitle,
-}) {
+}) async {
+  if (!await requireAccount(context) || !context.mounted) return;
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => ReportOfferBottomSheet(
-      offerId: offerId,
-      offerTitle: offerTitle,
+    builder: (_) => SafeArea(
+      top: false,
+      child: ReportOfferBottomSheet(offerId: offerId, offerTitle: offerTitle),
     ),
   );
 }
@@ -38,7 +41,8 @@ class ReportOfferBottomSheet extends ConsumerStatefulWidget {
       _ReportOfferBottomSheetState();
 }
 
-class _ReportOfferBottomSheetState extends ConsumerState<ReportOfferBottomSheet> {
+class _ReportOfferBottomSheetState
+    extends ConsumerState<ReportOfferBottomSheet> {
   ReportOfferReason? _selectedReason;
   final _descController = TextEditingController();
   bool _loading = false;
@@ -164,9 +168,9 @@ class _ReportOfferBottomSheetState extends ConsumerState<ReportOfferBottomSheet>
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 }
@@ -181,11 +185,7 @@ class _ReportSuccessView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.check_circle_outline,
-            color: Colors.green,
-            size: 56,
-          ),
+          const Icon(Icons.check_circle_outline, color: Colors.green, size: 56),
           const SizedBox(height: 16),
           const Text(
             'Reporte enviado',

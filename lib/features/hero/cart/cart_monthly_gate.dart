@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/providers/repository_providers.dart';
@@ -83,7 +84,7 @@ Future<bool> ensureCanAddItemToCart({
   required WidgetRef ref,
 }) async {
   final userId = ref.read(currentUserIdProvider)?.trim();
-  if (userId == null || userId.isEmpty) return true;
+  if (userId == null || userId.isEmpty) return requireAccount(context);
 
   try {
     ref.invalidate(cartWeeklyAllowanceProvider(userId));

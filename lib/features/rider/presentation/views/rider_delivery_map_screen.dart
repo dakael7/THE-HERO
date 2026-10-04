@@ -847,7 +847,7 @@ class _RiderDeliveryMapScreenState
               Positioned(
                 left: 16,
                 right: 16,
-                bottom: 16,
+                bottom: 16 + MediaQuery.paddingOf(context).bottom,
                 child: _BottomPanel(
                   order: order,
                   stepTitle: needsPickup

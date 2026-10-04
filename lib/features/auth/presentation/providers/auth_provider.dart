@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart'
+    show AppleAuthProvider, UserCredential;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod/riverpod.dart';
@@ -132,7 +134,9 @@ class AuthNotifier extends Notifier<AuthState> {
       await _signOutUseCase.execute();
       _logAuth('$source:rollback success elapsedMs=${sw.elapsedMilliseconds}');
     } catch (e) {
-      _logAuth('$source:rollback failed elapsedMs=${sw.elapsedMilliseconds} error=$e');
+      _logAuth(
+        '$source:rollback failed elapsedMs=${sw.elapsedMilliseconds} error=$e',
+      );
     }
   }
 
@@ -155,9 +159,12 @@ class AuthNotifier extends Notifier<AuthState> {
           .doc(uid)
           .get()
           .timeout(const Duration(seconds: 8));
-      previousPhotoUrl = (userDoc.data()?['profilePhotoUrl'] as String? ?? '').trim();
+      previousPhotoUrl = (userDoc.data()?['profilePhotoUrl'] as String? ?? '')
+          .trim();
     } catch (e) {
-      _logAuth('_uploadProfilePhoto:read_previous_photo_warning uid=$uid error=$e');
+      _logAuth(
+        '_uploadProfilePhoto:read_previous_photo_warning uid=$uid error=$e',
+      );
     }
 
     final trimmedName = fileName.trim();
@@ -216,7 +223,10 @@ class AuthNotifier extends Notifier<AuthState> {
     }
 
     final finalProgress = taskSnapshot.totalBytes > 0
-        ? (taskSnapshot.bytesTransferred / taskSnapshot.totalBytes).clamp(0.0, 1.0)
+        ? (taskSnapshot.bytesTransferred / taskSnapshot.totalBytes).clamp(
+            0.0,
+            1.0,
+          )
         : 1.0;
     state = state.copyWith(
       isLoading: true,
@@ -239,15 +249,11 @@ class AuthNotifier extends Notifier<AuthState> {
     await db
         .collection('users')
         .doc(uid)
-        .set(
-          {
-            'profilePhotoUrl': url,
-          },
-          SetOptions(merge: true),
-        )
+        .set({'profilePhotoUrl': url}, SetOptions(merge: true))
         .timeout(const Duration(seconds: 12));
 
-    final shouldDeletePrevious = previousPhotoUrl.isNotEmpty && previousPhotoUrl != url;
+    final shouldDeletePrevious =
+        previousPhotoUrl.isNotEmpty && previousPhotoUrl != url;
     if (!shouldDeletePrevious) {
       return;
     }
@@ -285,7 +291,29 @@ class AuthNotifier extends Notifier<AuthState> {
     return AuthState.initial().copyWith(isAuthenticated: initialAuthenticated);
   }
 
-  Future<User> signInWithGoogleAndCreateUser(UserRole role) async {
+  Future<User> signInWithGoogleAndCreateUser(UserRole role) =>
+      _socialSignInAndCreateUser(
+        role,
+        () => ref.read(googleSignInUseCaseProvider).execute(),
+      );
+
+  /// Native Sign in with Apple through firebase_auth (App Store 4.8).
+  Future<User> signInWithAppleAndCreateUser(UserRole role) =>
+      _socialSignInAndCreateUser(
+        role,
+        () => ref
+            .read(firebaseAuthProvider)
+            .signInWithProvider(
+              AppleAuthProvider()
+                ..addScope('email')
+                ..addScope('name'),
+            ),
+      );
+
+  Future<User> _socialSignInAndCreateUser(
+    UserRole role,
+    Future<UserCredential> Function() signIn,
+  ) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     final sw = Stopwatch()..start();
     var email = '';
@@ -293,9 +321,8 @@ class AuthNotifier extends Notifier<AuthState> {
       'googleSignInAndCreateUser:start role=$role isAuthenticated=${state.isAuthenticated}',
     );
     try {
-      final googleSignInUseCase = ref.read(googleSignInUseCaseProvider);
       _logAuth('googleSignInAndCreateUser:step=google_execute begin');
-      final userCredential = await googleSignInUseCase.execute();
+      final userCredential = await signIn();
       _logAuth(
         'googleSignInAndCreateUser:step=google_execute end elapsedMs=${sw.elapsedMilliseconds} uid=${userCredential.user?.uid}',
       );
@@ -359,7 +386,7 @@ class AuthNotifier extends Notifier<AuthState> {
       final hasActiveSession = _hasActiveFirebaseSession();
       final normalizedMessage = _normalizeErrorMessage(e);
       final errorMessage = hadActiveSession && !hasActiveSession
-          ? 'No pudimos completar la configuración de tu cuenta con Google. Cerramos la sesión parcial para que puedas reintentar.'
+          ? 'No pudimos completar la configuración de tu cuenta. Cerramos la sesión parcial para que puedas reintentar.'
           : normalizedMessage;
 
       state = state.copyWith(
@@ -719,9 +746,9 @@ class AuthNotifier extends Notifier<AuthState> {
     );
 
     try {
-      await FCMService()
-          .cleanupBeforeSignOut()
-          .timeout(const Duration(seconds: 2));
+      await FCMService().cleanupBeforeSignOut().timeout(
+        const Duration(seconds: 2),
+      );
     } catch (e) {
       print('FCM cleanupBeforeSignOut failed/timeout: $e');
     }

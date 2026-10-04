@@ -1356,7 +1356,7 @@ class _UnansweredQuestionsBadge extends ConsumerWidget {
     if (unansweredCount <= 0) return const SizedBox.shrink();
 
     return Positioned(
-      top: 90,
+      top: MediaQuery.paddingOf(context).top + 90,
       right: 16,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

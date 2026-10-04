@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
@@ -22,17 +20,9 @@ class MapLocationScreen extends ConsumerStatefulWidget {
 
 class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
     with SingleTickerProviderStateMixin {
-  static const double _sheetExtentDeltaThreshold = 0.006;
-
   gmap.GoogleMapController? _mapController;
   double _currentZoom = 14;
   String? _selectedCategory;
-
-  final DraggableScrollableController _sheetController =
-      DraggableScrollableController();
-  double _sheetExtent = 0.32;
-  double? _pendingSheetExtent;
-  bool _sheetExtentUpdateScheduled = false;
 
   List<MapProduct> _cachedCategorySource = const [];
   List<String> _cachedCategories = const [];
@@ -57,8 +47,6 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
     );
     _headerAnimController!.forward();
 
-    _sheetController.addListener(_handleSheetExtentChange);
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(mapViewModelProvider.notifier).initialize();
     });
@@ -67,29 +55,8 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
   @override
   void dispose() {
     _mapController?.dispose();
-    _sheetController
-      ..removeListener(_handleSheetExtentChange)
-      ..dispose();
     _headerAnimController?.dispose();
     super.dispose();
-  }
-
-  void _handleSheetExtentChange() {
-    final next = _sheetController.size;
-    if ((next - _sheetExtent).abs() < _sheetExtentDeltaThreshold) return;
-
-    _pendingSheetExtent = next;
-    if (_sheetExtentUpdateScheduled) return;
-    _sheetExtentUpdateScheduled = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _sheetExtentUpdateScheduled = false;
-      if (!mounted) return;
-      final pending = _pendingSheetExtent;
-      if (pending == null) return;
-      if ((pending - _sheetExtent).abs() < _sheetExtentDeltaThreshold) return;
-      setState(() => _sheetExtent = pending);
-    });
   }
 
   String? _normalizeCategory(String? category) {
@@ -111,8 +78,8 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
     final filtered = normalized == null
         ? products
         : products
-            .where((p) => p.category.trim().toLowerCase() == normalized)
-            .toList(growable: false);
+              .where((p) => p.category.trim().toLowerCase() == normalized)
+              .toList(growable: false);
 
     _cachedVisibleSource = products;
     _cachedVisibleCategory = normalized;
@@ -124,12 +91,13 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
     if (identical(products, _cachedCategorySource)) {
       return _cachedCategories;
     }
-    final values = products
-        .map((p) => p.category.trim())
-        .where((c) => c.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final values =
+        products
+            .map((p) => p.category.trim())
+            .where((c) => c.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     _cachedCategorySource = products;
     _cachedCategories = values;
     return values;
@@ -150,38 +118,41 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
     }
   }
 
-  double _clampDouble(double value, double min, double max) {
-    if (max < min) return min;
-    return math.max(min, math.min(value, max));
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isLoading =
-        ref.watch(mapViewModelProvider.select((state) => state.isLoading));
-    final error = ref.watch(mapViewModelProvider.select((state) => state.error));
+    final isLoading = ref.watch(
+      mapViewModelProvider.select((state) => state.isLoading),
+    );
+    final error = ref.watch(
+      mapViewModelProvider.select((state) => state.error),
+    );
 
     return Scaffold(
       backgroundColor: backgroundGray50,
       body: isLoading
           ? _buildLoadingState()
           : error != null
-              ? _buildErrorState(error)
-              : _buildActiveMap(),
+          ? _buildErrorState(error)
+          : _buildActiveMap(),
     );
   }
 
   Widget _buildActiveMap() {
-    final nearbyProducts =
-        ref.watch(mapViewModelProvider.select((state) => state.nearbyProducts));
-    final searchRadius =
-        ref.watch(mapViewModelProvider.select((state) => state.searchRadius));
-    final userLocation =
-        ref.watch(mapViewModelProvider.select((state) => state.userLocation));
+    final nearbyProducts = ref.watch(
+      mapViewModelProvider.select((state) => state.nearbyProducts),
+    );
+    final searchRadius = ref.watch(
+      mapViewModelProvider.select((state) => state.searchRadius),
+    );
+    final userLocation = ref.watch(
+      mapViewModelProvider.select((state) => state.userLocation),
+    );
 
     final categories = _extractCategories(nearbyProducts);
-    final visibleProducts =
-        _applyCategoryFilter(nearbyProducts, _selectedCategory);
+    final visibleProducts = _applyCategoryFilter(
+      nearbyProducts,
+      _selectedCategory,
+    );
 
     return _buildMapBody(
       categories: categories,
@@ -197,111 +168,102 @@ class _MapLocationScreenState extends ConsumerState<MapLocationScreen>
     required double searchRadius,
     required LocationEntity? userLocation,
   }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final media = MediaQuery.of(context);
-        final safeTop = media.padding.top;
-        final safeBottom = media.padding.bottom;
-        final screenHeight = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : media.size.height;
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
 
-        final sheetHeight = screenHeight * _sheetExtent;
-
-        const controlsHeight = 160.0;
-        const radiusHeight = 74.0;
-        final topPanelHeight = categories.isEmpty ? 108.0 : 166.0;
-        final minTop = safeTop + topPanelHeight + 10;
-
-        final controlsTop = _clampDouble(
-          screenHeight - sheetHeight - safeBottom - controlsHeight - 14,
-          minTop,
-          screenHeight - controlsHeight - safeBottom - 12,
-        );
-
-        final radiusTop = _clampDouble(
-          screenHeight - sheetHeight - safeBottom - radiusHeight - 14,
-          minTop,
-          screenHeight - radiusHeight - safeBottom - 12,
-        );
-
-        return Stack(
-          children: [
-            _ProductsMapSection(
-              products: visibleProducts,
-              onControllerReady: (controller) {
-                _mapController = controller;
-              },
-              onZoomChanged: (zoom) {
-                _currentZoom = zoom;
-              },
-            ),
-            const _MapReadabilityOverlay(),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: _TopPanel(
-                opacity: _headerOpacity,
-                selectedCategory: _selectedCategory,
-                categories: categories,
-                searchRadius: searchRadius,
-                visibleCount: visibleProducts.length,
-                onCategorySelected: _onCategorySelected,
+    return Stack(
+      children: [
+        _ProductsMapSection(
+          products: visibleProducts,
+          onControllerReady: (controller) {
+            _mapController = controller;
+          },
+          onZoomChanged: (zoom) {
+            _currentZoom = zoom;
+          },
+        ),
+        const _MapReadabilityOverlay(),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          child: _TopPanel(
+            opacity: _headerOpacity,
+            selectedCategory: _selectedCategory,
+            categories: categories,
+            searchRadius: searchRadius,
+            visibleCount: visibleProducts.length,
+            onCategorySelected: _onCategorySelected,
+          ),
+        ),
+        Positioned(
+          left: 14,
+          bottom: safeBottom + 14,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _MapPillButton(
+                icon: Icons.format_list_bulleted_rounded,
+                label: 'Donaciones',
+                value: '${visibleProducts.length}',
+                onTap: () => _showProductsSheet(visibleProducts),
               ),
-            ),
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
-              left: 14,
-              top: radiusTop,
-              child: _RadiusFloatingButton(
-                searchRadius: searchRadius,
+              const SizedBox(height: 10),
+              _MapPillButton(
+                icon: Icons.radar_rounded,
+                label: 'Radio',
+                value: '${(searchRadius / 1000).toStringAsFixed(1)} km',
                 onTap: _showRadiusSheet,
               ),
-            ),
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
-              right: 14,
-              top: controlsTop,
-              child: MapControls(
-                onMyLocationTap: () {
-                  if (userLocation == null) return;
-                  _mapController?.animateCamera(
-                    gmap.CameraUpdate.newLatLngZoom(
-                      gmap.LatLng(userLocation.latitude, userLocation.longitude),
-                      15,
-                    ),
-                  );
-                },
-                onZoomIn: () {
-                  _mapController?.animateCamera(gmap.CameraUpdate.zoomIn());
-                },
-                onZoomOut: () {
-                  _mapController?.animateCamera(gmap.CameraUpdate.zoomOut());
-                },
-              ),
-            ),
-            DraggableScrollableSheet(
-              controller: _sheetController,
-              initialChildSize: 0.32,
-              minChildSize: 0.16,
-              maxChildSize: 0.82,
-              snap: true,
-              snapSizes: const [0.16, 0.32, 0.56, 0.82],
-              builder: (context, scrollController) {
-                return _ProductsListSection(
-                  products: visibleProducts,
-                  controller: _mapController,
-                  currentZoom: _currentZoom,
-                  scrollController: scrollController,
-                );
-              },
-            ),
-          ],
-        );
-      },
+            ],
+          ),
+        ),
+        Positioned(
+          right: 14,
+          bottom: safeBottom + 14,
+          child: MapControls(
+            onMyLocationTap: () {
+              if (userLocation == null) return;
+              _mapController?.animateCamera(
+                gmap.CameraUpdate.newLatLngZoom(
+                  gmap.LatLng(userLocation.latitude, userLocation.longitude),
+                  15,
+                ),
+              );
+            },
+            onZoomIn: () {
+              _mapController?.animateCamera(gmap.CameraUpdate.zoomIn());
+            },
+            onZoomOut: () {
+              _mapController?.animateCamera(gmap.CameraUpdate.zoomOut());
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ponytail: list is a snapshot of the products when opened; reopen to see
+  // updates (radius changes happen in a separate sheet anyway).
+  void _showProductsSheet(List<MapProduct> products) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.56,
+        minChildSize: 0.32,
+        maxChildSize: 0.9,
+        snap: true,
+        builder: (context, scrollController) => _ProductsListSection(
+          products: products,
+          controller: _mapController,
+          currentZoom: _currentZoom,
+          scrollController: scrollController,
+        ),
+      ),
     );
   }
 
@@ -645,9 +607,7 @@ class _CategoryChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? primaryOrange : const Color(0xFFF6F7F9),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: selected ? primaryOrange : borderGray100,
-            ),
+            border: Border.all(color: selected ? primaryOrange : borderGray100),
           ),
           child: Text(
             label,
@@ -663,12 +623,16 @@ class _CategoryChip extends StatelessWidget {
   }
 }
 
-class _RadiusFloatingButton extends StatelessWidget {
-  final double searchRadius;
+class _MapPillButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
   final VoidCallback onTap;
 
-  const _RadiusFloatingButton({
-    required this.searchRadius,
+  const _MapPillButton({
+    required this.icon,
+    required this.label,
+    required this.value,
     required this.onTap,
   });
 
@@ -702,27 +666,23 @@ class _RadiusFloatingButton extends StatelessWidget {
                   color: primaryOrange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
-                  Icons.radar_rounded,
-                  color: primaryOrange,
-                  size: 18,
-                ),
+                child: Icon(icon, color: primaryOrange, size: 18),
               ),
               const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Radio',
-                    style: TextStyle(
+                  Text(
+                    label,
+                    style: const TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                       color: textGray600,
                     ),
                   ),
                   Text(
-                    '${(searchRadius / 1000).toStringAsFixed(1)} km',
+                    value,
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w900,
@@ -767,8 +727,9 @@ class _MapReadabilityOverlay extends StatelessWidget {
 class _RadiusSelectorSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final searchRadius =
-        ref.watch(mapViewModelProvider.select((state) => state.searchRadius));
+    final searchRadius = ref.watch(
+      mapViewModelProvider.select((state) => state.searchRadius),
+    );
     final productsCount = ref.watch(
       mapViewModelProvider.select((state) => state.nearbyProducts.length),
     );
@@ -778,7 +739,12 @@ class _RadiusSelectorSheet extends ConsumerWidget {
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      padding: const EdgeInsets.fromLTRB(24, 14, 24, 32),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        14,
+        24,
+        32 + MediaQuery.paddingOf(context).bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -830,8 +796,10 @@ class _RadiusSelectorSheet extends ConsumerWidget {
               ),
               const Spacer(),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: primaryOrange,
                   borderRadius: BorderRadius.circular(10),
@@ -855,8 +823,7 @@ class _RadiusSelectorSheet extends ConsumerWidget {
               thumbColor: primaryOrange,
               overlayColor: primaryOrange.withValues(alpha: 0.15),
               trackHeight: 5,
-              thumbShape:
-                  const RoundSliderThumbShape(enabledThumbRadius: 10),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
             ),
             child: Slider(
               value: searchRadius.clamp(1000, 100000),
@@ -864,7 +831,9 @@ class _RadiusSelectorSheet extends ConsumerWidget {
               max: 100000,
               divisions: 99,
               onChanged: (value) {
-                ref.read(mapViewModelProvider.notifier).updateSearchRadius(value);
+                ref
+                    .read(mapViewModelProvider.notifier)
+                    .updateSearchRadius(value);
               },
             ),
           ),
@@ -1094,10 +1063,7 @@ class _ProductsMapSectionState extends ConsumerState<_ProductsMapSection> {
       _initialCameraPosition = gmap.CameraPosition(target: target, zoom: 15);
     }
 
-    if (!(productsChanged ||
-        selectedChanged ||
-        radiusChanged ||
-        userChanged)) {
+    if (!(productsChanged || selectedChanged || radiusChanged || userChanged)) {
       return;
     }
 
@@ -1224,14 +1190,17 @@ class _ProductsMapSectionState extends ConsumerState<_ProductsMapSection> {
 
   @override
   Widget build(BuildContext context) {
-    final initial = _initialCameraPosition ??
+    final initial =
+        _initialCameraPosition ??
         const gmap.CameraPosition(
           target: gmap.LatLng(-33.4489, -70.6693),
           zoom: 15,
         );
 
+    final insets = MediaQuery.paddingOf(context);
     return gmap.GoogleMap(
       initialCameraPosition: initial,
+      padding: EdgeInsets.only(top: insets.top, bottom: insets.bottom),
       onMapCreated: (controller) {
         _controller = controller;
         widget.onControllerReady(controller);

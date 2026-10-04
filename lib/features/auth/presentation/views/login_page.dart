@@ -4,6 +4,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
 import '../../../../domain/entities/user.dart';
 import '../widgets/animated_role_button.dart';
+import '../../../hero/presentation/views/hero_home_screen.dart';
 import 'email_verification_screen.dart';
 
 // =========================================================
@@ -130,6 +131,30 @@ class _LoginPageState extends ConsumerState<LoginPage>
                     ],
                   ),
                 ],
+              ),
+            ),
+          ),
+
+          // ── Guest access (App Store 5.1.1) ────────────
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: TextButton(
+                onPressed: () => Navigator.canPop(context)
+                    ? Navigator.pop(context)
+                    : Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const HeroHomeScreen(),
+                        ),
+                      ),
+                child: const Text(
+                  'Explorar sin cuenta',
+                  style: TextStyle(
+                    color: textGray900,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           ),

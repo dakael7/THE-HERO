@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' as gmap;
 import 'package:http/http.dart' as http;
@@ -778,6 +779,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    if (!await requireAccount(context, needsDocument: true)) return;
 
     final devCheckoutBypass = Env.devCheckoutBypass;
     final cartItems = _getCheckoutItems();

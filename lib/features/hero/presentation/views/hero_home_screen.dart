@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -101,11 +102,16 @@ class _HeroHomeScreenState extends ConsumerState<HeroHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isMapTab = ref.watch(
+      heroHomeViewModelProvider.select((state) => state.selectedNavIndex == 1),
+    );
     return WillPopScope(
       onWillPop: () async => false,
       child: Scaffold(
         backgroundColor: backgroundGray50,
         resizeToAvoidBottomInset: false,
+        // Map draws behind the floating bottom nav.
+        extendBody: isMapTab,
         body: Consumer(
           builder: (context, ref, _) {
             final selectedIndex = ref.watch(
@@ -326,11 +332,15 @@ class _PublishCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const DonationQuestionsScreen(),
-                  ),
-                ),
+                onPressed: () async {
+                  if (!await requireAccount(context, needsDocument: true)) return;
+                  if (!context.mounted) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const DonationQuestionsScreen(),
+                    ),
+                  );
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryOrange,
                   foregroundColor: Colors.white,
@@ -397,9 +407,12 @@ class _MyDonationsCard extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             borderRadius: BorderRadius.circular(cornerRadius),
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const MyProductsScreen())),
+            onTap: () async {
+              if (!await requireAccount(context) || !context.mounted) return;
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const MyProductsScreen()));
+            },
             child: Padding(
               padding: EdgeInsets.all(cardPadding),
               child: Column(

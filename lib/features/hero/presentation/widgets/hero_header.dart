@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
@@ -304,7 +305,8 @@ class _HeroHeaderState extends ConsumerState<HeroHeader>
     );
 
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
+        if (!await requireAccount(context) || !mounted) return;
         Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => const ChatListScreen()));

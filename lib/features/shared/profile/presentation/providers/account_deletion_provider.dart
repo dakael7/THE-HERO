@@ -32,6 +32,22 @@ class AccountDeletionNotifier extends Notifier<AsyncValue<void>> {
         // Best-effort: account deletion must not be blocked by FCM cleanup.
       }
 
+      // App Store 5.1.1(v): revoke Sign in with Apple tokens on deletion.
+      if (user.providerData.any((p) => p.providerId == 'apple.com')) {
+        final credential = await user.reauthenticateWithProvider(
+          AppleAuthProvider(),
+        );
+        final code = credential.additionalUserInfo?.authorizationCode;
+        if (code != null) {
+          try {
+            await FirebaseAuth.instance.revokeTokenWithAuthorizationCode(code);
+          } catch (_) {
+            // Best-effort: a missing Apple key in Firebase must not block
+            // the account deletion itself.
+          }
+        }
+      }
+
       await user.getIdToken(true);
       final callable = _functions.httpsCallable('deleteMyAccount');
       await callable.call(<String, dynamic>{'confirm': true});

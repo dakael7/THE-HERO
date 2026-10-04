@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
 import 'package:cached_network_image/cached_network_image.dart';
@@ -586,8 +587,10 @@ class _FavoriteButtonState extends ConsumerState<_FavoriteButton> {
       shadowColor: Colors.black12,
       child: InkWell(
         customBorder: const CircleBorder(),
-        onTap: userId == null || isPending
+        onTap: isPending
             ? null
+            : userId == null
+            ? () => requireAccount(context)
             : () async {
                 final nextFavorite = !isFavorite;
                 setState(() {

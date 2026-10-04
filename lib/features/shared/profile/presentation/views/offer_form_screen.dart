@@ -1354,7 +1354,7 @@ class _OfferFormScreenState extends ConsumerState<OfferFormScreen>
                           ),
                           subtitle: Text(
                             _allowInPersonPickup
-                                ? 'Los compradores podrán coordinar retiro presencial.'
+                                ? 'Los receptores podrán coordinar retiro presencial.'
                                 : 'Solo envío o retiro vía concierge (si aplica).',
                             style: const TextStyle(
                               color: textGray600,

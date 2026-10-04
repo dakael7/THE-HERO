@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -1030,7 +1031,7 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                   // Counter badge
                   if (galleryImages.length > 1)
                     Positioned(
-                      top: 90,
+                      top: MediaQuery.paddingOf(context).top + 90,
                       left: 14,
                       child: ValueListenableBuilder<int>(
                         valueListenable: _galleryIndexNotifier,
@@ -1249,10 +1250,12 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
                             const SizedBox(width: 8),
                           ],
                           _StatBadge(
-                            icon: Icons.shopping_bag_outlined,
-                            label: soldCount > 0
-                                ? '$soldCount vendidos'
-                                : 'Sin ventas',
+                            icon: Icons.volunteer_activism_outlined,
+                            label: soldCount == 0
+                                ? 'Sin solicitudes'
+                                : soldCount == 1
+                                ? '1 solicitud'
+                                : '$soldCount solicitudes',
                             iconColor: primaryOrange,
                           ),
                           const SizedBox(width: 8),
@@ -1941,11 +1944,12 @@ class _OfferDetailScreenState extends ConsumerState<OfferDetailScreen> {
     }
   }
 
-  void _showAddQuestionDialog(
+  Future<void> _showAddQuestionDialog(
     BuildContext context,
     WidgetRef ref,
     String offerId,
-  ) {
+  ) async {
+    if (!await requireAccount(context) || !context.mounted) return;
     final textController = TextEditingController();
     showDialog(
       context: context,
@@ -2142,8 +2146,10 @@ class _OfferFavoriteActionButtonState
         ),
         child: IconButton(
           tooltip: isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos',
-          onPressed: userId == null || isPending
+          onPressed: isPending
               ? null
+              : userId == null
+              ? () => requireAccount(context)
               : () async {
                   final nextFavorite = !isFavorite;
                   setState(() {

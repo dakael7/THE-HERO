@@ -1,26 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../data/providers/network_providers.dart';
 import '../../../../domain/entities/user_report.dart';
 import '../../../../domain/providers/moderation_usecase_providers.dart';
 
-void showReportUserSheet(
+Future<void> showReportUserSheet(
   BuildContext context, {
   required String reportedUserId,
   required String reportedRole,
   String? relatedOfferId,
-}) {
+}) async {
+  if (!await requireAccount(context) || !context.mounted) return;
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => ReportUserBottomSheet(
-      reportedUserId: reportedUserId,
-      reportedRole: reportedRole,
-      relatedOfferId: relatedOfferId,
+    builder: (_) => SafeArea(
+      top: false,
+      child: ReportUserBottomSheet(
+        reportedUserId: reportedUserId,
+        reportedRole: reportedRole,
+        relatedOfferId: relatedOfferId,
+      ),
     ),
   );
 }
@@ -171,7 +177,9 @@ class _ReportUserBottomSheetState extends ConsumerState<ReportUserBottomSheet> {
       setState(() => _loading = false);
       final message = e.toString().replaceFirst('Exception: ', '').trim();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message.isEmpty ? 'Error al reportar' : message)),
+        SnackBar(
+          content: Text(message.isEmpty ? 'Error al reportar' : message),
+        ),
       );
     }
   }
@@ -187,11 +195,7 @@ class _ReportUserSuccessView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.check_circle_outline,
-            color: Colors.green,
-            size: 56,
-          ),
+          const Icon(Icons.check_circle_outline, color: Colors.green, size: 56),
           const SizedBox(height: 16),
           const Text(
             'Reporte enviado',

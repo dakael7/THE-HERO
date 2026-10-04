@@ -1222,7 +1222,7 @@ class _OrderStatusTimeline extends StatelessWidget {
     final steps = inPersonPickup
         ? [
             _StepData('En espera', 'Coordina el retiro por chat'),
-            _StepData('Coordinado', 'Retiro coordinado con el comprador'),
+            _StepData('Coordinado', 'Retiro coordinado con el receptor'),
             _StepData('Listo', 'Deja listo el pedido para retiro'),
             _StepData('Retirado', 'Pedido completado'),
           ]
@@ -1508,7 +1508,7 @@ class _SellerChatActions extends ConsumerWidget {
           .get();
       if (chatDoc.exists) {
         final stored = chatDoc.data()?['buyerName'] as String?;
-        const genericNames = {'Hero', 'Comprador', 'Cliente', ''};
+        const genericNames = {'Hero', 'Comprador', 'Receptor', 'Cliente', ''};
         if (stored != null && !genericNames.contains(stored.trim())) {
           resolvedBuyerName = stored;
         }
@@ -1576,8 +1576,8 @@ class _SellerChatActions extends ConsumerWidget {
 
     final buyerAsync = ref.watch(userByIdStreamProvider(order.heroId));
     final buyerName = buyerAsync.maybeWhen(
-      data: (u) => u?.fullName ?? 'Comprador',
-      orElse: () => 'Comprador',
+      data: (u) => u?.fullName ?? 'Receptor',
+      orElse: () => 'Receptor',
     );
     final buyerPhotoUrl = buyerAsync.maybeWhen(
       data: (u) => u?.profilePhotoUrl,

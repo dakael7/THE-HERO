@@ -220,9 +220,8 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
     if (_lastNameController.text.trim().isEmpty) missing.add('Apellido');
     if (_phoneController.text.trim().isEmpty) missing.add('Telefono');
     final document = _rutController.text.trim();
-    if (document.isEmpty) {
-      missing.add('Documento');
-    } else if (_selectedDocumentType == 'rut' &&
+    if (document.isNotEmpty &&
+        _selectedDocumentType == 'rut' &&
         Validators.rut(document) != null) {
       missing.add('RUT valido');
     }
@@ -765,23 +764,23 @@ class _RegisterHeroScreenState extends ConsumerState<RegisterHeroScreen>
                           ),
                           decoration: _inputDecoration(
                             label: _selectedDocumentType == 'rut'
-                                ? 'RUT'
+                                ? 'RUT (opcional)'
                                 : _selectedDocumentType == 'cedula'
-                                ? 'Cédula de identidad'
-                                : 'Número de pasaporte',
+                                ? 'Cédula de identidad (opcional)'
+                                : 'Número de pasaporte (opcional)',
                             hint: _selectedDocumentType == 'rut'
                                 ? 'Ej: 19.123.456-K'
                                 : 'Ej: A1234567',
                             prefixIconData: Icons.credit_card_outlined,
                           ),
+                          // Optional at signup (App Store 5.1.1); required
+                          // later only to publish or request donations.
                           validator: (value) {
+                            if ((value ?? '').trim().isEmpty) return null;
                             if (_selectedDocumentType == 'rut') {
                               return Validators.rut(value);
                             }
-                            return Validators.required(
-                              value,
-                              fieldName: 'Documento',
-                            );
+                            return null;
                           },
                         ),
                       ],

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -47,7 +48,8 @@ class _EmailVerificationScreenState
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
   bool _accountExists = false;
-  bool _requiresGoogleSignIn = false;
+  // 'Google' or 'Apple' when the email belongs to a social-login account.
+  String? _requiredSocial;
   bool _obscurePassword = true;
   bool _navigated = false;
 
@@ -318,7 +320,6 @@ class _EmailVerificationScreenState
     final authNotifier = ref.read(authNotifierProvider.notifier);
     if (widget.userRole == UserRole.hero) {
       final documentId = user.profileDocumentId.trim();
-      if (documentId.isEmpty) return false;
       await authNotifier.upgradeToHero(
         uid: uid,
         firstName: firstName,
@@ -343,7 +344,6 @@ class _EmailVerificationScreenState
     }
 
     final rut = user.rutDocumentId.trim();
-    if (rut.isEmpty) return false;
     await authNotifier.upgradeToRider(
       uid: uid,
       firstName: firstName,
@@ -366,7 +366,7 @@ class _EmailVerificationScreenState
     return true;
   }
 
-  Future<void> _handleGoogleSignIn() async {
+  Future<void> _handleSocialSignIn({bool apple = false}) async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
     await Future<void>.delayed(const Duration(milliseconds: 16));
@@ -378,10 +378,10 @@ class _EmailVerificationScreenState
 
     try {
       final authNotifier = ref.read(authNotifierProvider.notifier);
-      logRoute('google_sign_in:start role=${widget.userRole}');
-      final currentUser = await authNotifier.signInWithGoogleAndCreateUser(
-        widget.userRole,
-      );
+      logRoute('social_sign_in:start apple=$apple role=${widget.userRole}');
+      final currentUser = await (apple
+          ? authNotifier.signInWithAppleAndCreateUser
+          : authNotifier.signInWithGoogleAndCreateUser)(widget.userRole);
       if (!mounted) return;
 
       final authUser = fb_auth.FirebaseAuth.instance.currentUser;
@@ -410,17 +410,14 @@ class _EmailVerificationScreenState
       );
       final routedUser = resolvedUser.user;
       final hasFirebaseSnapshot = resolvedUser.hasFirebaseSnapshot;
-      final missingDocId = widget.userRole == UserRole.rider
-          ? routedUser.rutDocumentId.trim().isEmpty
-          : routedUser.profileDocumentId.trim().isEmpty;
+      // Document (RUT) is not required at signup (App Store 5.1.1).
       final missingPhone = routedUser.contact.phoneNumber.trim().isEmpty;
-      final needsCriticalData =
-          hasFirebaseSnapshot && (missingDocId || missingPhone);
+      final needsCriticalData = hasFirebaseSnapshot && missingPhone;
 
       final missingPhoto = (routedUser.profilePhotoUrl ?? '').trim().isEmpty;
 
       logRoute(
-        'profile_check uid=${routedUser.id} roleWanted=${widget.userRole} roles=${routedUser.roles} hasFirebaseSnapshot=$hasFirebaseSnapshot missingDocId=$missingDocId missingPhone=$missingPhone missingPhoto=$missingPhoto isHero=${routedUser.isHero} isRider=${routedUser.isRider}',
+        'profile_check uid=${routedUser.id} roleWanted=${widget.userRole} roles=${routedUser.roles} hasFirebaseSnapshot=$hasFirebaseSnapshot missingPhone=$missingPhone missingPhoto=$missingPhoto isHero=${routedUser.isHero} isRider=${routedUser.isRider}',
       );
 
       if (widget.userRole == UserRole.hero) {
@@ -533,13 +530,19 @@ class _EmailVerificationScreenState
           ? (querySnapshot.docs.first.data()['authProvider']?.toString() ?? '')
           : '';
 
-      final requiresGoogle = exists && authProvider == 'google';
-      final accountExists = exists && !requiresGoogle;
+      final requiredSocial = !exists
+          ? null
+          : authProvider == 'google'
+          ? 'Google'
+          : authProvider == 'apple'
+          ? 'Apple'
+          : null;
+      final accountExists = exists && requiredSocial == null;
 
       if (mounted) {
         setState(() {
           _accountExists = accountExists;
-          _requiresGoogleSignIn = requiresGoogle;
+          _requiredSocial = requiredSocial;
           _isLoading = false;
         });
       }
@@ -547,7 +550,7 @@ class _EmailVerificationScreenState
       if (mounted) {
         setState(() {
           _accountExists = false;
-          _requiresGoogleSignIn = false;
+          _requiredSocial = null;
           _isLoading = false;
         });
       }
@@ -813,10 +816,10 @@ class _EmailVerificationScreenState
                     keyboardType: TextInputType.emailAddress,
                     enabled: !_isLoading,
                     onChanged: (value) {
-                      if (_accountExists || _requiresGoogleSignIn) {
+                      if (_accountExists || _requiredSocial != null) {
                         setState(() {
                           _accountExists = false;
-                          _requiresGoogleSignIn = false;
+                          _requiredSocial = null;
                           _passwordController.clear();
                         });
                       }
@@ -963,9 +966,9 @@ class _EmailVerificationScreenState
                               if (!_accountExists &&
                                   _emailController.text.trim().isNotEmpty) {
                                 await _checkEmail();
-                                if (_requiresGoogleSignIn) {
+                                if (_requiredSocial != null) {
                                   _showErrorDialog(
-                                    'Esta cuenta está registrada con Google. Inicia sesión con Google.',
+                                    'Esta cuenta está registrada con $_requiredSocial. Toca "Continuar con $_requiredSocial".',
                                   );
                                   return;
                                 }
@@ -997,8 +1000,8 @@ class _EmailVerificationScreenState
                           : Text(
                               _accountExists
                                   ? 'Ingresar'
-                                  : (_requiresGoogleSignIn
-                                        ? 'Continuar con Google'
+                                  : (_requiredSocial != null
+                                        ? 'Continuar con $_requiredSocial'
                                         : 'Continuar'),
                               style: const TextStyle(
                                 fontSize: 18,
@@ -1070,6 +1073,19 @@ class _EmailVerificationScreenState
 
                   const SizedBox(height: 30),
 
+                  // App Store 4.8: Apple must be offered next to Google.
+                  if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+                    _buildSocialButton(
+                      icon: Icons.apple,
+                      label: 'Continuar con Apple',
+                      isApple: true,
+                      onTap: _isLoading
+                          ? null
+                          : () => _handleSocialSignIn(apple: true),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
                   _buildSocialButton(
                     iconWidget: SvgPicture.asset(
                       'assets/icono-google.svg',
@@ -1089,7 +1105,7 @@ class _EmailVerificationScreenState
                     onTap: _isLoading
                         ? null
                         : () async {
-                            await _handleGoogleSignIn();
+                            await _handleSocialSignIn();
                           },
                   ),
 
@@ -1174,19 +1190,21 @@ class _EmailVerificationScreenState
               iconWidget ??
               Icon(
                 icon,
-                color: isApple ? Colors.black : Colors.blue.shade700,
+                color: isApple ? Colors.white : Colors.blue.shade700,
                 size: 28,
               ),
           label: Text(
             label,
-            style: const TextStyle(
-              color: textGray900,
+            style: TextStyle(
+              color: isApple ? Colors.white : textGray900,
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
           ),
           style: OutlinedButton.styleFrom(
-            backgroundColor: Colors.blue.shade50.withValues(alpha: 0.5),
+            backgroundColor: isApple
+                ? Colors.black
+                : Colors.blue.shade50.withValues(alpha: 0.5),
             side: BorderSide.none,
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(

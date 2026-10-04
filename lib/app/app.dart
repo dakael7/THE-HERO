@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -30,7 +31,10 @@ class App extends ConsumerWidget {
           orElse: () => false,
         );
 
+        final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
         return SafeArea(
+          top: !isIOS,
+          bottom: !isIOS,
           child: RutVerificationLostImageRecovery(
             enabled: recoveryEnabled,
             child: child ?? const SizedBox.shrink(),
@@ -50,8 +54,14 @@ class App extends ConsumerWidget {
       ),
       home: bootstrapAsync.when(
         data: (bootstrap) {
+          // Guests browse the catalog without an account (App Store 5.1.1).
           if (!bootstrap.isAuthenticated) {
-            return LoginPage(initialMessage: bootstrap.authMessage);
+            final message = bootstrap.authMessage;
+            // Firebase session without a profile doc: finish signup, not guest.
+            if (message != null || FirebaseConfig.auth.currentUser != null) {
+              return LoginPage(initialMessage: message);
+            }
+            return const HeroHomeScreen();
           }
 
           final user = bootstrap.user;
@@ -76,7 +86,7 @@ class App extends ConsumerWidget {
           if (hasFirebaseSession) {
             return _buildLoadingScreen();
           }
-          return const LoginPage();
+          return const HeroHomeScreen();
         },
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../viewmodels/hero_home_viewmodel.dart';
@@ -152,7 +153,11 @@ class HeroBottomNav extends ConsumerWidget {
                             'Avisos',
                             3,
                             selectedIndex,
-                            () => viewModel.selectNavItem(3),
+                            () async {
+                              if (await requireAccount(context)) {
+                                viewModel.selectNavItem(3);
+                              }
+                            },
                             badgeCount:
                                 notificationsCount > 0 ? notificationsCount : null,
                             itemPadding: itemPadding,
@@ -169,7 +174,11 @@ class HeroBottomNav extends ConsumerWidget {
                             'Perfil',
                             4,
                             selectedIndex,
-                            () => viewModel.selectNavItem(4),
+                            () async {
+                              if (await requireAccount(context)) {
+                                viewModel.selectNavItem(4);
+                              }
+                            },
                             itemPadding: itemPadding,
                             fontSize: fontSize,
                             iconSize: iconSize,

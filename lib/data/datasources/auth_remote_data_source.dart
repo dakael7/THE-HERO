@@ -50,6 +50,11 @@ abstract class AuthRemoteDataSource {
     required String documentId,
     required String phone,
   });
+  Future<void> saveDocument({
+    required String uid,
+    required String documentType,
+    required String documentId,
+  });
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
@@ -89,6 +94,32 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     }
 
     return '${match.group(1)}-${match.group(2)}';
+  }
+
+  /// Stores the identity document after signup (needed to publish/request
+  /// donations and for rider verification). A RUT also fills riderProfile.rut
+  /// for riders.
+  @override
+  Future<void> saveDocument({
+    required String uid,
+    required String documentType,
+    required String documentId,
+  }) async {
+    final type = documentType.trim().toLowerCase();
+    final isRut = type == 'rut';
+    final id = isRut ? _normalizeRutForStorage(documentId) : documentId.trim();
+    if (isRut) {
+      await _assertRutNotRegistered(normalizedRut: id, ignoreUserId: uid);
+    }
+    final userRef = _firestore.collection('users').doc(uid);
+    final current = await userRef.get();
+    await userRef.update({
+      'identity.documentType': type,
+      'identity.documentId': id,
+      if (isRut && current.data()?['riderProfile'] is Map)
+        'riderProfile.rut': id,
+      'status.lastUpdated': DateTime.now().toIso8601String(),
+    });
   }
 
   Future<void> _sendVerificationEmail(User user) async {
@@ -483,7 +514,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     };
 
     final patch = <String, dynamic>{
-      'authProvider': 'google',
+      'authProvider': user.providerData.any((p) => p.providerId == 'apple.com')
+          ? 'apple'
+          : 'google',
       'roles': _mergeGoogleRoles(existingData, role),
       'status': {
         'createdAt': _isBlankValue(status['createdAt'])
@@ -554,6 +587,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String normalizedRut,
     String? ignoreUserId,
   }) async {
+    if (normalizedRut.isEmpty) return;
     final snapshots = await Future.wait([
       _firestore
           .collection('users')
@@ -724,7 +758,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     try {
       print('=== DEBUG registerHero ===');
       print('Email: "$email"');
-      print('Password: "$password"');
       print('FirstName: "$firstName"');
       print('LastName: "$lastName"');
       print('DocumentType: "$documentType"');
@@ -836,7 +869,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     try {
       print('=== DEBUG registerRider ===');
       print('Email: "$email"');
-      print('Password: "$password"');
       print('FirstName: "$firstName"');
       print('LastName: "$lastName"');
       print('RUT: "$rut"');
@@ -1245,10 +1277,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (resolvedPhone.isEmpty) {
         throw Exception('Telefono es obligatorio.');
       }
-      if (normalizedRut.isEmpty) {
-        throw Exception('RUT es obligatorio para activar Rider.');
-      }
-
       final now = DateTime.now().toIso8601String();
 
       final riderProfileData = {
@@ -1407,10 +1435,6 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (resolvedPhone.isEmpty) {
         throw Exception('Telefono es obligatorio.');
       }
-      if (normalizedDocumentId.isEmpty) {
-        throw Exception('Documento es obligatorio para activar Hero.');
-      }
-
       if (normalizedDocumentType == 'rut') {
         await _assertRutNotRegistered(
           normalizedRut: normalizedDocumentId,

@@ -407,7 +407,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+            padding: EdgeInsets.fromLTRB(16, 10, 16, 8 + MediaQuery.paddingOf(context).bottom),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

@@ -157,7 +157,10 @@ class SortOptionsButton extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
+        padding: EdgeInsets.only(
+          top: 20,
+          bottom: 20 + MediaQuery.paddingOf(context).bottom,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

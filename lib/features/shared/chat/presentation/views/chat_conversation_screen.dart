@@ -425,7 +425,7 @@ class _ChatConversationScreenState
               // ── Scroll-to-bottom FAB ────────────────────────────────────
               if (_showScrollDown)
                 Positioned(
-                  bottom: 80,
+                  bottom: 80 + MediaQuery.paddingOf(context).bottom,
                   right: 16,
                   child: GestureDetector(
                     onTap: () => _scrollToBottom(),

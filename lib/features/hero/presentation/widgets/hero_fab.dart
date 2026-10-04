@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/responsive_utils.dart';
@@ -86,7 +87,8 @@ class _HeroFABState extends ConsumerState<HeroFAB>
     super.dispose();
   }
 
-  void _navigateToCart() {
+  Future<void> _navigateToCart() async {
+    if (!await requireAccount(context) || !mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const HeroCartScreen(),

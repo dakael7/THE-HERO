@@ -218,9 +218,7 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
     if (_lastNameController.text.trim().isEmpty) missing.add('Apellido');
     if (_phoneController.text.trim().isEmpty) missing.add('Telefono');
     final rut = _rutController.text.trim();
-    if (rut.isEmpty) {
-      missing.add('RUT');
-    } else if (Validators.rut(rut) != null) {
+    if (rut.isNotEmpty && Validators.rut(rut) != null) {
       missing.add('RUT valido');
     }
     if (!_acceptedTerms) missing.add('Terminos');
@@ -723,11 +721,15 @@ class _RegisterRiderScreenState extends ConsumerState<RegisterRiderScreen>
                             fontSize: 14,
                           ),
                           decoration: _inputDecoration(
-                            label: 'RUT',
+                            label: 'RUT (opcional)',
                             hint: 'Ej: 19.123.456-K',
                             prefixIconData: Icons.credit_card_outlined,
                           ),
-                          validator: (value) => Validators.rut(value),
+                          // Optional at signup (App Store 5.1.1); verified
+                          // before accepting deliveries.
+                          validator: (value) => (value ?? '').trim().isEmpty
+                              ? null
+                              : Validators.rut(value),
                         ),
                       ],
                     ),

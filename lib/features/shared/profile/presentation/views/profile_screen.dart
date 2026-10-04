@@ -860,8 +860,7 @@ class ProfileScreen extends ConsumerWidget {
           ProfileMenuTile(
             icon: Icons.location_on_outlined,
             title: 'Mi dirección',
-            trailingText:
-                user.address?.displayAddressMultiline ?? 'No configurada',
+            subtitle: user.address?.displayAddressMultiline ?? 'No configurada',
             onTap: () {
               Navigator.push(
                 context,

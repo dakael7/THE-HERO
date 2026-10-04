@@ -52,6 +52,13 @@ class _FailingSignOutRemoteDataSource implements AuthRemoteDataSource {
   Future<bool> checkEmailExists(String email) => throw UnimplementedError();
 
   @override
+  Future<void> saveDocument({
+    required String uid,
+    required String documentType,
+    required String documentId,
+  }) => throw UnimplementedError();
+
+  @override
   Future<UserModel?> getCurrentUser() => throw UnimplementedError();
 
   @override

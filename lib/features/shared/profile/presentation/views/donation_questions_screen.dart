@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:the_hero/core/common/require_account.dart';
 
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
@@ -122,6 +123,13 @@ class _DonationQuestionsScreenState extends State<DonationQuestionsScreen> {
                       ? null
                       : _canContinue
                       ? () async {
+                          if (!await requireAccount(
+                                context,
+                                needsDocument: true,
+                              ) ||
+                              !context.mounted) {
+                            return;
+                          }
                           final result = await Navigator.of(context).push<bool>(
                             MaterialPageRoute(
                               builder: (_) => OfferFormScreen(

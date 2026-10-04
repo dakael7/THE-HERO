@@ -5,6 +5,10 @@ class ProfileMenuTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? trailingText;
+
+  /// Long values (e.g. an address) go here, under the title, so they wrap
+  /// instead of squeezing the title.
+  final String? subtitle;
   final VoidCallback? onTap;
 
   const ProfileMenuTile({
@@ -12,6 +16,7 @@ class ProfileMenuTile extends StatelessWidget {
     required this.icon,
     required this.title,
     this.trailingText,
+    this.subtitle,
     this.onTap,
   });
 
@@ -52,13 +57,31 @@ class ProfileMenuTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: enabled ? textGray900 : textGray600,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: enabled ? textGray900 : textGray600,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: textGray600,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (trailingText != null) ...[

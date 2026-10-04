@@ -100,7 +100,7 @@ class _InPersonBuyerRatingScreenState
           ),
           const SizedBox(height: 16),
           _RatingCard(
-            roleLabel: 'Hero comprador',
+            roleLabel: 'Hero receptor',
             name: buyerName,
             photoUrl: buyerPhotoUrl,
             rating: _rating,
