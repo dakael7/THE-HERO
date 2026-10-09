@@ -664,134 +664,175 @@ class _RiderLicenseVerificationScreenState
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: accent.withValues(alpha: 0.25)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Estado',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: textGray900,
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: accent.withValues(alpha: 0.25)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Estado',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: textGray900,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  switchInCurve: Curves.easeOut,
-                  switchOutCurve: Curves.easeIn,
-                  child: Row(
-                    key: ValueKey<String>(status ?? 'pending'),
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 8),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    child: Row(
+                      key: ValueKey<String>(status ?? 'pending'),
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (status == 'processing')
+                                SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.6,
+                                    color: accent,
+                                  ),
+                                ),
+                              Icon(
+                                _statusIcon(status),
+                                color: status == 'processing'
+                                    ? Colors.transparent
+                                    : accent,
+                              ),
+                            ],
+                          ),
                         ),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            if (status == 'processing')
-                              SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.6,
-                                  color: accent,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _statusText(status),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: textGray900,
                                 ),
                               ),
-                            Icon(
-                              _statusIcon(status),
-                              color: status == 'processing'
-                                  ? Colors.transparent
-                                  : accent,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _statusText(status),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: textGray900,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              _statusSubtitle(status),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: textGray700,
-                              ),
-                            ),
-                            if (ocrDetails.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(
-                                ocrDetails.join('\n'),
+                                _statusSubtitle(status),
                                 style: const TextStyle(
-                                  fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                   color: textGray700,
                                 ),
                               ),
-                            ],
-                            const SizedBox(height: 12),
-                            _timeline(
-                              step: timelineStep,
-                              accent: accent,
-                              status: status,
-                            ),
-                            if ((user?.documentId ?? '').isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                user!.documentId,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: textGray900,
+                              if (ocrDetails.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  ocrDetails.join('\n'),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: textGray700,
+                                  ),
                                 ),
+                              ],
+                              const SizedBox(height: 12),
+                              _timeline(
+                                step: timelineStep,
+                                accent: accent,
+                                status: status,
                               ),
+                              if ((user?.documentId ?? '').isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  user!.documentId,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: textGray900,
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: backgroundWhite,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: borderGray100),
+              ),
+              child: const Text(
+                'Sube fotos claras de tu licencia. Debe estar vigente y tu clase debe corresponder a tu vehículo.',
+                style: TextStyle(fontWeight: FontWeight.w700, color: textGray700),
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (_saving && _uploadLabel != null) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: backgroundWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: borderGray100),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: backgroundWhite,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: borderGray100),
-            ),
-            child: const Text(
-              'Sube fotos claras de tu licencia. Debe estar vigente y tu clase debe corresponder a tu vehículo.',
-              style: TextStyle(fontWeight: FontWeight.w700, color: textGray700),
-            ),
-          ),
-          const SizedBox(height: 14),
-          if (_saving && _uploadLabel != null) ...[
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Subiendo ${_uploadLabel!}…',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    LinearProgressIndicator(
+                      value: _uploadProgress.clamp(0, 1),
+                      color: primaryOrange,
+                      backgroundColor: backgroundGray50,
+                      minHeight: 10,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${(_uploadProgress * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: textGray700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -800,121 +841,83 @@ class _RiderLicenseVerificationScreenState
                 border: Border.all(color: borderGray100),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Subiendo ${_uploadLabel!}…',
-                    style: const TextStyle(
+                  const Text(
+                    'Documento',
+                    style: TextStyle(
                       fontWeight: FontWeight.w900,
                       color: textGray900,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  LinearProgressIndicator(
-                    value: _uploadProgress.clamp(0, 1),
-                    color: primaryOrange,
-                    backgroundColor: backgroundGray50,
-                    minHeight: 10,
-                    borderRadius: BorderRadius.circular(999),
+                  const SizedBox(height: 12),
+                  _DocUploadTile(
+                    title: 'Licencia (frente)',
+                    selected: _front != null,
+                    onTap: () {
+                      if (!canEdit) {
+                        _showLockedSnackBar();
+                        return;
+                      }
+                      _pickImage(
+                        label: 'licencia (frente)',
+                        status: status,
+                        onPicked: (b, n) {
+                          _front = b;
+                          _frontName = n;
+                        },
+                      );
+                    },
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${(_uploadProgress * 100).toStringAsFixed(0)}%',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: textGray700,
-                    ),
+                  const SizedBox(height: 10),
+                  _DocUploadTile(
+                    title: 'Licencia (reverso)',
+                    selected: _back != null,
+                    onTap: () {
+                      if (!canEdit) {
+                        _showLockedSnackBar();
+                        return;
+                      }
+                      _pickImage(
+                        label: 'licencia (reverso)',
+                        status: status,
+                        onPicked: (b, n) {
+                          _back = b;
+                          _backName = n;
+                        },
+                      );
+                    },
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 14),
-          ],
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: backgroundWhite,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: borderGray100),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Documento',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: textGray900,
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: (_saving || !canEdit) ? null : () => _submit(status),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryOrange,
+                  foregroundColor: backgroundWhite,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                const SizedBox(height: 12),
-                _DocUploadTile(
-                  title: 'Licencia (frente)',
-                  selected: _front != null,
-                  onTap: () {
-                    if (!canEdit) {
-                      _showLockedSnackBar();
-                      return;
-                    }
-                    _pickImage(
-                      label: 'licencia (frente)',
-                      status: status,
-                      onPicked: (b, n) {
-                        _front = b;
-                        _frontName = n;
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: 10),
-                _DocUploadTile(
-                  title: 'Licencia (reverso)',
-                  selected: _back != null,
-                  onTap: () {
-                    if (!canEdit) {
-                      _showLockedSnackBar();
-                      return;
-                    }
-                    _pickImage(
-                      label: 'licencia (reverso)',
-                      status: status,
-                      onPicked: (b, n) {
-                        _back = b;
-                        _backName = n;
-                      },
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: (_saving || !canEdit) ? null : () => _submit(status),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryOrange,
-                foregroundColor: backgroundWhite,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                child: Text(
+                  _saving
+                      ? 'Enviando…'
+                      : (status == 'rejected' || status == 'failed')
+                      ? 'Reintentar verificación'
+                      : (status == 'approved')
+                      ? 'Verificación completada'
+                      : 'Enviar verificación',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
-              child: Text(
-                _saving
-                    ? 'Enviando…'
-                    : (status == 'rejected' || status == 'failed')
-                    ? 'Reintentar verificación'
-                    : (status == 'approved')
-                    ? 'Verificación completada'
-                    : 'Enviar verificación',
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

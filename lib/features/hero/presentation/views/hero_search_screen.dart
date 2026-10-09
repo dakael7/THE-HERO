@@ -45,7 +45,9 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Column(
+      body: SafeArea(
+        top: false,
+        child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -205,6 +207,7 @@ class _HeroSearchScreenState extends ConsumerState<HeroSearchScreen> {
                   ),
           ),
         ],
+      ),
       ),
     );
   }

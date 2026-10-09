@@ -208,278 +208,281 @@ class _DriverRatingScreenState extends ConsumerState<DriverRatingScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Success card
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: categoryTextGreen.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Success card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                  child: const Icon(
-                    Icons.check_circle,
-                    size: 40,
-                    color: categoryTextGreen,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  '¡Pedido entregado!',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: textGray900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Califica tu experiencia con el Rider y el Hero Donador',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 14, color: textGray700),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Rating card
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _participantHeader(
-                  roleLabel: 'Rider',
-                  name: riderName,
-                  photoUrl: riderPhotoUrl,
-                ),
-                const SizedBox(height: 16),
-                Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: List.generate(5, (index) {
-                      final starIndex = index + 1;
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _rating = starIndex;
-                          });
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Icon(
-                            starIndex <= _rating
-                                ? Icons.star
-                                : Icons.star_border,
-                            size: 48,
-                            color: starIndex <= _rating
-                                ? primaryYellow
-                                : textGray600,
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    _getRatingText(_rating),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: textGray700,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Comentario (opcional)',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: textGray900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _commentController,
-                  maxLines: 4,
-                  maxLength: 200,
-                  decoration: InputDecoration(
-                    hintText: 'Cuéntanos sobre tu experiencia...',
-                    hintStyle: const TextStyle(color: textGray600),
-                    filled: true,
-                    fillColor: backgroundGray50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.all(16),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _participantHeader(
-                  roleLabel: 'Hero Donador',
-                  name: sellerName,
-                  photoUrl: sellerPhotoUrl,
-                ),
-                const SizedBox(height: 16),
-                Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: List.generate(5, (index) {
-                      final starIndex = index + 1;
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _sellerRating = starIndex;
-                          });
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Icon(
-                            starIndex <= _sellerRating
-                                ? Icons.star
-                                : Icons.star_border,
-                            size: 48,
-                            color: starIndex <= _sellerRating
-                                ? primaryYellow
-                                : textGray600,
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    _getRatingText(_sellerRating),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: textGray700,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Comentario (opcional)',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: textGray900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _sellerCommentController,
-                  maxLines: 4,
-                  maxLength: 200,
-                  decoration: InputDecoration(
-                    hintText: 'Cuéntanos sobre tu experiencia...',
-                    hintStyle: const TextStyle(color: textGray600),
-                    filled: true,
-                    fillColor: backgroundGray50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.all(16),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Submit button
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: _isSubmitting ? null : _submitRating,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryOrange,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                disabledBackgroundColor: borderGray100,
-                disabledForegroundColor: textGray600,
+                ],
               ),
-              child: _isSubmitting
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Text(
-                      'Enviar calificación',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
+              child: Column(
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: categoryTextGreen.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Icon(
+                      Icons.check_circle,
+                      size: 40,
+                      color: categoryTextGreen,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '¡Pedido entregado!',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: textGray900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Califica tu experiencia con el Rider y el Hero Donador',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, color: textGray700),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Rating card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _participantHeader(
+                    roleLabel: 'Rider',
+                    name: riderName,
+                    photoUrl: riderPhotoUrl,
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(5, (index) {
+                        final starIndex = index + 1;
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _rating = starIndex;
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(
+                              starIndex <= _rating
+                                  ? Icons.star
+                                  : Icons.star_border,
+                              size: 48,
+                              color: starIndex <= _rating
+                                  ? primaryYellow
+                                  : textGray600,
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      _getRatingText(_rating),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: textGray700,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Comentario (opcional)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: textGray900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _commentController,
+                    maxLines: 4,
+                    maxLength: 200,
+                    decoration: InputDecoration(
+                      hintText: 'Cuéntanos sobre tu experiencia...',
+                      hintStyle: const TextStyle(color: textGray600),
+                      filled: true,
+                      fillColor: backgroundGray50,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.all(16),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _participantHeader(
+                    roleLabel: 'Hero Donador',
+                    name: sellerName,
+                    photoUrl: sellerPhotoUrl,
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(5, (index) {
+                        final starIndex = index + 1;
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _sellerRating = starIndex;
+                            });
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Icon(
+                              starIndex <= _sellerRating
+                                  ? Icons.star
+                                  : Icons.star_border,
+                              size: 48,
+                              color: starIndex <= _sellerRating
+                                  ? primaryYellow
+                                  : textGray600,
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(
+                    child: Text(
+                      _getRatingText(_sellerRating),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: textGray700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Comentario (opcional)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: textGray900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _sellerCommentController,
+                    maxLines: 4,
+                    maxLength: 200,
+                    decoration: InputDecoration(
+                      hintText: 'Cuéntanos sobre tu experiencia...',
+                      hintStyle: const TextStyle(color: textGray600),
+                      filled: true,
+                      fillColor: backgroundGray50,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.all(16),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Submit button
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _isSubmitting ? null : _submitRating,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryOrange,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  disabledBackgroundColor: borderGray100,
+                  disabledForegroundColor: textGray600,
+                ),
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text(
+                        'Enviar calificación',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,10 +30,10 @@ class App extends ConsumerWidget {
           orElse: () => false,
         );
 
-        final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
+      
         return SafeArea(
-          top: !isIOS,
-          bottom: !isIOS,
+          top: false,
+          bottom: false,
           child: RutVerificationLostImageRecovery(
             enabled: recoveryEnabled,
             child: child ?? const SizedBox.shrink(),

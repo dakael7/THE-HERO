@@ -147,228 +147,231 @@ class _RiderVehicleSequentialVerificationFlowScreenState
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: userAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: primaryOrange),
-        ),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              'Error al cargar perfil: $e',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: textGray700),
+      body: SafeArea(
+        top: false,
+        child: userAsync.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: primaryOrange),
+          ),
+          error: (e, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Error al cargar perfil: $e',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: textGray700),
+              ),
             ),
           ),
-        ),
-        data: (user) {
-          if (user == null) {
-            return const Center(child: Text('Sesión requerida'));
-          }
+          data: (user) {
+            if (user == null) {
+              return const Center(child: Text('Sesión requerida'));
+            }
 
-          final licenseRequired = _licenseRequired();
-          final vehicles = user.riderProfile?.vehicles;
-          final vehicleEntry = vehicles?[widget.vehicleType.name];
-          final vehicleEntryMap = vehicleEntry is Map
-              ? Map<String, dynamic>.from(vehicleEntry)
-              : null;
-          final vehicleLicenseVerificationRaw =
-              vehicleEntryMap?['licenseVerification'];
-          final vehicleLicenseVerification =
-              vehicleLicenseVerificationRaw is Map
-              ? Map<String, dynamic>.from(vehicleLicenseVerificationRaw)
-              : null;
-          final vehicleLicenseStatus = vehicleLicenseVerification?['status']
-              ?.toString();
-          final vehicleLicenseRequestId =
-              vehicleLicenseVerification?['requestId']?.toString();
-          final requestDataById =
-              licenseRequired &&
-                  vehicleLicenseRequestId != null &&
-                  vehicleLicenseRequestId.trim().isNotEmpty
-              ? ref
-                    .watch(
-                      licenseVerificationRequestProvider(
-                        RiderVerificationRequestKey(
-                          userId: user.id,
-                          requestId: vehicleLicenseRequestId,
+            final licenseRequired = _licenseRequired();
+            final vehicles = user.riderProfile?.vehicles;
+            final vehicleEntry = vehicles?[widget.vehicleType.name];
+            final vehicleEntryMap = vehicleEntry is Map
+                ? Map<String, dynamic>.from(vehicleEntry)
+                : null;
+            final vehicleLicenseVerificationRaw =
+                vehicleEntryMap?['licenseVerification'];
+            final vehicleLicenseVerification =
+                vehicleLicenseVerificationRaw is Map
+                ? Map<String, dynamic>.from(vehicleLicenseVerificationRaw)
+                : null;
+            final vehicleLicenseStatus = vehicleLicenseVerification?['status']
+                ?.toString();
+            final vehicleLicenseRequestId =
+                vehicleLicenseVerification?['requestId']?.toString();
+            final requestDataById =
+                licenseRequired &&
+                    vehicleLicenseRequestId != null &&
+                    vehicleLicenseRequestId.trim().isNotEmpty
+                ? ref
+                      .watch(
+                        licenseVerificationRequestProvider(
+                          RiderVerificationRequestKey(
+                            userId: user.id,
+                            requestId: vehicleLicenseRequestId,
+                          ),
                         ),
-                      ),
-                    )
-                    .value
-              : null;
-          final latestRequestData = licenseRequired
-              ? ref
-                    .watch(
-                      latestLicenseVerificationRequestProvider(
-                        RiderVerificationVehicleKey(
-                          userId: user.id,
-                          vehicleType: widget.vehicleType.name,
+                      )
+                      .value
+                : null;
+            final latestRequestData = licenseRequired
+                ? ref
+                      .watch(
+                        latestLicenseVerificationRequestProvider(
+                          RiderVerificationVehicleKey(
+                            userId: user.id,
+                            vehicleType: widget.vehicleType.name,
+                          ),
                         ),
-                      ),
-                    )
-                    .value
-              : null;
-          final requestData = latestRequestData ?? requestDataById;
+                      )
+                      .value
+                : null;
+            final requestData = latestRequestData ?? requestDataById;
 
-          final licenseStatus = licenseRequired
-              ? resolveVerificationStatus(
-                  requestData: requestData,
-                  profileData: vehicleLicenseVerification,
-                  fallbackStatus: vehicleLicenseStatus,
-                )
-              : null;
-          final licenseApproved =
-              !licenseRequired ||
-              (licenseStatus?.trim().toLowerCase() == 'approved');
+            final licenseStatus = licenseRequired
+                ? resolveVerificationStatus(
+                    requestData: requestData,
+                    profileData: vehicleLicenseVerification,
+                    fallbackStatus: vehicleLicenseStatus,
+                  )
+                : null;
+            final licenseApproved =
+                !licenseRequired ||
+                (licenseStatus?.trim().toLowerCase() == 'approved');
 
-          final canStartLicense = _canStartLicenseForStatus(licenseStatus);
-          final vehicleVerificationRaw = vehicleEntryMap?['verification'];
-          final vehicleVerification = vehicleVerificationRaw is Map
-              ? Map<String, dynamic>.from(vehicleVerificationRaw)
-              : null;
-          final vehicleStatusRaw = vehicleVerification?['status']?.toString();
-          final vehicleRequestId = vehicleVerification?['requestId']
-              ?.toString();
-          final vehicleRequestDataById =
-              vehicleRequestId != null && vehicleRequestId.trim().isNotEmpty
-              ? ref
-                    .watch(
-                      vehicleVerificationRequestProvider(
-                        RiderVerificationRequestKey(
-                          userId: user.id,
-                          requestId: vehicleRequestId,
+            final canStartLicense = _canStartLicenseForStatus(licenseStatus);
+            final vehicleVerificationRaw = vehicleEntryMap?['verification'];
+            final vehicleVerification = vehicleVerificationRaw is Map
+                ? Map<String, dynamic>.from(vehicleVerificationRaw)
+                : null;
+            final vehicleStatusRaw = vehicleVerification?['status']?.toString();
+            final vehicleRequestId = vehicleVerification?['requestId']
+                ?.toString();
+            final vehicleRequestDataById =
+                vehicleRequestId != null && vehicleRequestId.trim().isNotEmpty
+                ? ref
+                      .watch(
+                        vehicleVerificationRequestProvider(
+                          RiderVerificationRequestKey(
+                            userId: user.id,
+                            requestId: vehicleRequestId,
+                          ),
                         ),
-                      ),
-                    )
-                    .value
-              : null;
-          final latestVehicleRequestData = ref
-              .watch(
-                latestVehicleVerificationRequestProvider(
-                  RiderVerificationVehicleKey(
-                    userId: user.id,
-                    vehicleType: widget.vehicleType.name,
-                  ),
-                ),
-              )
-              .value;
-          final vehicleStatus = resolveVerificationStatus(
-            requestData: latestVehicleRequestData ?? vehicleRequestDataById,
-            profileData: vehicleVerification,
-            fallbackStatus: vehicleStatusRaw,
-          );
-          final vehicleCompleted =
-              vehicleStatus == 'approved' || vehicleStatus == 'not_required';
-
-          final step1Completed = !licenseRequired || licenseApproved;
-          final step2Enabled = step1Completed;
-          final step2Completed = step2Enabled && vehicleCompleted;
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: backgroundWhite,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: borderGray100),
-                ),
-                child: Text(
-                  'Primero validaremos tu licencia y luego tu ${_vehicleTypeLabel(widget.vehicleType)}. Esto es obligatorio para tu seguridad y para evitar fraudes.',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: textGray700,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              _FlowStepCard(
-                stepNumber: 1,
-                title: 'Validar licencia',
-                subtitle: licenseRequired
-                    ? 'Estado: ${_licenseStatusLabel(licenseStatus)}'
-                    : 'No requerida para bicicleta',
-                badgeText: step1Completed ? 'Listo' : null,
-                enabled: licenseRequired ? canStartLicense : false,
-                primaryLabel: licenseRequired
-                    ? (licenseStatus == 'rejected' || licenseStatus == 'failed')
-                          ? 'Reintentar'
-                          : 'Abrir'
-                    : 'No aplica',
-                onPrimary: licenseRequired && canStartLicense
-                    ? _openLicense
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              _FlowStepCard(
-                stepNumber: 2,
-                title: 'Validar vehículo',
-                subtitle: step2Completed
-                    ? 'Estado: ${_vehicleStatusLabel(vehicleStatus)}'
-                    : step2Enabled
-                    ? 'Sube documentos del vehículo y patente'
-                    : 'Primero debes aprobar la licencia',
-                badgeText: step2Completed ? 'Listo' : null,
-                enabled: step2Enabled && !step2Completed,
-                primaryLabel: step2Completed ? 'Listo' : 'Continuar',
-                onPrimary: step2Enabled && !step2Completed
-                    ? _openVehicle
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _working
-                      ? null
-                      : step2Completed
-                      ? () => Navigator.of(context).pop(true)
-                      : (step2Enabled ? _openVehicle : _openLicense),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryOrange,
-                    foregroundColor: backgroundWhite,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      )
+                      .value
+                : null;
+            final latestVehicleRequestData = ref
+                .watch(
+                  latestVehicleVerificationRequestProvider(
+                    RiderVerificationVehicleKey(
+                      userId: user.id,
+                      vehicleType: widget.vehicleType.name,
                     ),
                   ),
-                  child: Text(
-                    _working
-                        ? 'Abriendo…'
-                        : step2Completed
-                        ? 'Finalizar'
-                        : step2Enabled
-                        ? 'Continuar con vehículo'
-                        : licenseRequired
-                        ? 'Comenzar con licencia'
-                        : 'Continuar',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ),
-              ),
-              if (licenseRequired && !canStartLicense && !licenseApproved) ...[
-                const SizedBox(height: 12),
+                )
+                .value;
+            final vehicleStatus = resolveVerificationStatus(
+              requestData: latestVehicleRequestData ?? vehicleRequestDataById,
+              profileData: vehicleVerification,
+              fallbackStatus: vehicleStatusRaw,
+            );
+            final vehicleCompleted =
+                vehicleStatus == 'approved' || vehicleStatus == 'not_required';
+
+            final step1Completed = !licenseRequired || licenseApproved;
+            final step2Enabled = step1Completed;
+            final step2Completed = step2Enabled && vehicleCompleted;
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
                 Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: backgroundWhite,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: borderGray100),
                   ),
-                  child: const Text(
-                    'Tu licencia está en revisión. Cuando termine, podrás continuar con la verificación del vehículo.',
-                    style: TextStyle(
+                  child: Text(
+                    'Primero validaremos tu licencia y luego tu ${_vehicleTypeLabel(widget.vehicleType)}. Esto es obligatorio para tu seguridad y para evitar fraudes.',
+                    style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       color: textGray700,
                     ),
                   ),
                 ),
+                const SizedBox(height: 14),
+                _FlowStepCard(
+                  stepNumber: 1,
+                  title: 'Validar licencia',
+                  subtitle: licenseRequired
+                      ? 'Estado: ${_licenseStatusLabel(licenseStatus)}'
+                      : 'No requerida para bicicleta',
+                  badgeText: step1Completed ? 'Listo' : null,
+                  enabled: licenseRequired ? canStartLicense : false,
+                  primaryLabel: licenseRequired
+                      ? (licenseStatus == 'rejected' || licenseStatus == 'failed')
+                            ? 'Reintentar'
+                            : 'Abrir'
+                      : 'No aplica',
+                  onPrimary: licenseRequired && canStartLicense
+                      ? _openLicense
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                _FlowStepCard(
+                  stepNumber: 2,
+                  title: 'Validar vehículo',
+                  subtitle: step2Completed
+                      ? 'Estado: ${_vehicleStatusLabel(vehicleStatus)}'
+                      : step2Enabled
+                      ? 'Sube documentos del vehículo y patente'
+                      : 'Primero debes aprobar la licencia',
+                  badgeText: step2Completed ? 'Listo' : null,
+                  enabled: step2Enabled && !step2Completed,
+                  primaryLabel: step2Completed ? 'Listo' : 'Continuar',
+                  onPrimary: step2Enabled && !step2Completed
+                      ? _openVehicle
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _working
+                        ? null
+                        : step2Completed
+                        ? () => Navigator.of(context).pop(true)
+                        : (step2Enabled ? _openVehicle : _openLicense),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryOrange,
+                      foregroundColor: backgroundWhite,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      _working
+                          ? 'Abriendo…'
+                          : step2Completed
+                          ? 'Finalizar'
+                          : step2Enabled
+                          ? 'Continuar con vehículo'
+                          : licenseRequired
+                          ? 'Comenzar con licencia'
+                          : 'Continuar',
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+                if (licenseRequired && !canStartLicense && !licenseApproved) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: backgroundWhite,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: borderGray100),
+                    ),
+                    child: const Text(
+                      'Tu licencia está en revisión. Cuando termine, podrás continuar con la verificación del vehículo.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: textGray700,
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

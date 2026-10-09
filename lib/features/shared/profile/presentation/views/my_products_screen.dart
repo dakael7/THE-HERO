@@ -675,47 +675,11 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stackTrace) {
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.error_outline,
-                    color: primaryOrange,
-                    size: 46,
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'No pudimos cargar tu perfil',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: textGray900,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    error.toString(),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: textGray600,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-        data: (user) {
-          if (user == null) {
+      body: SafeArea(
+        top: false,
+        child: profileAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stackTrace) {
             return Padding(
               padding: const EdgeInsets.all(24),
               child: Center(
@@ -723,13 +687,13 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(
-                      Icons.lock_outline,
+                      Icons.error_outline,
                       color: primaryOrange,
                       size: 46,
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Inicia sesión para ver tus donaciones',
+                      'No pudimos cargar tu perfil',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -738,9 +702,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Necesitas una cuenta para administrar tus donaciones.',
-                      style: TextStyle(
+                    Text(
+                      error.toString(),
+                      style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: textGray600,
@@ -751,19 +715,9 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                 ),
               ),
             );
-          }
-
-          final offersAsync = ref.watch(myOffersProvider(user.id));
-          final orderCountsByOfferId = ref
-              .watch(myDonationOrdersProvider(user.id))
-              .maybeWhen(
-                data: _orderCountsByOfferId,
-                orElse: () => const <String, int>{},
-              );
-
-          return offersAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, stackTrace) {
+          },
+          data: (user) {
+            if (user == null) {
               return Padding(
                 padding: const EdgeInsets.all(24),
                 child: Center(
@@ -771,13 +725,13 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
-                        Icons.wifi_off_outlined,
+                        Icons.lock_outline,
                         color: primaryOrange,
                         size: 46,
                       ),
                       const SizedBox(height: 12),
                       const Text(
-                        'No pudimos cargar tus donaciones',
+                        'Inicia sesión para ver tus donaciones',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
@@ -786,492 +740,541 @@ class _MyProductsScreenState extends ConsumerState<MyProductsScreen> {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        error.toString(),
-                        style: const TextStyle(
+                      const Text(
+                        'Necesitas una cuenta para administrar tus donaciones.',
+                        style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: textGray600,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 14),
-                      ElevatedButton(
-                        onPressed: () {
-                          ref.invalidate(myOffersProvider(user.id));
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryOrange,
-                          foregroundColor: backgroundWhite,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          'Reintentar',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                      ),
                     ],
                   ),
                 ),
               );
-            },
-            data: (offers) {
-              final filtered = _applyFilters(offers);
+            }
 
-              final activeCount = offers
-                  .where((o) => o.status == OfferStatus.active)
-                  .length;
-              final draftCount = offers
-                  .where((o) => o.status == OfferStatus.draft)
-                  .length;
-              final soldOutCount = offers
-                  .where((o) => o.status == OfferStatus.soldOut)
-                  .length;
+            final offersAsync = ref.watch(myOffersProvider(user.id));
+            final orderCountsByOfferId = ref
+                .watch(myDonationOrdersProvider(user.id))
+                .maybeWhen(
+                  data: _orderCountsByOfferId,
+                  orElse: () => const <String, int>{},
+                );
 
-              return RefreshIndicator(
-                color: primaryOrange,
-                onRefresh: () async {
-                  ref.invalidate(myOffersProvider(user.id));
-                  await Future<void>.delayed(const Duration(milliseconds: 250));
-                },
-                child: CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final maxWidth = constraints.maxWidth;
-                            final scale = (maxWidth / 390.0)
-                                .clamp(0.78, 1.20)
-                                .toDouble();
-                            final cardHeight = (maxWidth * 0.52)
-                                .clamp(170.0, 210.0)
-                                .toDouble();
-                            final wheelSize = (maxWidth * 0.88)
-                                .clamp(210.0, 320.0)
-                                .toDouble();
-                            final contentRightPadding = (maxWidth * 0.42)
-                                .clamp(92.0, 165.0)
-                                .toDouble();
+            return offersAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stackTrace) {
+                return Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.wifi_off_outlined,
+                          color: primaryOrange,
+                          size: 46,
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No pudimos cargar tus donaciones',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: textGray900,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          error.toString(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: textGray600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 14),
+                        ElevatedButton(
+                          onPressed: () {
+                            ref.invalidate(myOffersProvider(user.id));
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryOrange,
+                            foregroundColor: backgroundWhite,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Reintentar',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              data: (offers) {
+                final filtered = _applyFilters(offers);
 
-                            final cardPadding = (24.0 * scale)
-                                .clamp(14.0, 24.0)
-                                .toDouble();
-                            final titleSize = (18.0 * scale)
-                                .clamp(16.0, 22.0)
-                                .toDouble();
-                            final subtitleSize = (14.0 * scale)
-                                .clamp(12.0, 18.0)
-                                .toDouble();
-                            final buttonFontSize = (14.0 * scale)
-                                .clamp(12.0, 16.0)
-                                .toDouble();
-                            final buttonIconSize = (20.0 * scale)
-                                .clamp(18.0, 22.0)
-                                .toDouble();
-                            final gapSmall = (8.0 * scale)
-                                .clamp(6.0, 10.0)
-                                .toDouble();
-                            final gapNormal = (16.0 * scale)
-                                .clamp(10.0, 16.0)
-                                .toDouble();
-                            final buttonHPadding = (20.0 * scale)
-                                .clamp(14.0, 20.0)
-                                .toDouble();
-                            final buttonVPadding = (12.0 * scale)
-                                .clamp(10.0, 14.0)
-                                .toDouble();
+                final activeCount = offers
+                    .where((o) => o.status == OfferStatus.active)
+                    .length;
+                final draftCount = offers
+                    .where((o) => o.status == OfferStatus.draft)
+                    .length;
+                final soldOutCount = offers
+                    .where((o) => o.status == OfferStatus.soldOut)
+                    .length;
 
-                            final contentAvailableWidth =
-                                (maxWidth -
-                                        (cardPadding * 2) -
-                                        contentRightPadding)
-                                    .clamp(120.0, 520.0)
-                                    .toDouble();
+                return RefreshIndicator(
+                  color: primaryOrange,
+                  onRefresh: () async {
+                    ref.invalidate(myOffersProvider(user.id));
+                    await Future<void>.delayed(const Duration(milliseconds: 250));
+                  },
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final maxWidth = constraints.maxWidth;
+                              final scale = (maxWidth / 390.0)
+                                  .clamp(0.78, 1.20)
+                                  .toDouble();
+                              final cardHeight = (maxWidth * 0.52)
+                                  .clamp(170.0, 210.0)
+                                  .toDouble();
+                              final wheelSize = (maxWidth * 0.88)
+                                  .clamp(210.0, 320.0)
+                                  .toDouble();
+                              final contentRightPadding = (maxWidth * 0.42)
+                                  .clamp(92.0, 165.0)
+                                  .toDouble();
 
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        primaryOrange,
-                                        primaryYellow.withValues(alpha: 0.95),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    borderRadius: BorderRadius.circular(22),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: primaryOrange.withValues(
-                                          alpha: 0.22,
-                                        ),
-                                        blurRadius: 18,
-                                        offset: const Offset(0, 10),
+                              final cardPadding = (24.0 * scale)
+                                  .clamp(14.0, 24.0)
+                                  .toDouble();
+                              final titleSize = (18.0 * scale)
+                                  .clamp(16.0, 22.0)
+                                  .toDouble();
+                              final subtitleSize = (14.0 * scale)
+                                  .clamp(12.0, 18.0)
+                                  .toDouble();
+                              final buttonFontSize = (14.0 * scale)
+                                  .clamp(12.0, 16.0)
+                                  .toDouble();
+                              final buttonIconSize = (20.0 * scale)
+                                  .clamp(18.0, 22.0)
+                                  .toDouble();
+                              final gapSmall = (8.0 * scale)
+                                  .clamp(6.0, 10.0)
+                                  .toDouble();
+                              final gapNormal = (16.0 * scale)
+                                  .clamp(10.0, 16.0)
+                                  .toDouble();
+                              final buttonHPadding = (20.0 * scale)
+                                  .clamp(14.0, 20.0)
+                                  .toDouble();
+                              final buttonVPadding = (12.0 * scale)
+                                  .clamp(10.0, 14.0)
+                                  .toDouble();
+
+                              final contentAvailableWidth =
+                                  (maxWidth -
+                                          (cardPadding * 2) -
+                                          contentRightPadding)
+                                      .clamp(120.0, 520.0)
+                                      .toDouble();
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          primaryOrange,
+                                          primaryYellow.withValues(alpha: 0.95),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
                                       ),
-                                    ],
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(22),
-                                    child: SizedBox(
-                                      height: cardHeight,
-                                      child: Stack(
-                                        clipBehavior: Clip.hardEdge,
-                                        children: [
-                                          Positioned(
-                                            right: -wheelSize * 0.22,
-                                            bottom: -wheelSize * 0.26,
-                                            child: IgnorePointer(
-                                              child: Opacity(
-                                                opacity: 0.95,
-                                                child: Transform.rotate(
-                                                  angle: -0.22,
-                                                  child: Image.asset(
-                                                    'assets/wheel.png',
-                                                    width: wheelSize,
-                                                    height: wheelSize,
-                                                    fit: BoxFit.contain,
+                                      borderRadius: BorderRadius.circular(22),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: primaryOrange.withValues(
+                                            alpha: 0.22,
+                                          ),
+                                          blurRadius: 18,
+                                          offset: const Offset(0, 10),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(22),
+                                      child: SizedBox(
+                                        height: cardHeight,
+                                        child: Stack(
+                                          clipBehavior: Clip.hardEdge,
+                                          children: [
+                                            Positioned(
+                                              right: -wheelSize * 0.22,
+                                              bottom: -wheelSize * 0.26,
+                                              child: IgnorePointer(
+                                                child: Opacity(
+                                                  opacity: 0.95,
+                                                  child: Transform.rotate(
+                                                    angle: -0.22,
+                                                    child: Image.asset(
+                                                      'assets/wheel.png',
+                                                      width: wheelSize,
+                                                      height: wheelSize,
+                                                      fit: BoxFit.contain,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                          Padding(
-                                            padding: EdgeInsets.all(
-                                              cardPadding,
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Padding(
-                                                    padding: EdgeInsets.only(
-                                                      right:
-                                                          contentRightPadding,
-                                                    ),
-                                                    child: FittedBox(
-                                                      fit: BoxFit.scaleDown,
-                                                      alignment:
-                                                          Alignment.centerLeft,
-                                                      child: SizedBox(
-                                                        width:
-                                                            contentAvailableWidth,
-                                                        child: Column(
-                                                          mainAxisSize:
-                                                              MainAxisSize.min,
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            Text(
-                                                              'Tu vitrina',
-                                                              maxLines: 1,
-                                                              overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                              style: TextStyle(
-                                                                color:
-                                                                    backgroundWhite,
-                                                                fontSize:
-                                                                    titleSize,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold,
-                                                              ),
-                                                            ),
-                                                            SizedBox(
-                                                              height: gapSmall,
-                                                            ),
-                                                            Text(
-                                                              'Administra stock y visibilidad',
-                                                              maxLines: 2,
-                                                              overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                              style: TextStyle(
-                                                                color: backgroundWhite
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.92,
-                                                                    ),
-                                                                fontSize:
-                                                                    subtitleSize,
-                                                              ),
-                                                            ),
-                                                            SizedBox(
-                                                              height: gapNormal,
-                                                            ),
-                                                            ElevatedButton.icon(
-                                                              onPressed: () {
-                                                                _openOfferForm();
-                                                              },
-                                                              icon: Icon(
-                                                                Icons
-                                                                    .add_circle_outline,
-                                                                color:
-                                                                    primaryOrange,
-                                                                size:
-                                                                    buttonIconSize,
-                                                              ),
-                                                              label: Column(
-                                                                mainAxisSize:
-                                                                    MainAxisSize
-                                                                        .min,
-                                                                crossAxisAlignment:
-                                                                    CrossAxisAlignment
-                                                                        .start,
-                                                                children: [
-                                                                  Text(
-                                                                    'Sé un Hero',
-                                                                    style: TextStyle(
-                                                                      color:
-                                                                          primaryOrange,
-                                                                      fontSize:
-                                                                          buttonFontSize,
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w800,
-                                                                    ),
-                                                                  ),
-                                                                  Text(
-                                                                    'Dona tus productos',
-                                                                    style: TextStyle(
-                                                                      color:
-                                                                          primaryOrange,
-                                                                      fontSize:
-                                                                          buttonFontSize -
-                                                                          2,
-                                                                      fontWeight:
-                                                                          FontWeight
-                                                                              .w600,
-                                                                    ),
-                                                                  ),
-                                                                ],
-                                                              ),
-                                                              style: ElevatedButton.styleFrom(
-                                                                backgroundColor:
-                                                                    backgroundWhite,
-                                                                padding: EdgeInsets.symmetric(
-                                                                  horizontal:
-                                                                      buttonHPadding,
-                                                                  vertical:
-                                                                      buttonVPadding,
+                                            Padding(
+                                              padding: EdgeInsets.all(
+                                                cardPadding,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Padding(
+                                                      padding: EdgeInsets.only(
+                                                        right:
+                                                            contentRightPadding,
+                                                      ),
+                                                      child: FittedBox(
+                                                        fit: BoxFit.scaleDown,
+                                                        alignment:
+                                                            Alignment.centerLeft,
+                                                        child: SizedBox(
+                                                          width:
+                                                              contentAvailableWidth,
+                                                          child: Column(
+                                                            mainAxisSize:
+                                                                MainAxisSize.min,
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              Text(
+                                                                'Tu vitrina',
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                                style: TextStyle(
+                                                                  color:
+                                                                      backgroundWhite,
+                                                                  fontSize:
+                                                                      titleSize,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
                                                                 ),
-                                                                shape: RoundedRectangleBorder(
-                                                                  borderRadius:
-                                                                      BorderRadius.circular(
-                                                                        12,
+                                                              ),
+                                                              SizedBox(
+                                                                height: gapSmall,
+                                                              ),
+                                                              Text(
+                                                                'Administra stock y visibilidad',
+                                                                maxLines: 2,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                                style: TextStyle(
+                                                                  color: backgroundWhite
+                                                                      .withValues(
+                                                                        alpha:
+                                                                            0.92,
                                                                       ),
+                                                                  fontSize:
+                                                                      subtitleSize,
                                                                 ),
                                                               ),
-                                                            ),
-                                                          ],
+                                                              SizedBox(
+                                                                height: gapNormal,
+                                                              ),
+                                                              ElevatedButton.icon(
+                                                                onPressed: () {
+                                                                  _openOfferForm();
+                                                                },
+                                                                icon: Icon(
+                                                                  Icons
+                                                                      .add_circle_outline,
+                                                                  color:
+                                                                      primaryOrange,
+                                                                  size:
+                                                                      buttonIconSize,
+                                                                ),
+                                                                label: Column(
+                                                                  mainAxisSize:
+                                                                      MainAxisSize
+                                                                          .min,
+                                                                  crossAxisAlignment:
+                                                                      CrossAxisAlignment
+                                                                          .start,
+                                                                  children: [
+                                                                    Text(
+                                                                      'Sé un Hero',
+                                                                      style: TextStyle(
+                                                                        color:
+                                                                            primaryOrange,
+                                                                        fontSize:
+                                                                            buttonFontSize,
+                                                                        fontWeight:
+                                                                            FontWeight
+                                                                                .w800,
+                                                                      ),
+                                                                    ),
+                                                                    Text(
+                                                                      'Dona tus productos',
+                                                                      style: TextStyle(
+                                                                        color:
+                                                                            primaryOrange,
+                                                                        fontSize:
+                                                                            buttonFontSize -
+                                                                            2,
+                                                                        fontWeight:
+                                                                            FontWeight
+                                                                                .w600,
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                                style: ElevatedButton.styleFrom(
+                                                                  backgroundColor:
+                                                                      backgroundWhite,
+                                                                  padding: EdgeInsets.symmetric(
+                                                                    horizontal:
+                                                                        buttonHPadding,
+                                                                    vertical:
+                                                                        buttonVPadding,
+                                                                  ),
+                                                                  shape: RoundedRectangleBorder(
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          12,
+                                                                        ),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
                                                   ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: 14),
-                                Wrap(
-                                  spacing: (10.0 * scale).clamp(8.0, 12.0),
-                                  runSpacing: (10.0 * scale).clamp(8.0, 12.0),
-                                  alignment: WrapAlignment.center,
-                                  children: [
-                                    _buildStatPill(
-                                      label: 'Activos',
-                                      value: activeCount,
-                                      color: const Color(0xFF0F766E),
-                                      scale: scale,
-                                    ),
-                                    _buildStatPill(
-                                      label: 'Borradores',
-                                      value: draftCount,
-                                      color: const Color(0xFF7C3AED),
-                                      scale: scale,
-                                    ),
-                                    _buildStatPill(
-                                      label: 'Agotados',
-                                      value: soldOutCount,
-                                      color: const Color(0xFFDC2626),
-                                      scale: scale,
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Tus donaciones',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: textGray900,
-                              ),
-                            ),
-                            _buildFilterChips(context, offers),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (offers.isEmpty) ...[
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 76,
-                                  height: 76,
-                                  decoration: BoxDecoration(
-                                    color: primaryOrange.withValues(
-                                      alpha: 0.12,
-                                    ),
-                                    borderRadius: BorderRadius.circular(22),
+                                  const SizedBox(height: 14),
+                                  Wrap(
+                                    spacing: (10.0 * scale).clamp(8.0, 12.0),
+                                    runSpacing: (10.0 * scale).clamp(8.0, 12.0),
+                                    alignment: WrapAlignment.center,
+                                    children: [
+                                      _buildStatPill(
+                                        label: 'Activos',
+                                        value: activeCount,
+                                        color: const Color(0xFF0F766E),
+                                        scale: scale,
+                                      ),
+                                      _buildStatPill(
+                                        label: 'Borradores',
+                                        value: draftCount,
+                                        color: const Color(0xFF7C3AED),
+                                        scale: scale,
+                                      ),
+                                      _buildStatPill(
+                                        label: 'Agotados',
+                                        value: soldOutCount,
+                                        color: const Color(0xFFDC2626),
+                                        scale: scale,
+                                      ),
+                                    ],
                                   ),
-                                  child: const Icon(
-                                    Icons.shopping_bag_outlined,
-                                    size: 36,
-                                    color: primaryOrange,
-                                  ),
-                                ),
-                                const SizedBox(height: 14),
-                                const Text(
-                                  'Aún no tienes donaciones publicadas',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w900,
-                                    color: textGray900,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                const Text(
-                                  'Publica tu primera donación para empezar a ayudar.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: textGray600,
-                                  ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              );
+                            },
                           ),
                         ),
                       ),
-                    ] else if (filtered.isEmpty) ...[
-                      SliverFillRemaining(
-                        hasScrollBody: false,
+                      SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.filter_alt_off,
-                                  size: 58,
-                                  color: textGray600,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Tus donaciones',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: textGray900,
                                 ),
-                                const SizedBox(height: 12),
-                                const Text(
-                                  'No encontramos resultados',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w900,
-                                    color: textGray900,
+                              ),
+                              _buildFilterChips(context, offers),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (offers.isEmpty) ...[
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 76,
+                                    height: 76,
+                                    decoration: BoxDecoration(
+                                      color: primaryOrange.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                      borderRadius: BorderRadius.circular(22),
+                                    ),
+                                    child: const Icon(
+                                      Icons.shopping_bag_outlined,
+                                      size: 36,
+                                      color: primaryOrange,
+                                    ),
                                   ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 6),
-                                const Text(
-                                  'Prueba cambiando el filtro.',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: textGray600,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 14),
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() => _statusFilter = null);
-                                  },
-                                  child: const Text(
-                                    'Limpiar filtros',
+                                  const SizedBox(height: 14),
+                                  const Text(
+                                    'Aún no tienes donaciones publicadas',
+                                    textAlign: TextAlign.center,
                                     style: TextStyle(
-                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                      color: textGray900,
                                     ),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Publica tu primera donación para empezar a ayudar.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: textGray600,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ] else ...[
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            final offer = filtered[index];
-                            final orderCount =
-                                orderCountsByOfferId[offer.offerId] ?? 0;
-                            return Padding(
-                              padding: EdgeInsets.only(
-                                bottom: index == filtered.length - 1 ? 0 : 12,
+                      ] else if (filtered.isEmpty) ...[
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.filter_alt_off,
+                                    size: 58,
+                                    color: textGray600,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'No encontramos resultados',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                      color: textGray900,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Prueba cambiando el filtro.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: textGray600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 14),
+                                  TextButton(
+                                    onPressed: () {
+                                      setState(() => _statusFilter = null);
+                                    },
+                                    child: const Text(
+                                      'Limpiar filtros',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              child: _buildOfferCard(
-                                context,
-                                offer,
-                                orderCount: orderCount > offer.orderCount
-                                    ? orderCount
-                                    : offer.orderCount,
-                              ),
-                            );
-                          }, childCount: filtered.length),
+                            ),
+                          ),
                         ),
-                      ),
+                      ] else ...[
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate((
+                              context,
+                              index,
+                            ) {
+                              final offer = filtered[index];
+                              final orderCount =
+                                  orderCountsByOfferId[offer.offerId] ?? 0;
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: index == filtered.length - 1 ? 0 : 12,
+                                ),
+                                child: _buildOfferCard(
+                                  context,
+                                  offer,
+                                  orderCount: orderCount > offer.orderCount
+                                      ? orderCount
+                                      : offer.orderCount,
+                                ),
+                              );
+                            }, childCount: filtered.length),
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
-              );
-            },
-          );
-        },
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

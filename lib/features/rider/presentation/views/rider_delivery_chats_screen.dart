@@ -55,186 +55,189 @@ class RiderDeliveryChatsScreen extends ConsumerWidget {
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
       ),
-      body: orderAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: primaryOrange),
-        ),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (order) {
-          if (order == null) {
-            return const Center(child: Text('Pedido no disponible'));
-          }
+      body: SafeArea(
+        top: false,
+        child: orderAsync.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: primaryOrange),
+          ),
+          error: (e, _) => Center(child: Text('Error: $e')),
+          data: (order) {
+            if (order == null) {
+              return const Center(child: Text('Pedido no disponible'));
+            }
 
-          if (riderId == null || riderId.trim().isEmpty) {
-            return const Center(
-              child: Text('Inicia sesión para ver los chats'),
+            if (riderId == null || riderId.trim().isEmpty) {
+              return const Center(
+                child: Text('Inicia sesión para ver los chats'),
+              );
+            }
+
+            if (!order.canShowAssociatedChats) {
+              return const Center(
+                child: Text(
+                  'Los chats estarán disponibles cuando el pedido esté pagado',
+                ),
+              );
+            }
+
+            final stops = order.pickupStops ?? const [];
+            final offerIds = <String>{
+              for (final s in stops)
+                ...s.offerIds.where((id) => id.trim().isNotEmpty),
+            }.toList();
+
+            final buyerAsync = ref.watch(userByIdProvider(order.heroId));
+            final buyerPhone = buyerAsync.maybeWhen(
+              data: (u) => u?.phoneNumber,
+              orElse: () => null,
             );
-          }
+            final clientPhone =
+                (buyerPhone != null && buyerPhone.trim().isNotEmpty)
+                ? buyerPhone
+                : (order.delivery.recipientPhone.trim().isNotEmpty
+                      ? order.delivery.recipientPhone
+                      : null);
 
-          if (!order.canShowAssociatedChats) {
-            return const Center(
-              child: Text(
-                'Los chats estarán disponibles cuando el pedido esté pagado',
-              ),
-            );
-          }
-
-          final stops = order.pickupStops ?? const [];
-          final offerIds = <String>{
-            for (final s in stops)
-              ...s.offerIds.where((id) => id.trim().isNotEmpty),
-          }.toList();
-
-          final buyerAsync = ref.watch(userByIdProvider(order.heroId));
-          final buyerPhone = buyerAsync.maybeWhen(
-            data: (u) => u?.phoneNumber,
-            orElse: () => null,
-          );
-          final clientPhone =
-              (buyerPhone != null && buyerPhone.trim().isNotEmpty)
-              ? buyerPhone
-              : (order.delivery.recipientPhone.trim().isNotEmpty
-                    ? order.delivery.recipientPhone
-                    : null);
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _ChatTargetTile(
-                roleLabel: 'Cliente',
-                name: order.delivery.recipientName.isNotEmpty
-                    ? order.delivery.recipientName
-                    : 'Hero',
-                phoneNumber: clientPhone,
-                onCall: clientPhone == null
-                    ? null
-                    : () => _callPhone(context, clientPhone),
-                onOpen: () async {
-                  final now = DateTime.now();
-                  final newChatId = Chat.generateChatId(
-                    type: ChatType.heroRider,
-                    buyerId: order.heroId,
-                    riderId: riderId,
-                    orderId: order.orderId,
-                  );
-                  final legacyChatId =
-                      '${ChatType.heroRider.jsonValue}_order_${order.orderId}';
-
-                  final docNew = await FirebaseFirestore.instance
-                      .collection('chats')
-                      .doc(newChatId)
-                      .get();
-                  final docLegacy = docNew.exists
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _ChatTargetTile(
+                  roleLabel: 'Cliente',
+                  name: order.delivery.recipientName.isNotEmpty
+                      ? order.delivery.recipientName
+                      : 'Hero',
+                  phoneNumber: clientPhone,
+                  onCall: clientPhone == null
                       ? null
-                      : await FirebaseFirestore.instance
-                            .collection('chats')
-                            .doc(legacyChatId)
-                            .get();
+                      : () => _callPhone(context, clientPhone),
+                  onOpen: () async {
+                    final now = DateTime.now();
+                    final newChatId = Chat.generateChatId(
+                      type: ChatType.heroRider,
+                      buyerId: order.heroId,
+                      riderId: riderId,
+                      orderId: order.orderId,
+                    );
+                    final legacyChatId =
+                        '${ChatType.heroRider.jsonValue}_order_${order.orderId}';
 
-                  final legacyOk = (() {
-                    if (!(docLegacy?.exists ?? false)) return false;
-                    final data = docLegacy!.data() ?? <String, dynamic>{};
-                    final legacyBuyerId =
-                        (data['buyerId'] as String?) ??
-                        (data['heroId'] as String?) ??
-                        '';
-                    final legacyRiderId = (data['riderId'] as String?) ?? '';
-                    final rawParticipantIds = data['participantIds'];
-                    final participantIds = rawParticipantIds is List
-                        ? rawParticipantIds
-                              .map((e) => e.toString().trim())
-                              .where((e) => e.isNotEmpty)
-                              .toList()
-                        : <String>[];
-                    final expected = <String>[
-                      order.heroId.trim(),
-                      riderId.trim(),
-                    ];
-                    final hasOnlyExpected =
-                        participantIds.length == 2 &&
-                        participantIds.toSet().containsAll(expected) &&
-                        expected.toSet().containsAll(participantIds.toSet());
+                    final docNew = await FirebaseFirestore.instance
+                        .collection('chats')
+                        .doc(newChatId)
+                        .get();
+                    final docLegacy = docNew.exists
+                        ? null
+                        : await FirebaseFirestore.instance
+                              .collection('chats')
+                              .doc(legacyChatId)
+                              .get();
 
-                    final legacySellerId = (data['sellerId'] as String?) ?? '';
-                    return legacyBuyerId.trim() == order.heroId.trim() &&
-                        legacyRiderId.trim() == riderId.trim() &&
-                        legacySellerId.trim().isEmpty &&
-                        hasOnlyExpected;
-                  })();
+                    final legacyOk = (() {
+                      if (!(docLegacy?.exists ?? false)) return false;
+                      final data = docLegacy!.data() ?? <String, dynamic>{};
+                      final legacyBuyerId =
+                          (data['buyerId'] as String?) ??
+                          (data['heroId'] as String?) ??
+                          '';
+                      final legacyRiderId = (data['riderId'] as String?) ?? '';
+                      final rawParticipantIds = data['participantIds'];
+                      final participantIds = rawParticipantIds is List
+                          ? rawParticipantIds
+                                .map((e) => e.toString().trim())
+                                .where((e) => e.isNotEmpty)
+                                .toList()
+                          : <String>[];
+                      final expected = <String>[
+                        order.heroId.trim(),
+                        riderId.trim(),
+                      ];
+                      final hasOnlyExpected =
+                          participantIds.length == 2 &&
+                          participantIds.toSet().containsAll(expected) &&
+                          expected.toSet().containsAll(participantIds.toSet());
 
-                  final chatId = docNew.exists
-                      ? newChatId
-                      : (legacyOk ? legacyChatId : newChatId);
+                      final legacySellerId = (data['sellerId'] as String?) ?? '';
+                      return legacyBuyerId.trim() == order.heroId.trim() &&
+                          legacyRiderId.trim() == riderId.trim() &&
+                          legacySellerId.trim().isEmpty &&
+                          hasOnlyExpected;
+                    })();
 
-                  final chat = Chat(
-                    chatId: chatId,
+                    final chatId = docNew.exists
+                        ? newChatId
+                        : (legacyOk ? legacyChatId : newChatId);
+
+                    final chat = Chat(
+                      chatId: chatId,
+                      type: ChatType.heroRider,
+                      orderId: order.orderId,
+                      buyerId: order.heroId,
+                      buyerName: order.delivery.recipientName.isNotEmpty
+                          ? order.delivery.recipientName
+                          : 'Hero',
+                      riderId: riderId,
+                      riderName: ref.read(profileProvider).value?.fullName,
+                      createdAt: now,
+                      updatedAt: now,
+                      lastMessageText: '',
+                      lastMessageAt: now,
+                      lastMessageSenderId: null,
+                      unreadCount: 0,
+                    );
+
+                    if (!context.mounted) return;
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ChatConversationScreen(chat: chat),
+                      ),
+                    );
+
+                    Future.microtask(() async {
+                      try {
+                        await ref
+                            .read(chatActionsProvider)
+                            .ensureChatExists(chat);
+                      } catch (_) {
+                        // Silently ignore
+                      }
+                    });
+                  },
+                  chatId: Chat.generateChatId(
                     type: ChatType.heroRider,
-                    orderId: order.orderId,
                     buyerId: order.heroId,
-                    buyerName: order.delivery.recipientName.isNotEmpty
-                        ? order.delivery.recipientName
-                        : 'Hero',
                     riderId: riderId,
-                    riderName: ref.read(profileProvider).value?.fullName,
-                    createdAt: now,
-                    updatedAt: now,
-                    lastMessageText: '',
-                    lastMessageAt: now,
-                    lastMessageSenderId: null,
-                    unreadCount: 0,
-                  );
-
-                  if (!context.mounted) return;
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ChatConversationScreen(chat: chat),
-                    ),
-                  );
-
-                  Future.microtask(() async {
-                    try {
-                      await ref
-                          .read(chatActionsProvider)
-                          .ensureChatExists(chat);
-                    } catch (_) {
-                      // Silently ignore
-                    }
-                  });
-                },
-                chatId: Chat.generateChatId(
-                  type: ChatType.heroRider,
-                  buyerId: order.heroId,
-                  riderId: riderId,
-                  orderId: order.orderId,
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Donadores',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: textGray900,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (offerIds.isEmpty)
-                const _EmptyInfo(
-                  icon: Icons.volunteer_activism_outlined,
-                  title: 'Sin donadores',
-                  message: 'Este pedido no tiene paradas de recogida.',
-                )
-              else
-                ...offerIds.map(
-                  (offerId) => _DonorTile(
                     orderId: order.orderId,
-                    riderId: riderId,
-                    offerId: offerId,
                   ),
                 ),
-            ],
-          );
-        },
+                const SizedBox(height: 12),
+                const Text(
+                  'Donadores',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: textGray900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (offerIds.isEmpty)
+                  const _EmptyInfo(
+                    icon: Icons.volunteer_activism_outlined,
+                    title: 'Sin donadores',
+                    message: 'Este pedido no tiene paradas de recogida.',
+                  )
+                else
+                  ...offerIds.map(
+                    (offerId) => _DonorTile(
+                      orderId: order.orderId,
+                      riderId: riderId,
+                      offerId: offerId,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

@@ -34,442 +34,446 @@ class _RiderVehicleInfoScreenState
         title: 'Vehículos',
         icon: Icons.directions_car_rounded,
       ),
-      body: profileAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: primaryOrange),
-        ),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              'Error al cargar perfil: $e',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: textGray700),
+      body: SafeArea(
+        top: false,
+        child: profileAsync.when(
+          loading: () => const Center(
+            child: CircularProgressIndicator(color: primaryOrange),
+          ),
+          error: (e, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Error al cargar perfil: $e',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: textGray700),
+              ),
             ),
           ),
-        ),
-        data: (user) {
-          if (user == null) {
-            return const Center(child: Text('Sesión requerida'));
-          }
-          final uid = ref.watch(firebaseAuthUserProvider).value?.uid;
-          if (uid == null) {
-            return const Center(child: Text('Sesión requerida'));
-          }
-          final riderProfile = user.riderProfile;
-          final rutVerified = user.isRutVerified;
-          final rutGateRequired = !rutVerified;
+          data: (user) {
+            if (user == null) {
+              return const Center(child: Text('Sesión requerida'));
+            }
+            final uid = ref.watch(firebaseAuthUserProvider).value?.uid;
+            if (uid == null) {
+              return const Center(child: Text('Sesión requerida'));
+            }
+            final riderProfile = user.riderProfile;
+            final rutVerified = user.isRutVerified;
+            final rutGateRequired = !rutVerified;
 
-          if (!_bootstrappedVehicles) {
-            _bootstrappedVehicles = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) async {
-              try {
-                final rp = riderProfile as dynamic;
-                final vehicles = rp?.vehicles as dynamic;
-                final bicycleEntry = vehicles != null
-                    ? vehicles['bicycle'] as dynamic
-                    : null;
-                final bicycleVerification = bicycleEntry != null
-                    ? bicycleEntry['verification'] as dynamic
-                    : null;
-                final bicycleStatus = bicycleVerification != null
-                    ? bicycleVerification['status'] as String?
-                    : null;
-
-                bool hasVehicleEntry(String key) {
-                  final entry = vehicles != null
-                      ? vehicles[key] as dynamic
+            if (!_bootstrappedVehicles) {
+              _bootstrappedVehicles = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                try {
+                  final rp = riderProfile as dynamic;
+                  final vehicles = rp?.vehicles as dynamic;
+                  final bicycleEntry = vehicles != null
+                      ? vehicles['bicycle'] as dynamic
                       : null;
-                  return entry is Map;
+                  final bicycleVerification = bicycleEntry != null
+                      ? bicycleEntry['verification'] as dynamic
+                      : null;
+                  final bicycleStatus = bicycleVerification != null
+                      ? bicycleVerification['status'] as String?
+                      : null;
+
+                  bool hasVehicleEntry(String key) {
+                    final entry = vehicles != null
+                        ? vehicles[key] as dynamic
+                        : null;
+                    return entry is Map;
+                  }
+
+                  Map<String, dynamic> bootstrapEntry(VehicleType type) {
+                    final defaults = _limitsByVehicle(type);
+                    return {
+                      'vehicle': {'type': type.name},
+                      'limits': {
+                        'maxWeightKg': defaults.maxWeightKg,
+                        'maxDistanceKm': defaults.maxDistanceKm,
+                      },
+                    };
+                  }
+
+                  final shouldBootstrapBicycle =
+                      bicycleStatus == null || bicycleStatus.trim().isEmpty;
+
+                  final updates = <String, dynamic>{};
+                  if (shouldBootstrapBicycle) {
+                    final defaults = _limitsByVehicle(VehicleType.bicycle);
+                    updates['bicycle'] = {
+                      'vehicle': {'type': 'bicycle'},
+                      'verification': {
+                        'status': 'not_required',
+                        'requestId': null,
+                        'submittedAt': null,
+                        'verifiedAt': null,
+                      },
+                      'limits': {
+                        'maxWeightKg': defaults.maxWeightKg,
+                        'maxDistanceKm': defaults.maxDistanceKm,
+                      },
+                    };
+                  }
+
+                  if (!hasVehicleEntry('motorcycle')) {
+                    updates['motorcycle'] = bootstrapEntry(
+                      VehicleType.motorcycle,
+                    );
+                  }
+                  if (!hasVehicleEntry('car')) {
+                    updates['car'] = bootstrapEntry(VehicleType.car);
+                  }
+                  if (!hasVehicleEntry('truck')) {
+                    updates['truck'] = bootstrapEntry(VehicleType.truck);
+                  }
+
+                  if (updates.isNotEmpty) {
+                    final db = ref.read(firebaseFirestoreProvider);
+                    await db.collection('users').doc(user.id).set({
+                      'riderProfile': {
+                        'vehicles': {...updates},
+                      },
+                    }, firestore.SetOptions(merge: true));
+                    ref.invalidate(profileProvider);
+                    ref.invalidate(profileStreamProvider);
+                  }
+                } catch (_) {
+                  // no-op: avoid blocking UI if rules/data mismatch
                 }
+              });
+            }
 
-                Map<String, dynamic> bootstrapEntry(VehicleType type) {
-                  final defaults = _limitsByVehicle(type);
-                  return {
-                    'vehicle': {'type': type.name},
-                    'limits': {
-                      'maxWeightKg': defaults.maxWeightKg,
-                      'maxDistanceKm': defaults.maxDistanceKm,
-                    },
-                  };
-                }
+            final activeTypeRaw =
+                (riderProfile as dynamic)?.activeVehicleType as String?;
+            final currentType = activeTypeRaw != null
+                ? VehicleType.fromString(activeTypeRaw)
+                : riderProfile?.vehicle.type;
+            final selectedType =
+                _selected ?? currentType ?? VehicleType.bicycle;
 
-                final shouldBootstrapBicycle =
-                    bicycleStatus == null || bicycleStatus.trim().isEmpty;
+            Map<String, dynamic>? vehicleEntryMap(VehicleType type) {
+              final rp = riderProfile as dynamic;
+              final vehicles = rp?.vehicles as dynamic;
+              final entry = vehicles != null
+                  ? vehicles[type.name] as dynamic
+                  : null;
+              return entry is Map ? Map<String, dynamic>.from(entry) : null;
+            }
 
-                final updates = <String, dynamic>{};
-                if (shouldBootstrapBicycle) {
-                  final defaults = _limitsByVehicle(VehicleType.bicycle);
-                  updates['bicycle'] = {
-                    'vehicle': {'type': 'bicycle'},
-                    'verification': {
-                      'status': 'not_required',
-                      'requestId': null,
-                      'submittedAt': null,
-                      'verifiedAt': null,
-                    },
-                    'limits': {
-                      'maxWeightKg': defaults.maxWeightKg,
-                      'maxDistanceKm': defaults.maxDistanceKm,
-                    },
-                  };
-                }
-
-                if (!hasVehicleEntry('motorcycle')) {
-                  updates['motorcycle'] = bootstrapEntry(
-                    VehicleType.motorcycle,
-                  );
-                }
-                if (!hasVehicleEntry('car')) {
-                  updates['car'] = bootstrapEntry(VehicleType.car);
-                }
-                if (!hasVehicleEntry('truck')) {
-                  updates['truck'] = bootstrapEntry(VehicleType.truck);
-                }
-
-                if (updates.isNotEmpty) {
-                  final db = ref.read(firebaseFirestoreProvider);
-                  await db.collection('users').doc(user.id).set({
-                    'riderProfile': {
-                      'vehicles': {...updates},
-                    },
-                  }, firestore.SetOptions(merge: true));
-                  ref.invalidate(profileProvider);
-                  ref.invalidate(profileStreamProvider);
-                }
-              } catch (_) {
-                // no-op: avoid blocking UI if rules/data mismatch
-              }
-            });
-          }
-
-          final activeTypeRaw =
-              (riderProfile as dynamic)?.activeVehicleType as String?;
-          final currentType = activeTypeRaw != null
-              ? VehicleType.fromString(activeTypeRaw)
-              : riderProfile?.vehicle.type;
-          final selectedType = _selected ?? currentType ?? VehicleType.bicycle;
-
-          Map<String, dynamic>? vehicleEntryMap(VehicleType type) {
-            final rp = riderProfile as dynamic;
-            final vehicles = rp?.vehicles as dynamic;
-            final entry = vehicles != null
-                ? vehicles[type.name] as dynamic
-                : null;
-            return entry is Map ? Map<String, dynamic>.from(entry) : null;
-          }
-
-          String? vehicleVerificationStatus(VehicleType type) {
-            final entry = vehicleEntryMap(type);
-            final verification = entry?['verification'] is Map
-                ? Map<String, dynamic>.from(entry!['verification'] as Map)
-                : null;
-            final requestId = verification?['requestId']?.toString();
-            final requestDataById =
-                requestId != null && requestId.trim().isNotEmpty
-                ? ref
-                      .watch(
-                        vehicleVerificationRequestProvider(
-                          RiderVerificationRequestKey(
-                            userId: user.id,
-                            requestId: requestId,
+            String? vehicleVerificationStatus(VehicleType type) {
+              final entry = vehicleEntryMap(type);
+              final verification = entry?['verification'] is Map
+                  ? Map<String, dynamic>.from(entry!['verification'] as Map)
+                  : null;
+              final requestId = verification?['requestId']?.toString();
+              final requestDataById =
+                  requestId != null && requestId.trim().isNotEmpty
+                  ? ref
+                        .watch(
+                          vehicleVerificationRequestProvider(
+                            RiderVerificationRequestKey(
+                              userId: user.id,
+                              requestId: requestId,
+                            ),
                           ),
-                        ),
-                      )
-                      .value
-                : null;
-            final latestRequestData = ref
-                .watch(
-                  latestVehicleVerificationRequestProvider(
-                    RiderVerificationVehicleKey(
-                      userId: user.id,
-                      vehicleType: type.name,
+                        )
+                        .value
+                  : null;
+              final latestRequestData = ref
+                  .watch(
+                    latestVehicleVerificationRequestProvider(
+                      RiderVerificationVehicleKey(
+                        userId: user.id,
+                        vehicleType: type.name,
+                      ),
                     ),
-                  ),
-                )
-                .value;
-            final requestData = latestRequestData ?? requestDataById;
+                  )
+                  .value;
+              final requestData = latestRequestData ?? requestDataById;
 
-            final status = verification?['status']?.toString();
-            final ocr = entry?['ocr'] is Map
-                ? Map<String, dynamic>.from(entry!['ocr'] as Map)
-                : null;
-            final ocrStatus = ocr?['status']?.toString();
-            final resolvedStatus = resolveVerificationStatus(
-              requestData: requestData,
-              profileData: verification,
-              fallbackStatus: status,
-            );
-            if (resolvedStatus != null) return resolvedStatus;
+              final status = verification?['status']?.toString();
+              final ocr = entry?['ocr'] is Map
+                  ? Map<String, dynamic>.from(entry!['ocr'] as Map)
+                  : null;
+              final ocrStatus = ocr?['status']?.toString();
+              final resolvedStatus = resolveVerificationStatus(
+                requestData: requestData,
+                profileData: verification,
+                fallbackStatus: status,
+              );
+              if (resolvedStatus != null) return resolvedStatus;
 
-            if (ocrStatus != null && ocrStatus != 'processing') {
-              return ocrStatus;
+              if (ocrStatus != null && ocrStatus != 'processing') {
+                return ocrStatus;
+              }
+
+              return status;
             }
 
-            return status;
-          }
-
-          bool isVehicleVerified(VehicleType type) {
-            final status = vehicleVerificationStatus(type);
-            return status == 'approved' || status == 'not_required';
-          }
-
-          String? vehicleStatusLabel(VehicleType type) {
-            final status = vehicleVerificationStatus(type);
-            switch (status) {
-              case null:
-                return null;
-              case 'approved':
-                return 'Verificado';
-              case 'processing':
-                return 'Analizando…';
-              case 'submitted':
-                return 'Enviado';
-              case 'needs_review':
-                return 'Pendiente';
-              case 'rejected':
-                return 'Rechazado';
-              case 'failed':
-                return 'Error';
-              case 'not_required':
-                return 'Habilitado';
-              default:
-                return 'Pendiente';
+            bool isVehicleVerified(VehicleType type) {
+              final status = vehicleVerificationStatus(type);
+              return status == 'approved' || status == 'not_required';
             }
-          }
 
-          Future<void> openVehicleFlow(VehicleType type) async {
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => RiderVehicleSequentialVerificationFlowScreen(
-                  vehicleType: type,
-                ),
-              ),
-            );
-            ref.invalidate(profileProvider);
-            ref.invalidate(profileStreamProvider);
-          }
+            String? vehicleStatusLabel(VehicleType type) {
+              final status = vehicleVerificationStatus(type);
+              switch (status) {
+                case null:
+                  return null;
+                case 'approved':
+                  return 'Verificado';
+                case 'processing':
+                  return 'Analizando…';
+                case 'submitted':
+                  return 'Enviado';
+                case 'needs_review':
+                  return 'Pendiente';
+                case 'rejected':
+                  return 'Rechazado';
+                case 'failed':
+                  return 'Error';
+                case 'not_required':
+                  return 'Habilitado';
+                default:
+                  return 'Pendiente';
+              }
+            }
 
-          Future<void> openVehicleEditor(VehicleType type) async {
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) =>
-                    RiderVehicleVerificationScreen(vehicleType: type),
-              ),
-            );
-            ref.invalidate(profileProvider);
-            ref.invalidate(profileStreamProvider);
-          }
-
-          Future<void> selectVehicle(VehicleType type) async {
-            if (_saving) return;
-            if (rutGateRequired) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Debes verificar tu RUT para verificar vehiculos.',
+            Future<void> openVehicleFlow(VehicleType type) async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => RiderVehicleSequentialVerificationFlowScreen(
+                    vehicleType: type,
                   ),
-                  duration: Duration(seconds: 3),
                 ),
               );
-              return;
+              ref.invalidate(profileProvider);
+              ref.invalidate(profileStreamProvider);
             }
-            if (!isVehicleVerified(type)) {
-              await openVehicleFlow(type);
-              return;
-            }
-            setState(() => _selected = type);
-            if (type == currentType) return;
-            await _saveVehicle(context, userId: user.id, selectedType: type);
-          }
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: backgroundWhite,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: textGray900.withValues(alpha: 0.06),
+            Future<void> openVehicleEditor(VehicleType type) async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      RiderVehicleVerificationScreen(vehicleType: type),
+                ),
+              );
+              ref.invalidate(profileProvider);
+              ref.invalidate(profileStreamProvider);
+            }
+
+            Future<void> selectVehicle(VehicleType type) async {
+              if (_saving) return;
+              if (rutGateRequired) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Debes verificar tu RUT para verificar vehiculos.',
+                    ),
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+                return;
+              }
+              if (!isVehicleVerified(type)) {
+                await openVehicleFlow(type);
+                return;
+              }
+              setState(() => _selected = type);
+              if (type == currentType) return;
+              await _saveVehicle(context, userId: user.id, selectedType: type);
+            }
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: backgroundWhite,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: textGray900.withValues(alpha: 0.06),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Vehiculo disponible',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              color: textGray900,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Toca un vehiculo habilitado para usarlo',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: textGray700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      _VehicleOptionTile(
+                        type: VehicleType.bicycle,
+                        title: 'Bicicleta',
+                        subtitle: 'Hasta 5kg, 40x30x30 cm',
+                        selected: selectedType == VehicleType.bicycle,
+                        isVerified: isVehicleVerified(VehicleType.bicycle),
+                        statusLabel: vehicleStatusLabel(VehicleType.bicycle),
+                        enabled: true,
+                        onTap: () => selectVehicle(VehicleType.bicycle),
+                        onPrimaryAction: null,
+                        primaryActionLabel: null,
+                        warningText: null,
+                      ),
+                      const SizedBox(height: 10),
+                      _VehicleOptionTile(
+                        type: VehicleType.motorcycle,
+                        title: 'Motocicleta',
+                        subtitle: 'Hasta 15kg, 50x40x40 cm',
+                        selected: selectedType == VehicleType.motorcycle,
+                        isVerified: isVehicleVerified(VehicleType.motorcycle),
+                        statusLabel: vehicleStatusLabel(VehicleType.motorcycle),
+                        enabled: true,
+                        onTap: () => selectVehicle(VehicleType.motorcycle),
+                        onPrimaryAction: () async {
+                          if (rutGateRequired) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Debes verificar tu RUT para verificar vehículos.',
+                                ),
+                                duration: Duration(seconds: 3),
+                              ),
+                            );
+                            return;
+                          }
+                          if (isVehicleVerified(VehicleType.motorcycle)) {
+                            await openVehicleEditor(VehicleType.motorcycle);
+                            return;
+                          }
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const RiderVehicleSequentialVerificationFlowScreen(
+                                    vehicleType: VehicleType.motorcycle,
+                                  ),
+                            ),
+                          );
+                          ref.invalidate(profileProvider);
+                          ref.invalidate(profileStreamProvider);
+                        },
+                        primaryActionLabel:
+                            isVehicleVerified(VehicleType.motorcycle)
+                            ? 'Editar datos'
+                            : '+ Verificar vehículo',
+                        warningText:
+                            'Requiere licencia vigente y documentación del vehículo',
+                      ),
+                      const SizedBox(height: 10),
+                      _VehicleOptionTile(
+                        type: VehicleType.car,
+                        title: 'Auto',
+                        subtitle: 'Hasta 25kg, 80x70x60 cm',
+                        selected: selectedType == VehicleType.car,
+                        isVerified: isVehicleVerified(VehicleType.car),
+                        statusLabel: vehicleStatusLabel(VehicleType.car),
+                        enabled: true,
+                        onTap: () => selectVehicle(VehicleType.car),
+                        onPrimaryAction: () async {
+                          if (rutGateRequired) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Debes verificar tu RUT para verificar vehículos.',
+                                ),
+                                duration: Duration(seconds: 3),
+                              ),
+                            );
+                            return;
+                          }
+                          if (isVehicleVerified(VehicleType.car)) {
+                            await openVehicleEditor(VehicleType.car);
+                            return;
+                          }
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const RiderVehicleSequentialVerificationFlowScreen(
+                                    vehicleType: VehicleType.car,
+                                  ),
+                            ),
+                          );
+                          ref.invalidate(profileProvider);
+                          ref.invalidate(profileStreamProvider);
+                        },
+                        primaryActionLabel: isVehicleVerified(VehicleType.car)
+                            ? 'Editar datos'
+                            : '+ Verificar vehículo',
+                        warningText:
+                            'Requiere licencia vigente y documentación del vehículo',
+                      ),
+                      const SizedBox(height: 10),
+                      _VehicleOptionTile(
+                        type: VehicleType.truck,
+                        title: 'Camioneta',
+                        subtitle: 'Hasta 80kg, 150x120x100 cm',
+                        selected: selectedType == VehicleType.truck,
+                        isVerified: isVehicleVerified(VehicleType.truck),
+                        statusLabel: vehicleStatusLabel(VehicleType.truck),
+                        enabled: true,
+                        onTap: () => selectVehicle(VehicleType.truck),
+                        onPrimaryAction: () async {
+                          if (rutGateRequired) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Debes verificar tu RUT para verificar vehículos.',
+                                ),
+                                duration: Duration(seconds: 3),
+                              ),
+                            );
+                            return;
+                          }
+                          if (isVehicleVerified(VehicleType.truck)) {
+                            await openVehicleEditor(VehicleType.truck);
+                            return;
+                          }
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const RiderVehicleSequentialVerificationFlowScreen(
+                                    vehicleType: VehicleType.truck,
+                                  ),
+                            ),
+                          );
+                          ref.invalidate(profileProvider);
+                          ref.invalidate(profileStreamProvider);
+                        },
+                        primaryActionLabel: isVehicleVerified(VehicleType.truck)
+                            ? 'Editar datos'
+                            : '+ Verificar vehículo',
+                        warningText:
+                            'Requiere licencia vigente y documentación del vehículo',
+                      ),
+                    ],
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Vehiculo disponible',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
-                            color: textGray900,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Toca un vehiculo habilitado para usarlo',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: textGray700,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _VehicleOptionTile(
-                      type: VehicleType.bicycle,
-                      title: 'Bicicleta',
-                      subtitle: 'Hasta 5kg, 40x30x30 cm',
-                      selected: selectedType == VehicleType.bicycle,
-                      isVerified: isVehicleVerified(VehicleType.bicycle),
-                      statusLabel: vehicleStatusLabel(VehicleType.bicycle),
-                      enabled: true,
-                      onTap: () => selectVehicle(VehicleType.bicycle),
-                      onPrimaryAction: null,
-                      primaryActionLabel: null,
-                      warningText: null,
-                    ),
-                    const SizedBox(height: 10),
-                    _VehicleOptionTile(
-                      type: VehicleType.motorcycle,
-                      title: 'Motocicleta',
-                      subtitle: 'Hasta 15kg, 50x40x40 cm',
-                      selected: selectedType == VehicleType.motorcycle,
-                      isVerified: isVehicleVerified(VehicleType.motorcycle),
-                      statusLabel: vehicleStatusLabel(VehicleType.motorcycle),
-                      enabled: true,
-                      onTap: () => selectVehicle(VehicleType.motorcycle),
-                      onPrimaryAction: () async {
-                        if (rutGateRequired) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Debes verificar tu RUT para verificar vehículos.',
-                              ),
-                              duration: Duration(seconds: 3),
-                            ),
-                          );
-                          return;
-                        }
-                        if (isVehicleVerified(VehicleType.motorcycle)) {
-                          await openVehicleEditor(VehicleType.motorcycle);
-                          return;
-                        }
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                const RiderVehicleSequentialVerificationFlowScreen(
-                                  vehicleType: VehicleType.motorcycle,
-                                ),
-                          ),
-                        );
-                        ref.invalidate(profileProvider);
-                        ref.invalidate(profileStreamProvider);
-                      },
-                      primaryActionLabel:
-                          isVehicleVerified(VehicleType.motorcycle)
-                          ? 'Editar datos'
-                          : '+ Verificar vehículo',
-                      warningText:
-                          'Requiere licencia vigente y documentación del vehículo',
-                    ),
-                    const SizedBox(height: 10),
-                    _VehicleOptionTile(
-                      type: VehicleType.car,
-                      title: 'Auto',
-                      subtitle: 'Hasta 25kg, 80x70x60 cm',
-                      selected: selectedType == VehicleType.car,
-                      isVerified: isVehicleVerified(VehicleType.car),
-                      statusLabel: vehicleStatusLabel(VehicleType.car),
-                      enabled: true,
-                      onTap: () => selectVehicle(VehicleType.car),
-                      onPrimaryAction: () async {
-                        if (rutGateRequired) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Debes verificar tu RUT para verificar vehículos.',
-                              ),
-                              duration: Duration(seconds: 3),
-                            ),
-                          );
-                          return;
-                        }
-                        if (isVehicleVerified(VehicleType.car)) {
-                          await openVehicleEditor(VehicleType.car);
-                          return;
-                        }
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                const RiderVehicleSequentialVerificationFlowScreen(
-                                  vehicleType: VehicleType.car,
-                                ),
-                          ),
-                        );
-                        ref.invalidate(profileProvider);
-                        ref.invalidate(profileStreamProvider);
-                      },
-                      primaryActionLabel: isVehicleVerified(VehicleType.car)
-                          ? 'Editar datos'
-                          : '+ Verificar vehículo',
-                      warningText:
-                          'Requiere licencia vigente y documentación del vehículo',
-                    ),
-                    const SizedBox(height: 10),
-                    _VehicleOptionTile(
-                      type: VehicleType.truck,
-                      title: 'Camioneta',
-                      subtitle: 'Hasta 80kg, 150x120x100 cm',
-                      selected: selectedType == VehicleType.truck,
-                      isVerified: isVehicleVerified(VehicleType.truck),
-                      statusLabel: vehicleStatusLabel(VehicleType.truck),
-                      enabled: true,
-                      onTap: () => selectVehicle(VehicleType.truck),
-                      onPrimaryAction: () async {
-                        if (rutGateRequired) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Debes verificar tu RUT para verificar vehículos.',
-                              ),
-                              duration: Duration(seconds: 3),
-                            ),
-                          );
-                          return;
-                        }
-                        if (isVehicleVerified(VehicleType.truck)) {
-                          await openVehicleEditor(VehicleType.truck);
-                          return;
-                        }
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                const RiderVehicleSequentialVerificationFlowScreen(
-                                  vehicleType: VehicleType.truck,
-                                ),
-                          ),
-                        );
-                        ref.invalidate(profileProvider);
-                        ref.invalidate(profileStreamProvider);
-                      },
-                      primaryActionLabel: isVehicleVerified(VehicleType.truck)
-                          ? 'Editar datos'
-                          : '+ Verificar vehículo',
-                      warningText:
-                          'Requiere licencia vigente y documentación del vehículo',
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }

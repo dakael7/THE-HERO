@@ -23,65 +23,68 @@ class RiderStatsScreen extends ConsumerWidget {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: userAsync.when(
-        data: (user) {
-          if (user == null) {
-            return const Center(child: Text('Usuario no encontrado'));
-          }
+      body: SafeArea(
+        top: false,
+        child: userAsync.when(
+          data: (user) {
+            if (user == null) {
+              return const Center(child: Text('Usuario no encontrado'));
+            }
 
-          final statsAsync = ref.watch(riderCumulativeStatsProvider(user.id));
+            final statsAsync = ref.watch(riderCumulativeStatsProvider(user.id));
 
-          return statsAsync.when(
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: primaryOrange),
-            ),
-            error: (e, _) => Center(child: Text('Error: $e')),
-            data: (stats) {
-              if (stats == null) {
-                return const Center(child: Text('No hay datos para mostrar'));
-              }
+            return statsAsync.when(
+              loading: () => const Center(
+                child: CircularProgressIndicator(color: primaryOrange),
+              ),
+              error: (e, _) => Center(child: Text('Error: $e')),
+              data: (stats) {
+                if (stats == null) {
+                  return const Center(child: Text('No hay datos para mostrar'));
+                }
 
-              final pending = stats.pendingBalance;
-              final pendingLabel = pending < 0
-                  ? 'Debes dinero a la plataforma'
-                  : 'Pendiente por pagar';
+                final pending = stats.pendingBalance;
+                final pendingLabel = pending < 0
+                    ? 'Debes dinero a la plataforma'
+                    : 'Pendiente por pagar';
 
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                children: [
-                  _StatCard(
-                    title: 'Total Earnings',
-                    value: '\$${stats.totalEarnings.toStringAsFixed(0)}',
-                  ),
-                  const SizedBox(height: 12),
-                  _StatCard(
-                    title: 'Total Tips',
-                    value: '\$${stats.totalTips.toStringAsFixed(0)}',
-                  ),
-                  const SizedBox(height: 12),
-                  _StatCard(
-                    title: 'Completed Trips',
-                    value: stats.completedTrips.toString(),
-                  ),
-                  const SizedBox(height: 12),
-                  _StatCard(
-                    title: 'Canceled Trips',
-                    value: stats.canceledTrips.toString(),
-                  ),
-                  const SizedBox(height: 12),
-                  _StatCard(
-                    title: 'Pending Balance',
-                    value: '\$${pending.abs().toStringAsFixed(0)}',
-                    subtitle: pendingLabel,
-                    valueColor: pending < 0 ? Colors.red : Colors.green,
-                  ),
-                ],
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                  children: [
+                    _StatCard(
+                      title: 'Total Earnings',
+                      value: '\$${stats.totalEarnings.toStringAsFixed(0)}',
+                    ),
+                    const SizedBox(height: 12),
+                    _StatCard(
+                      title: 'Total Tips',
+                      value: '\$${stats.totalTips.toStringAsFixed(0)}',
+                    ),
+                    const SizedBox(height: 12),
+                    _StatCard(
+                      title: 'Completed Trips',
+                      value: stats.completedTrips.toString(),
+                    ),
+                    const SizedBox(height: 12),
+                    _StatCard(
+                      title: 'Canceled Trips',
+                      value: stats.canceledTrips.toString(),
+                    ),
+                    const SizedBox(height: 12),
+                    _StatCard(
+                      title: 'Pending Balance',
+                      value: '\$${pending.abs().toStringAsFixed(0)}',
+                      subtitle: pendingLabel,
+                      valueColor: pending < 0 ? Colors.red : Colors.green,
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('Error: $e')),
+        ),
       ),
     );
   }

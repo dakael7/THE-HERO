@@ -23,6 +23,13 @@ void main() async {
   if (Platform.isAndroid) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+      ),
+    );
+
     final mapsImplementation = GoogleMapsFlutterPlatform.instance;
     if (mapsImplementation is GoogleMapsFlutterAndroid) {
       if (kReleaseMode) {

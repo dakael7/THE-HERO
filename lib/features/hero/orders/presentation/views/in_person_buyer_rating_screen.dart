@@ -91,7 +91,9 @@ class _InPersonBuyerRatingScreenState
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: ListView(
+      body: SafeArea(
+        top: false,
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _SuccessCard(
@@ -114,6 +116,7 @@ class _InPersonBuyerRatingScreenState
             onPressed: _submit,
           ),
         ],
+      ),
       ),
     );
   }

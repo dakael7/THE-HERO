@@ -85,15 +85,18 @@ class _PaymentResultScreenState extends ConsumerState<PaymentResultScreen>
         ),
         automaticallyImplyLeading: false,
       ),
-      body: paymentAsync.when(
-        data: (payment) =>
-            _buildResultContent(payment, orderAsync.asData?.value),
-        loading: () => const Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(primaryOrange),
+      body: SafeArea(
+        top: false,
+        child: paymentAsync.when(
+          data: (payment) =>
+              _buildResultContent(payment, orderAsync.asData?.value),
+          loading: () => const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(primaryOrange),
+            ),
           ),
+          error: (error, stack) => _buildErrorContent(error.toString()),
         ),
-        error: (error, stack) => _buildErrorContent(error.toString()),
       ),
     );
   }

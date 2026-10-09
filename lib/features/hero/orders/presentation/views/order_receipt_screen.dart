@@ -40,7 +40,9 @@ class OrderReceiptScreen extends ConsumerWidget {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: orderAsync.when(
+      body: SafeArea(
+        top: false,
+        child: orderAsync.when(
         loading: () => const Center(
           child: CircularProgressIndicator(color: primaryOrange),
         ),
@@ -64,6 +66,7 @@ class OrderReceiptScreen extends ConsumerWidget {
             },
           );
         },
+      ),
       ),
     );
   }

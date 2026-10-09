@@ -42,7 +42,9 @@ class HelpCenterScreen extends ConsumerWidget {
           ref.read(heroHomeViewModelProvider.notifier).selectNavItem(0);
         },
       ),
-      body: ListView(
+      body: SafeArea(
+        top: false,
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Material(
@@ -160,6 +162,7 @@ class HelpCenterScreen extends ConsumerWidget {
                 : () => _requestAccountDeletion(context, ref),
           ),
         ],
+      ),
       ),
     );
   }

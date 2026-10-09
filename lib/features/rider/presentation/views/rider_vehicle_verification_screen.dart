@@ -644,54 +644,13 @@ class _RiderVehicleVerificationScreenState
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: backgroundWhite,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: borderGray100),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.vehicleType.displayName,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: textGray900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  if (required.isNotEmpty)
-                    Text(
-                      'Licencia requerida: ${required.join(" / ")}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: textGray700,
-                      ),
-                    )
-                  else
-                    const Text(
-                      'Este vehículo no requiere licencia.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: textGray700,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            if (!_isBicycle) ...[
+      body: SafeArea(
+        top: false,
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -700,160 +659,204 @@ class _RiderVehicleVerificationScreenState
                   border: Border.all(color: borderGray100),
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    TextFormField(
-                      controller: _plateController,
-                      decoration: const InputDecoration(
-                        labelText: 'Patente',
-                        prefixIcon: Icon(Icons.confirmation_number_outlined),
+                    Text(
+                      widget.vehicleType.displayName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: textGray900,
                       ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
-                          return 'Ingresa la patente';
-                        }
-                        return null;
-                      },
                     ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _colorController,
-                      decoration: const InputDecoration(
-                        labelText: 'Color',
-                        prefixIcon: Icon(Icons.palette_outlined),
+                    const SizedBox(height: 6),
+                    if (required.isNotEmpty)
+                      Text(
+                        'Licencia requerida: ${required.join(" / ")}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: textGray700,
+                        ),
+                      )
+                    else
+                      const Text(
+                        'Este vehículo no requiere licencia.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: textGray700,
+                        ),
                       ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
-                          return 'Ingresa el color';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _modelController,
-                      decoration: const InputDecoration(
-                        labelText: 'Modelo',
-                        prefixIcon: Icon(Icons.directions_car_outlined),
-                      ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
-                          return 'Ingresa el modelo';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _yearController,
-                      decoration: const InputDecoration(
-                        labelText: 'Año',
-                        prefixIcon: Icon(Icons.calendar_today_outlined),
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
-                          return 'Ingresa el año';
-                        }
-                        final parsed = int.tryParse(v.trim());
-                        if (parsed == null) {
-                          return 'Año inválido';
-                        }
-                        if (parsed < 1970 || parsed > DateTime.now().year + 1) {
-                          return 'Año inválido';
-                        }
-                        return null;
-                      },
-                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
-              _buildVehicleDocumentCard(
-                title: 'Certificado de inscripción',
-                loadedLabel: 'Certificado cargado',
-                requiredDocument: true,
-                bytes: _registrationCertificateBytes,
-                contentType: _registrationCertificateContentType,
-                existingUrl: _existingRegistrationCertificateUrl,
-                existingPath: _existingRegistrationCertificatePath,
-                existingContentType:
-                    _existingRegistrationCertificateContentType,
-                onPicked: (bytes, fileName, contentType) {
-                  _registrationCertificateBytes = bytes;
-                  _registrationCertificateFileName = fileName;
-                  _registrationCertificateContentType = contentType;
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildVehicleDocumentCard(
-                title: 'SOAP',
-                loadedLabel: 'SOAP cargado',
-                requiredDocument: true,
-                bytes: _soapBytes,
-                contentType: _soapContentType,
-                existingUrl: _existingSoapUrl,
-                existingPath: _existingSoapPath,
-                existingContentType: _existingSoapContentType,
-                onPicked: (bytes, fileName, contentType) {
-                  _soapBytes = bytes;
-                  _soapFileName = fileName;
-                  _soapContentType = contentType;
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildVehicleDocumentCard(
-                title: 'Permiso de Circulación',
-                loadedLabel: 'Permiso de Circulación cargado',
-                requiredDocument: true,
-                bytes: _circulationPermitBytes,
-                contentType: _circulationPermitContentType,
-                existingUrl: _existingCirculationPermitUrl,
-                existingPath: _existingCirculationPermitPath,
-                existingContentType: _existingCirculationPermitContentType,
-                onPicked: (bytes, fileName, contentType) {
-                  _circulationPermitBytes = bytes;
-                  _circulationPermitFileName = fileName;
-                  _circulationPermitContentType = contentType;
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildVehicleDocumentCard(
-                title: 'Revisión técnica u homologación',
-                loadedLabel: 'Revisión técnica u homologación cargada',
-                requiredDocument: false,
-                bytes: _technicalReviewBytes,
-                contentType: _technicalReviewContentType,
-                existingUrl: _existingTechnicalReviewUrl,
-                existingPath: _existingTechnicalReviewPath,
-                existingContentType: _existingTechnicalReviewContentType,
-                onPicked: (bytes, fileName, contentType) {
-                  _technicalReviewBytes = bytes;
-                  _technicalReviewFileName = fileName;
-                  _technicalReviewContentType = contentType;
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
 
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saving ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryOrange,
-                  foregroundColor: backgroundWhite,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+              if (!_isBicycle) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: backgroundWhite,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: borderGray100),
+                  ),
+                  child: Column(
+                    children: [
+                      TextFormField(
+                        controller: _plateController,
+                        decoration: const InputDecoration(
+                          labelText: 'Patente',
+                          prefixIcon: Icon(Icons.confirmation_number_outlined),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Ingresa la patente';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _colorController,
+                        decoration: const InputDecoration(
+                          labelText: 'Color',
+                          prefixIcon: Icon(Icons.palette_outlined),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Ingresa el color';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _modelController,
+                        decoration: const InputDecoration(
+                          labelText: 'Modelo',
+                          prefixIcon: Icon(Icons.directions_car_outlined),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Ingresa el modelo';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _yearController,
+                        decoration: const InputDecoration(
+                          labelText: 'Año',
+                          prefixIcon: Icon(Icons.calendar_today_outlined),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Ingresa el año';
+                          }
+                          final parsed = int.tryParse(v.trim());
+                          if (parsed == null) {
+                            return 'Año inválido';
+                          }
+                          if (parsed < 1970 || parsed > DateTime.now().year + 1) {
+                            return 'Año inválido';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
                   ),
                 ),
-                child: Text(
-                  _saving ? 'Guardando...' : 'Guardar información',
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                const SizedBox(height: 16),
+                _buildVehicleDocumentCard(
+                  title: 'Certificado de inscripción',
+                  loadedLabel: 'Certificado cargado',
+                  requiredDocument: true,
+                  bytes: _registrationCertificateBytes,
+                  contentType: _registrationCertificateContentType,
+                  existingUrl: _existingRegistrationCertificateUrl,
+                  existingPath: _existingRegistrationCertificatePath,
+                  existingContentType:
+                      _existingRegistrationCertificateContentType,
+                  onPicked: (bytes, fileName, contentType) {
+                    _registrationCertificateBytes = bytes;
+                    _registrationCertificateFileName = fileName;
+                    _registrationCertificateContentType = contentType;
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildVehicleDocumentCard(
+                  title: 'SOAP',
+                  loadedLabel: 'SOAP cargado',
+                  requiredDocument: true,
+                  bytes: _soapBytes,
+                  contentType: _soapContentType,
+                  existingUrl: _existingSoapUrl,
+                  existingPath: _existingSoapPath,
+                  existingContentType: _existingSoapContentType,
+                  onPicked: (bytes, fileName, contentType) {
+                    _soapBytes = bytes;
+                    _soapFileName = fileName;
+                    _soapContentType = contentType;
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildVehicleDocumentCard(
+                  title: 'Permiso de Circulación',
+                  loadedLabel: 'Permiso de Circulación cargado',
+                  requiredDocument: true,
+                  bytes: _circulationPermitBytes,
+                  contentType: _circulationPermitContentType,
+                  existingUrl: _existingCirculationPermitUrl,
+                  existingPath: _existingCirculationPermitPath,
+                  existingContentType: _existingCirculationPermitContentType,
+                  onPicked: (bytes, fileName, contentType) {
+                    _circulationPermitBytes = bytes;
+                    _circulationPermitFileName = fileName;
+                    _circulationPermitContentType = contentType;
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildVehicleDocumentCard(
+                  title: 'Revisión técnica u homologación',
+                  loadedLabel: 'Revisión técnica u homologación cargada',
+                  requiredDocument: false,
+                  bytes: _technicalReviewBytes,
+                  contentType: _technicalReviewContentType,
+                  existingUrl: _existingTechnicalReviewUrl,
+                  existingPath: _existingTechnicalReviewPath,
+                  existingContentType: _existingTechnicalReviewContentType,
+                  onPicked: (bytes, fileName, contentType) {
+                    _technicalReviewBytes = bytes;
+                    _technicalReviewFileName = fileName;
+                    _technicalReviewContentType = contentType;
+                  },
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _saving ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryOrange,
+                    foregroundColor: backgroundWhite,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(
+                    _saving ? 'Guardando...' : 'Guardar información',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
