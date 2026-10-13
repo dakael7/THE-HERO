@@ -64,6 +64,18 @@ class FCMService {
     if (_initialized || _initializing) return;
     _initializing = true;
     try {
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
+      try {
+        final initialMessage = await _firebaseMessaging
+            .getInitialMessage()
+            .timeout(const Duration(seconds: 4));
+        if (initialMessage != null) {
+          _handleMessageOpenedApp(initialMessage);
+        }
+      } catch (e) {
+        print('FCM: getInitialMessage failed: $e');
+      }
+
       // Request permission for iOS (and noop on Android)
       NotificationSettings? settings;
       try {
@@ -127,19 +139,6 @@ class FCMService {
       });
 
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-
-      FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
-
-      try {
-        final initialMessage = await _firebaseMessaging
-            .getInitialMessage()
-            .timeout(const Duration(seconds: 4));
-        if (initialMessage != null) {
-          _handleMessageOpenedApp(initialMessage);
-        }
-      } catch (e) {
-        print('FCM: getInitialMessage failed: $e');
-      }
 
       _initialized = true;
     } finally {
@@ -219,6 +218,12 @@ class FCMService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
+    final launch = await _localNotifications.getNotificationAppLaunchDetails();
+    final launchResponse = launch?.notificationResponse;
+    if (launch?.didNotificationLaunchApp == true && launchResponse != null) {
+      _onNotificationTapped(launchResponse);
+    }
+
     // Create notification channels for Android
     await _createNotificationChannels();
   }
@@ -275,6 +280,7 @@ class FCMService {
 
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'fcmToken': token,
+        'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -338,6 +344,8 @@ class FCMService {
           .doc(user.uid)
           .set({
             'fcmToken': FieldValue.delete(),
+            if (_fcmToken != null)
+              'fcmTokens': FieldValue.arrayRemove([_fcmToken]),
             'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true))
           .timeout(const Duration(seconds: 6));
@@ -379,13 +387,6 @@ class FCMService {
         );
       }
     }
-
-    // Save notification to Firestore (also for data-only messages).
-    _saveNotificationToFirestore(
-      message,
-      titleOverride: title,
-      bodyOverride: body,
-    );
   }
 
   /// Handle message opened from background/terminated state
@@ -408,6 +409,8 @@ class FCMService {
 
     switch (type) {
       case 'order_status':
+      case 'pickup_progress':
+      case 'seller_order':
         channelId = 'order_updates';
         break;
       case 'chat':
@@ -481,43 +484,6 @@ class FCMService {
     NotificationHandler().handleNotificationTap(data);
   }
 
-  /// Save notification to Firestore
-  Future<void> _saveNotificationToFirestore(
-    RemoteMessage message, {
-    String? titleOverride,
-    String? bodyOverride,
-  }) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final data = NotificationHandler().extractMessageData(message);
-      final title = (titleOverride ?? _resolveNotificationTitle(message, data: data))
-          .trim();
-      final body = (bodyOverride ?? _resolveNotificationBody(message, data: data))
-          .trim();
-      if (title.isEmpty && body.isEmpty) return;
-
-      // Determine priority from data or default to normal
-      final priority = data['priority']?.toString() ?? 'normal';
-
-      await FirebaseFirestore.instance.collection('notifications').add({
-        'userId': user.uid,
-        'type': data['type'] ?? 'system',
-        'title': title,
-        'body': body,
-        'data': data,
-        'action': data['action'],
-        'imageUrl': _resolveNotificationImageUrl(message, data: data),
-        'priority': priority,
-        'createdAt': FieldValue.serverTimestamp(),
-        'read': false,
-      });
-    } catch (e) {
-      print('Error saving notification to Firestore: $e');
-    }
-  }
-
   /// Encode payload for local notification
   String _encodePayload(Map<String, dynamic> data) {
     return jsonEncode(data);
@@ -565,25 +531,6 @@ class FCMService {
     }
 
     return '';
-  }
-
-  String? _resolveNotificationImageUrl(
-    RemoteMessage message, {
-    required Map<String, dynamic> data,
-  }) {
-    final imageFromNotification =
-        message.notification?.android?.imageUrl ??
-        message.notification?.apple?.imageUrl;
-    if (imageFromNotification != null && imageFromNotification.trim().isNotEmpty) {
-      return imageFromNotification.trim();
-    }
-
-    final imageFromData = data['imageUrl']?.toString().trim();
-    if (imageFromData != null && imageFromData.isNotEmpty) {
-      return imageFromData;
-    }
-
-    return null;
   }
 
   /// Decode payload from local notification

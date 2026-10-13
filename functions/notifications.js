@@ -228,150 +228,37 @@ exports.notifyPickupStopProgress = onDocumentWritten(
  * @param {Object} data - Custom data payload
  * @returns {Promise<void>}
  */
+const ANDROID_CHANNEL_BY_TYPE = {
+  order_status: "order_updates",
+  pickup_progress: "order_updates",
+  seller_order: "order_updates",
+  chat_message: "chat_messages",
+  nearby_order: "nearby_orders",
+};
+
 async function sendNotificationToUsers(userIds, notification, data = {}) {
   try {
-    const ids = Array.isArray(userIds) ? userIds : [userIds];
-    const userTokensMap = new Map(); // Map userId -> tokens[]
+    const db = admin.firestore();
+    const ids = [...new Set((Array.isArray(userIds) ? userIds : [userIds])
+      .map((id) => (typeof id === "string" ? id.trim() : ""))
+      .filter(Boolean))];
+    if (ids.length === 0) return;
 
-    // Get FCM tokens for all users
-    for (const userId of ids) {
-      const userDoc = await admin
-        .firestore()
-        .collection("users")
-        .doc(userId)
-        .get();
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        const tokens = [];
-
-        if (userData.fcmTokens && Array.isArray(userData.fcmTokens)) {
-          tokens.push(...userData.fcmTokens);
-        }
-
-        if (userData.fcmToken && typeof userData.fcmToken === "string") {
-          const t = userData.fcmToken.trim();
-          if (t) tokens.push(t);
-        }
-
-        const uniqueTokens = [...new Set(tokens.filter(Boolean))];
-        if (uniqueTokens.length > 0) {
-          userTokensMap.set(userId, uniqueTokens);
-        }
-      }
-    }
-
-    if (userTokensMap.size === 0) {
-      console.log("No FCM tokens found for users:", ids);
-      return;
-    }
-
-    // Collect all tokens
-    const allTokens = [];
-    userTokensMap.forEach((tokens) => {
-      allTokens.push(...tokens);
-    });
-
-    if (allTokens.length === 0) {
-      console.log("No FCM tokens to send to");
-      return;
-    }
-
-    // Build FCM message
-    const message = {
-      notification: {
-        title: notification.title,
-        body: notification.body,
-      },
-      data: {
-        ...data,
-        // Ensure all data values are strings
-        ...Object.fromEntries(
-          Object.entries(data).map(([k, v]) => [k, String(v)]),
-        ),
-      },
-    };
-
-    if (notification.imageUrl) {
-      message.notification.imageUrl = notification.imageUrl;
-    }
-
-    // Send to all tokens
-    const results = await admin.messaging().sendEachForMulticast({
-      tokens: allTokens,
-      ...message,
-      android: {
-        priority: data.priority === "high" ? "high" : "normal",
-      },
-      apns: {
-        payload: {
-          aps: {
-            contentAvailable: true,
-          },
-        },
-      },
-    });
-
-    console.log(
-      `Sent ${results.successCount} notifications, ${results.failureCount} failed`,
+    const stringData = Object.fromEntries(
+      Object.entries(data)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => [k, String(v)]),
     );
 
-    // Clean up invalid tokens
-    if (results.failureCount > 0) {
-      const invalidTokens = [];
-      results.responses.forEach((response, idx) => {
-        if (!response.success) {
-          const errorCode = response.error?.code;
-          // Remove tokens that are invalid, not registered, or unregistered
-          if (
-            errorCode === "messaging/invalid-registration-token" ||
-            errorCode === "messaging/registration-token-not-registered"
-          ) {
-            invalidTokens.push(allTokens[idx]);
-          }
-        }
-      });
-
-      // Remove invalid tokens from user documents
-      if (invalidTokens.length > 0) {
-        console.log(`Cleaning up ${invalidTokens.length} invalid tokens`);
-
-        for (const [userId, userTokens] of userTokensMap.entries()) {
-          const tokensToRemove = userTokens.filter((token) =>
-            invalidTokens.includes(token),
-          );
-
-          if (tokensToRemove.length > 0) {
-            await admin
-              .firestore()
-              .collection("users")
-              .doc(userId)
-              .update({
-                fcmTokens: admin.firestore.FieldValue.arrayRemove(
-                  ...tokensToRemove,
-                ),
-              });
-            console.log(
-              `Removed ${tokensToRemove.length} invalid tokens from user ${userId}`,
-            );
-          }
-        }
-      }
-    }
-
-    // Save notification to Firestore for each user
-    const batch = admin.firestore().batch();
+    const batch = db.batch();
     for (const userId of ids) {
-      const notificationRef = admin
-        .firestore()
-        .collection("notifications")
-        .doc();
-      batch.set(notificationRef, {
+      batch.set(db.collection("notifications").doc(), {
         userId,
         type: data.type || "system",
         title: notification.title,
         body: notification.body,
-        data,
-        action: data.action,
+        data: stringData,
+        action: data.action || null,
         imageUrl: notification.imageUrl || null,
         priority: data.priority || "normal",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -379,6 +266,91 @@ async function sendNotificationToUsers(userIds, notification, data = {}) {
       });
     }
     await batch.commit();
+
+    const userDocs = await db.getAll(
+      ...ids.map((id) => db.collection("users").doc(id)),
+    );
+    const targets = []; // { userId, token }
+    for (const userDoc of userDocs) {
+      if (!userDoc.exists) continue;
+      const userData = userDoc.data() || {};
+      const tokens = Array.isArray(userData.fcmTokens) ? [...userData.fcmTokens] : [];
+      if (typeof userData.fcmToken === "string") tokens.push(userData.fcmToken.trim());
+      for (const token of new Set(tokens.filter(Boolean))) {
+        targets.push({ userId: userDoc.id, token });
+      }
+    }
+
+    if (targets.length === 0) {
+      console.log("No FCM tokens found for users:", ids);
+      return;
+    }
+
+    const notificationPayload = {
+      title: notification.title,
+      body: notification.body,
+    };
+    if (notification.imageUrl) {
+      notificationPayload.imageUrl = notification.imageUrl;
+    }
+    const isChat = data.type === "chat_message" && stringData.chatId;
+
+    // firebase-admin 10.x has no sendEachForMulticast, and its sendMulticast
+    // uses the retired batch endpoint, so send one HTTP v1 message per token.
+    const results = await Promise.allSettled(
+      targets.map(({ token }) =>
+        admin.messaging().send({
+          token,
+          notification: notificationPayload,
+          data: stringData,
+          android: {
+            priority: data.priority === "high" ? "high" : "normal",
+            notification: {
+              channelId: ANDROID_CHANNEL_BY_TYPE[data.type] || "system_notifications",
+              ...(isChat ? { tag: `chat_${stringData.chatId}` } : {}),
+            },
+          },
+          apns: {
+            payload: {
+              aps: {
+                contentAvailable: true,
+                ...(isChat ? { threadId: `chat_${stringData.chatId}` } : {}),
+              },
+            },
+          },
+        }),
+      ),
+    );
+
+    const failed = results.filter((r) => r.status === "rejected").length;
+    console.log(`Sent ${results.length - failed} notifications, ${failed} failed`);
+
+    // Clean up dead tokens from both the legacy array and the single-token field.
+    const invalidByUser = new Map();
+    results.forEach((r, idx) => {
+      const code = r.status === "rejected" ? r.reason?.code : null;
+      if (
+        code === "messaging/invalid-registration-token" ||
+        code === "messaging/registration-token-not-registered"
+      ) {
+        const { userId, token } = targets[idx];
+        if (!invalidByUser.has(userId)) invalidByUser.set(userId, []);
+        invalidByUser.get(userId).push(token);
+      }
+    });
+
+    for (const [userId, tokens] of invalidByUser) {
+      const userRef = db.collection("users").doc(userId);
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(userRef);
+        const current = snap.get("fcmToken");
+        tx.update(userRef, {
+          fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokens),
+          ...(tokens.includes(current) ? { fcmToken: admin.firestore.FieldValue.delete() } : {}),
+        });
+      });
+      console.log(`Removed ${tokens.length} invalid tokens from user ${userId}`);
+    }
   } catch (error) {
     console.error("Error sending notification:", error);
     throw error;
@@ -498,12 +470,48 @@ exports.notifyOrderStatusChange = onDocumentWritten(
         type: "order_status",
         action: "open_order",
         orderId,
+        recipientRole: "rider",
+        status: newStatus,
+        priority: "high",
+      });
+    }
+
+    // Sellers: a new paid order, or a cancel of one they already had.
+    // assigned -> queued (rider released the order) must not look like a new sale.
+    const sellerMessage = sellerStatusMessage(oldStatus, newStatus);
+    const sellerIds = (Array.isArray(after.sellerHeroIds) ? after.sellerHeroIds : [])
+      .map((id) => String(id || "").trim())
+      .filter((id) => id && id !== heroId);
+    if (sellerMessage && sellerIds.length > 0) {
+      await sendNotificationToUsers(sellerIds, sellerMessage, {
+        type: "seller_order",
+        action: "open_order",
+        orderId,
         status: newStatus,
         priority: "high",
       });
     }
   },
 );
+
+const PRE_PAYMENT_STATUSES = ["created", "pending_payment", "paid"];
+const ACTIVE_STATUSES = ["queued", "assigned", "picked_up", "in_transit"];
+
+function sellerStatusMessage(oldStatus, newStatus) {
+  if (newStatus === "queued" && PRE_PAYMENT_STATUSES.includes(oldStatus)) {
+    return {
+      title: "🛍️ Nuevo pedido recibido",
+      body: "Tienes un pedido nuevo. Prepáralo para cuando llegue el rider.",
+    };
+  }
+  if (newStatus === "canceled" && ACTIVE_STATUSES.includes(oldStatus)) {
+    return {
+      title: "❌ Pedido Cancelado",
+      body: "Un pedido que habías recibido fue cancelado.",
+    };
+  }
+  return null;
+}
 
 /**
  * Trigger: Notify nearby riders when order is queued
@@ -640,107 +648,84 @@ function toRad(degrees) {
 }
 
 /**
- * Callable: Send notification from system operator
- * Allows authorized users to send notifications to specific users or broadcast
- *
- * @param {Object} data - { targetUserIds?: string[], title: string, body: string, type?: string, imageUrl?: string, useTopic?: boolean }
+ * Helper: Send a notification to every user, 500 at a time.
+ * The app only subscribes to per-user topics (all_users was dropped on purpose),
+ * so broadcasts go through the per-user path, which also fills each inbox.
  */
-exports.sendOperatorNotification = onCall(async (request) => {
-  // Verify user is authorized (support/admin)
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Usuario no autenticado");
-  }
+async function broadcastToAllUsers({ title, body, imageUrl, type, targetScreen }) {
+  const BATCH_SIZE = 500;
+  let totalSent = 0;
+  let lastDoc = null;
 
-  if (!isSupportUser(request.auth)) {
-    throw new HttpsError("permission-denied", "No autorizado");
-  }
+  while (true) {
+    let query = admin.firestore().collection("users").limit(BATCH_SIZE);
+    if (lastDoc) {
+      query = query.startAfter(lastDoc);
+    }
 
-  const { targetUserIds, title, body, type, imageUrl, targetScreen, useTopic } =
-    request.data;
+    const usersSnapshot = await query.get();
+    if (usersSnapshot.empty) {
+      break;
+    }
 
-  if (!title || !body) {
-    throw new HttpsError("invalid-argument", "title y body son requeridos");
-  }
+    const batchUserIds = usersSnapshot.docs.map((doc) => doc.id);
+    await sendNotificationToUsers(
+      batchUserIds,
+      { title, body, imageUrl },
+      {
+        type: type || "system",
+        action: targetScreen ? "open_screen" : "open_notifications",
+        targetScreen,
+        priority: "normal",
+      },
+    );
 
-  let recipients = targetUserIds;
-
-  if (!recipients || recipients.length === 0) {
-    if (useTopic) {
-      const message = {
-        notification: {
-          title,
-          body,
-        },
-        data: {
-          type: type || "system",
-          action: targetScreen ? "open_screen" : "open_notifications",
-          targetScreen: targetScreen || "",
-        },
-        topic: "all_users",
-      };
-
-      if (imageUrl) {
-        message.notification.imageUrl = imageUrl;
-      }
-
-      await admin.messaging().send(message);
-
-      return {
-        success: true,
-        method: "topic",
-        message: "Notificación enviada a todos los usuarios vía topic",
-      };
-    } else {
-      const BATCH_SIZE = 500;
-      let totalSent = 0;
-      let lastDoc = null;
-
-      while (true) {
-        let query = admin.firestore().collection("users").limit(BATCH_SIZE);
-
-        if (lastDoc) {
-          query = query.startAfter(lastDoc);
-        }
-
-        const usersSnapshot = await query.get();
-
-        if (usersSnapshot.empty) {
-          break;
-        }
-
-        const batchUserIds = usersSnapshot.docs.map((doc) => doc.id);
-
-        await sendNotificationToUsers(
-          batchUserIds,
-          { title, body, imageUrl },
-          {
-            type: type || "system",
-            action: targetScreen ? "open_screen" : "open_notifications",
-            targetScreen,
-            priority: "normal",
-          },
-        );
-
-        totalSent += batchUserIds.length;
-        lastDoc = usersSnapshot.docs[usersSnapshot.docs.length - 1];
-
-        if (usersSnapshot.docs.length < BATCH_SIZE) {
-          break;
-        }
-      }
-
-      return {
-        success: true,
-        method: "paginated",
-        recipientCount: totalSent,
-        message: `Notificación enviada a ${totalSent} usuario(s)`,
-      };
+    totalSent += batchUserIds.length;
+    lastDoc = usersSnapshot.docs[usersSnapshot.docs.length - 1];
+    if (usersSnapshot.docs.length < BATCH_SIZE) {
+      break;
     }
   }
 
-  // Send to specific users
+  return {
+    success: true,
+    method: "paginated",
+    recipientCount: totalSent,
+    message: `Notificación enviada a ${totalSent} usuario(s)`,
+  };
+}
+
+function assertSupportRequest(request) {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Usuario no autenticado");
+  }
+  if (!isSupportUser(request.auth)) {
+    throw new HttpsError("permission-denied", "No autorizado");
+  }
+  const { title, body } = request.data || {};
+  if (!title || !body) {
+    throw new HttpsError("invalid-argument", "title y body son requeridos");
+  }
+}
+
+/**
+ * Callable: Send notification from system operator
+ * Allows authorized users to send notifications to specific users or broadcast
+ *
+ * @param {Object} data - { targetUserIds?: string[], title: string, body: string, type?: string, imageUrl?: string, targetScreen?: string }
+ * `useTopic` is still accepted but ignored: nobody is subscribed to all_users.
+ */
+exports.sendOperatorNotification = onCall(async (request) => {
+  assertSupportRequest(request);
+  const { targetUserIds, title, body, type, imageUrl, targetScreen } =
+    request.data;
+
+  if (!Array.isArray(targetUserIds) || targetUserIds.length === 0) {
+    return broadcastToAllUsers({ title, body, imageUrl, type, targetScreen });
+  }
+
   await sendNotificationToUsers(
-    recipients,
+    targetUserIds,
     { title, body, imageUrl },
     {
       type: type || "system",
@@ -753,68 +738,22 @@ exports.sendOperatorNotification = onCall(async (request) => {
   return {
     success: true,
     method: "direct",
-    recipientCount: recipients.length,
-    message: `Notificación enviada a ${recipients.length} usuario(s)`,
+    recipientCount: targetUserIds.length,
+    message: `Notificación enviada a ${targetUserIds.length} usuario(s)`,
   };
 });
 
 /**
- * Callable: Send broadcast notification using FCM topics
- * More efficient for mass notifications
+ * Callable: Broadcast notification to every user.
+ * Kept for existing callers; `topic` is ignored (see broadcastToAllUsers).
  *
- * @param {Object} data - { title: string, body: string, topic?: string, imageUrl?: string }
+ * @param {Object} data - { title: string, body: string, imageUrl?: string, type?: string, targetScreen?: string }
  */
 exports.sendBroadcastNotification = onCall(async (request) => {
-  // Verify user is authorized (support/admin)
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Usuario no autenticado");
-  }
-
-  if (!isSupportUser(request.auth)) {
-    throw new HttpsError("permission-denied", "No autorizado");
-  }
-
-  const { title, body, topic, imageUrl, type, targetScreen } = request.data;
-
-  if (!title || !body) {
-    throw new HttpsError("invalid-argument", "title y body son requeridos");
-  }
-
-  const targetTopic = topic || "all_users";
-
-  const message = {
-    notification: {
-      title,
-      body,
-    },
-    data: {
-      type: type || "system",
-      action: targetScreen ? "open_screen" : "open_notifications",
-      targetScreen: targetScreen || "",
-    },
-    topic: targetTopic,
-    android: {
-      priority: "normal",
-    },
-    apns: {
-      payload: {
-        aps: {
-          contentAvailable: true,
-        },
-      },
-    },
-  };
-
-  if (imageUrl) {
-    message.notification.imageUrl = imageUrl;
-  }
-
-  await admin.messaging().send(message);
-
-  return {
-    success: true,
-    topic: targetTopic,
-    message: `Notificación broadcast enviada al topic '${targetTopic}'`,
-  };
+  assertSupportRequest(request);
+  const { title, body, imageUrl, type, targetScreen } = request.data;
+  return broadcastToAllUsers({ title, body, imageUrl, type, targetScreen });
 });
 
+exports.sendNotificationToUsers = sendNotificationToUsers;
+exports.sellerStatusMessage = sellerStatusMessage;

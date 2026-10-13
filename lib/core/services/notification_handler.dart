@@ -1,13 +1,16 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/models/chat_model.dart';
 import '../../data/models/order_model.dart';
 import '../../domain/entities/chat.dart';
+import '../../features/hero/orders/presentation/views/hero_order_status_screen.dart';
 import '../../features/hero/orders/presentation/views/order_receipt_screen.dart';
+import '../../features/hero/orders/presentation/views/seller_order_status_screen.dart';
 import '../../features/rider/presentation/views/rider_home_screen.dart';
 import '../../features/shared/chat/presentation/views/chat_conversation_screen.dart';
 import '../../features/shared/chat/presentation/views/chat_list_screen.dart';
@@ -89,7 +92,11 @@ class NotificationHandler {
 
     switch (type) {
       case 'order_status':
+      case 'pickup_progress':
         await _openOrderStatus(navigator, data);
+        break;
+      case 'seller_order':
+        _openSellerOrder(navigator, data);
         break;
       case 'nearby_order':
         _openNearbyOrders(navigator, data);
@@ -123,13 +130,40 @@ class NotificationHandler {
       return;
     }
 
+    // Riders only get cancel notices; heroes (default, incl. payment notices)
+    // land on live tracking, which links to the receipt itself.
+    final isRider = _readString(data, 'recipientRole') == 'rider';
     await navigator.push(
-      MaterialPageRoute(builder: (_) => OrderReceiptScreen(orderId: orderId)),
+      MaterialPageRoute(
+        builder: (_) => isRider
+            ? OrderReceiptScreen(orderId: orderId, isRiderView: true)
+            : HeroOrderStatusScreen(orderId: orderId),
+      ),
+    );
+  }
+
+  void _openSellerOrder(NavigatorState navigator, Map<String, dynamic> data) {
+    final orderId = _readString(data, 'orderId');
+    final sellerId = FirebaseAuth.instance.currentUser?.uid;
+    if (orderId == null || sellerId == null) {
+      _openNotifications(navigator);
+      return;
+    }
+
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) =>
+            SellerOrderStatusScreen(orderId: orderId, sellerId: sellerId),
+      ),
     );
   }
 
   void _openNearbyOrders(NavigatorState navigator, Map<String, dynamic> data) {
-    navigator.push(MaterialPageRoute(builder: (_) => const RiderHomeScreen()));
+    // Reset to rider home instead of stacking a second copy on top.
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _openSystemNotificationTarget(

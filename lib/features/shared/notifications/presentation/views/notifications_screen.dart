@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:the_hero/domain/entities/notification.dart';
 import '../../../../../core/common/hero_header_app_bar.dart';
 import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/services/notification_handler.dart';
 import '../../../../../data/providers/repository_providers.dart';
 import '../../../../auth/presentation/providers/auth_provider.dart';
 import '../../../../hero/presentation/views/hero_home_screen.dart';
@@ -94,9 +96,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No se pudieron limpiar los avisos: $e'),
-        ),
+        SnackBar(content: Text('No se pudieron limpiar los avisos: $e')),
       );
       ref.invalidate(notificationsProvider);
     }
@@ -115,10 +115,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       return;
     }
 
-    final lastRole = ref.read(lastRoleProvider).maybeWhen(
-      data: (role) => role,
-      orElse: () => null,
-    );
+    final lastRole = ref
+        .read(lastRoleProvider)
+        .maybeWhen(data: (role) => role, orElse: () => null);
     if (lastRole == 'rider') {
       navigator.pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const RiderHomeScreen()),
@@ -178,9 +177,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               .toList();
 
           if (visible.isEmpty) {
-            return const Center(
-              child: Text('No tienes avisos por ahora'),
-            );
+            return const Center(child: Text('No tienes avisos por ahora'));
           }
 
           return ListView.separated(
@@ -189,6 +186,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final item = visible[index];
+              final target = item.data['targetScreen']?.toString() ?? '';
+              // Plain system notices would just reopen this screen.
+              final canOpen =
+                  item.type != 'system' ||
+                  (target.startsWith('/') && target != '/notifications');
               return Dismissible(
                 key: ValueKey(item.id),
                 direction: DismissDirection.endToStart,
@@ -199,10 +201,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   alignment: Alignment.centerRight,
-                  child: const Icon(
-                    Icons.delete_outline,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.delete_outline, color: Colors.white),
                 ),
                 onDismissed: (_) async {
                   setState(() {
@@ -221,18 +220,27 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                     }
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('No se pudo eliminar: $e'),
-                      ),
+                      SnackBar(content: Text('No se pudo eliminar: $e')),
                     );
                     ref.invalidate(notificationsProvider);
                   }
                 },
-                child: _NotificationCard(
-                  title: item.title,
-                  subtitle: item.body,
-                  time: item.createdAt.toLocal().toString(),
-                  icon: Icons.notifications_none_outlined,
+                child: GestureDetector(
+                  onTap: !canOpen
+                      ? null
+                      : () => NotificationHandler().handleNotificationTap({
+                          'type': item.type,
+                          'action': item.action,
+                          ...item.data,
+                        }),
+                  child: _NotificationCard(
+                    title: item.title,
+                    subtitle: item.body,
+                    time: DateFormat(
+                      'dd/MM/yyyy HH:mm',
+                    ).format(item.createdAt.toLocal()),
+                    icon: Icons.notifications_none_outlined,
+                  ),
                 ),
               );
             },
@@ -244,9 +252,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           );
         },
         error: (error, stackTrace) {
-          return Center(
-            child: Text('Error al cargar avisos: $error'),
-          );
+          return Center(child: Text('Error al cargar avisos: $error'));
         },
       ),
     );
@@ -273,10 +279,7 @@ class _NotificationCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundWhite,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: borderGray100,
-          width: 1,
-        ),
+        border: Border.all(color: borderGray100, width: 1),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,10 +291,7 @@ class _NotificationCard extends StatelessWidget {
               color: primaryOrange.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(
-              icon,
-              color: primaryOrange,
-            ),
+            child: Icon(icon, color: primaryOrange),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -309,18 +309,12 @@ class _NotificationCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: textGray600,
-                  ),
+                  style: const TextStyle(fontSize: 13, color: textGray600),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   time,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: textGray600,
-                  ),
+                  style: const TextStyle(fontSize: 11, color: textGray600),
                 ),
               ],
             ),

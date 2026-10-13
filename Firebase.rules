@@ -1172,6 +1172,7 @@ service cloud.firestore {
       allow update: if isOwner(userId)
         && request.resource.data.diff(resource.data).changedKeys().hasOnly([
           'fcmToken',
+          'fcmTokens',
           'fcmTokenUpdatedAt'
         ]);
 
@@ -1312,7 +1313,8 @@ service cloud.firestore {
 
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Only Cloud Functions (Admin SDK) create notifications.
+      allow create: if false;
       allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
     
