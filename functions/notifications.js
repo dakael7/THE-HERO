@@ -322,8 +322,14 @@ async function sendNotificationToUsers(userIds, notification, data = {}) {
       ),
     );
 
-    const failed = results.filter((r) => r.status === "rejected").length;
-    console.log(`Sent ${results.length - failed} notifications, ${failed} failed`);
+    const failedCodes = results
+      .filter((r) => r.status === "rejected")
+      .map((r) => r.reason?.code || r.reason?.message || "unknown");
+    const failed = failedCodes.length;
+    console.log(
+      `Sent ${results.length - failed} notifications, ${failed} failed` +
+        (failed ? ` [${[...new Set(failedCodes)].join(", ")}]` : ""),
+    );
 
     // Clean up dead tokens from both the legacy array and the single-token field.
     const invalidByUser = new Map();
