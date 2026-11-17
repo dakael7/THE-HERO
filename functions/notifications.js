@@ -314,6 +314,7 @@ async function sendNotificationToUsers(userIds, notification, data = {}) {
             payload: {
               aps: {
                 contentAvailable: true,
+                badge: 1,
                 ...(isChat ? { threadId: `chat_${stringData.chatId}` } : {}),
               },
             },

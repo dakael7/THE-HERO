@@ -54,6 +54,7 @@ test("writes inbox for every user, pushes per token, cleans dead tokens", async 
   assert.deepEqual(sent.map((m) => m.token).sort(), ["dead", "good"]);
   assert.equal(sent[0].android.notification.channelId, "chat_messages");
   assert.equal(sent[0].android.notification.tag, "chat_c1");
+  assert.equal(sent[0].apns.payload.aps.badge, 1);
 
   assert.equal(userUpdates.length, 1);
   assert.equal(userUpdates[0][0], "hero1");
