@@ -83,7 +83,7 @@ workflows:
       - name: Build and archive IPA
         script: |
           set -euo pipefail
-          BUILD_NAME="${BUILD_NAME:-1.0.0}"
+          BUILD_NAME="${BUILD_NAME:-$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)}"
           BUILD_NUMBER="${BUILD_NUMBER:-${CM_BUILD_NUMBER:-25}}"
 
           flutter build ipa --release \
